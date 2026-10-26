@@ -14,9 +14,12 @@ const WGOAPI=(()=>{
    */
   const _host=location.hostname;
   const _isLocal=/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(_host)
-    ||location.protocol==='file:'
-    ||/\.github\.io$/i.test(_host);
+    ||location.protocol==='file:';
+  const _isGithubIO=/\.github\.io$/i.test(_host);
+  /* Render 后端：在 Render 部署后把这里换成你自己的 Service URL */
+  const RENDER_BACKEND='https://wandergo-backend.onrender.com';
   const _auto=_isLocal?'http://localhost:8080'
+    :_isGithubIO?RENDER_BACKEND
     :(location.protocol==='https:'?location.origin:location.protocol+'//'+_host+':8080');
   const BASE=localStorage.getItem('wgo_api')||_auto;
   let backendUp=null; // null=未知 true=在线 false=离线
