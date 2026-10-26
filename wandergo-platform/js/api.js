@@ -50,7 +50,7 @@ const WGOAPI=(()=>{
   }
   const status=()=>backendUp;
   return {
-    req,status,
+    req,status,base:BASE,
     auth(mode,body){return req('/api/user/'+(mode==='login'?'login':'register'),{method:'POST',body:{username:body.nick,password:body.pwd}})},
     /* 协同过滤推荐：后端优先，离线时返回 null 由前端本地算法兜底 */
     recommend(n=8){return req('/api/recommend?nick='+encodeURIComponent(curNick())+'&n='+n)},
