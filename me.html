@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人中心 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+<style>
+.badge-pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);border-radius:20px;padding:6px 12px;margin:0 6px 6px 0;opacity:.55}
+.badge-pill.got{opacity:1;border-color:var(--line-gold);color:var(--gold);background:var(--glass)}
+.rate-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed var(--line);font-size:12.5px}
+.rate-row img{width:46px;height:34px;object-fit:cover;border-radius:8px}
+.rate-row>div{flex:1;min-width:0}
+.rate-row p{font-size:10.5px;color:var(--muted)}
+.rate-row .stars{color:#f3da96;letter-spacing:1px}
+</style>
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">MY TRAVEL SPACE</div>
+  <h2>🧭 个人中心 · 我的旅行空间</h2>
+  <p>足迹统计、打卡记录、评分管理、徽章墙 —— 数据在后端在线时同步 MySQL，离线时保存在浏览器本地。</p>
+  <p style="margin-top:10px"><span class="api-chip" id="apiState"><span class="dot"></span>正在探测后端…</span></p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="me-grid">
+    <div class="profile-card">
+      <div class="big-av" id="meAv">旅</div>
+      <h3 id="meName">未登录旅行者</h3>
+      <span class="lv" id="meLv">🧭 预览模式</span>
+      <div class="me-stats">
+        <div><b id="msCk">0</b><span>打卡次数</span></div>
+        <div><b id="msCost">¥0</b><span>累计花费</span></div>
+        <div><b id="msCity">0</b><span>足迹城市</span></div>
+        <div><b id="msLit">0</b><span>地图点亮</span></div>
+      </div>
+      <div class="mebtns">
+        <button class="btn gold" id="meCkBtn">去打卡</button>
+        <button class="btn line" id="logoutBtn2">退出登录</button>
+      </div>
+    </div>
+    <div class="mylist">
+      <h3>🗂 我的打卡记录</h3>
+      <div id="myCkList"><div class="empty-tip" style="padding:18px">暂无打卡记录</div></div>
+      <h3 style="margin-top:18px">🏅 我的徽章墙</h3>
+      <div id="meBadges" style="margin-top:9px"></div>
+      <h3 style="margin-top:18px">⭐ 我的评分（协同过滤依据）</h3>
+      <div id="meRates" style="margin-top:6px"></div>
+    </div>
+  </div>
+  <div class="dbtns" style="margin-top:20px">
+    <button class="btn gold" onclick="WGO.go('map.html')">🗺 查看我的点亮地图</button>
+    <button class="btn line" onclick="WGO.go('recommend.html')">🎯 看看我被推荐了什么</button>
+    <button class="btn line" onclick="WGO.go('checkin.html')">📸 继续打卡攒徽章</button>
+  </div>
+</div></section>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+<script src="js/checkin.js?v=1108"></script>
+<script src="js/me.js?v=1105"></script>
+</body>
+</html>

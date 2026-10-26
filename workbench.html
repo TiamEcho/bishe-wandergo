@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅行工作台 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">TRAVEL WORKBENCH</div>
+  <h2>🧳 旅行工作台</h2>
+  <p>手账创作 · 协同计划 · 小众文创素材库 —— 让收藏夹下岗的一站式创作与协作台。</p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="filter-tabs" id="wbTabs">
+    <button class="on" data-w="journal">📖 手账工坊</button><button data-w="collab">🤝 协同计划</button><button data-w="shops">🎨 文创素材库</button>
+  </div>
+  <div id="wbJournal">
+    <div class="wb-row">
+      <select id="jnSpot"></select>
+      <select id="jnStyle"><option value="draw">✏️ 手绘线稿</option><option value="water">🎨 水彩晕染</option><option value="film">📼 复古胶片</option></select>
+      <button class="btn gold" id="jnGen">🤖 AI 生成手账</button>
+      <button class="btn line" id="jnFree">📷 自由创作</button>
+    </div>
+    <p class="wb-tip">模式① AI 把资料与路线生成旅行手账 · 模式② 把散落的照片、位置、心得重新做成旅行记录 —— 配色与手绘风格按目的地自动推荐，卡片文字点击即可修改，支持图片导出</p>
+    <div class="jn-cards" id="jnCards"><div class="empty-tip">选择目的地与风格，点击「AI 生成手账」或「自由创作」开始 ✍️</div></div>
+  </div>
+  <div id="wbCollab" style="display:none">
+    <div class="wb-row"><span class="wb-mems" id="wbMems"></span><span class="wb-tip" style="margin:0">多人协同 · 共建共享笔记 · 投票决定</span></div>
+    <div class="wb-grid">
+      <div class="wb-panel"><h4>🧾 机酒识别 · 粘贴自动成条</h4>
+        <textarea id="ctInput" rows="4" placeholder="粘贴航班/酒店/火车信息，每行一条，如：&#10;10.20 MU583 上海浦东→巴黎 12:35&#10;巴黎 Hôtel Malte Opera 酒店 10.20-10.23 3晚&#10;G102 高铁 北京南→上海虹桥"></textarea>
+        <button class="btn gold" id="ctParse" style="margin-top:8px">识别成条目</button>
+        <div id="ctList" class="ct-list"></div>
+      </div>
+      <div class="wb-panel"><h4>💰 花费记账 · 自动人均分摊</h4>
+        <div class="wb-row"><input id="exName" placeholder="名目，如 塞纳河游船"><input id="exAmt" type="number" placeholder="金额 ¥" style="max-width:110px"><button class="btn gold" id="exAdd">记账</button></div>
+        <div id="exList" class="ct-list"></div>
+        <div class="ex-total" id="exTotal"></div>
+      </div>
+    </div>
+    <div class="wb-panel" style="margin-top:14px"><h4>🗳 方案投票 · 一起决定去哪玩</h4>
+      <div class="wb-row"><input id="vtInput" placeholder="新提案，如 Day2 去卢浮宫还是奥赛？"><button class="btn gold" id="vtAdd">发起投票</button></div>
+      <div id="vtList" class="vt-list"></div>
+    </div>
+  </div>
+  <div id="wbShops" style="display:none">
+    <div class="filter-tabs" id="shopTabs"></div>
+    <div class="shop-grid" id="shopGrid"></div>
+    <p class="src-note">🎨 声明：店铺信息由 AI 爬虫聚合全网旅行笔记与点评数据整理（地址 / 营业时间可能有变动，出行前请二次确认），顺路路线结合本站景点坐标规划。</p>
+  </div>
+</div></section>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+<script src="js/workbench.js?v=1105"></script>
+</body>
+</html>

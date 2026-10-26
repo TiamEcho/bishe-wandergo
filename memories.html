@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅行纪念视频 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">TRAVEL MEMORY FILMS</div>
+  <h2>🎬 旅行纪念视频 · 打卡视频精选</h2>
+  <p>每个打卡视频都带 AI 推荐 BGM（WebAudio 实时合成，无需音频文件）；点击卡片进入播放器，可随时切换 9 种配乐。</p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="mv-grid" id="mvGrid"></div>
+  <div class="blk-head" style="margin-top:22px"><h4>🪄 我的纪念册</h4><span class="blk-sub">打卡自动生成 · 点开回看</span></div>
+  <div class="albums-grid" id="albumsGrid"></div>
+  <div class="dbtns" style="margin-top:14px"><button class="btn gold" onclick="WGO.go('checkin.html')">📸 去打卡 · 生成新的纪念册</button></div>
+</div></section>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+<script>
+function renderMv(){
+  const vids=POSTS.filter(p=>p.type==='video');
+  $('#mvGrid').innerHTML=vids.map((p,i)=>`<div class="vcard" style="animation-delay:${i*.06}s" onclick="openVideo({t:'${(p.txt||'').slice(0,16)}…',loc:'${p.loc}',imgs:['${p.imgs.join("','")}'],bgm:'${p.bgm||'fresh'}'})">
+    <img src="${IMG(P[p.imgs[0]],'landscape_16_9')}" loading="lazy"><span class="play"><i>▶</i></span><span class="vtag">♪ ${BGMI(p.bgm)}</span>
+    <div class="vfoot"><h6>${p.u} · ${p.loc}</h6><p>${p.txt.slice(0,26)}…</p></div></div>`).join('');
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMv();
+  const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
+  $('#albumsGrid').innerHTML=albums.length?albums.map(a=>`<div class="album-card" onclick="WGO.go('checkin.html')"><span class="tape"></span><img src="${a.imgs[0]||IMG(P.gugong)}"><div class="ab"><h5>${a.dest}</h5><p>${a.date} · ${a.city}</p><div class="am"><span>💰 <b>${fmt(a.total)}</b></span><span>${a.mood}</span></div></div></div>`).join('')
+  :'<div class="empty-tip">还没有纪念册 · 去「我的打卡」提交一次打卡就会自动生成 ✨</div>';
+});
+</script>
+</body>
+</html>

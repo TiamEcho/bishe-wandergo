@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>环球地图 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">EXPLORE THE MAP</div>
+  <h2>实景地图 · 景点标点 · 你的点亮足迹</h2>
+  <p>五层 3D 地图 · <b>滚轮缩放</b>（以鼠标为焦点）· <b>点击标点</b>镜头会平滑飞过去 · <b>点击空白省份</b>飞到省中心 · 打卡过的地方自动<b style="color:var(--gold)">点亮成金色</b>，点开可看详情。</p>
+</div></section>
+
+<section class="sec" style="padding-top:10px"><div class="wrap">
+  <div class="map-card">
+    <div class="map-top">
+      <div class="map-tabs" id="mapTabs">
+        <button class="on" data-m="cn">🇨🇳 中国地图</button>
+        <button data-m="world">🌍 世界地图 · 环球航线</button>
+      </div>
+      <div class="map-legend"><span><i class="lg-red"></i>热门打卡地</span><span><i class="lg-gold"></i>✨ 已点亮（我打卡过）</span><span><i class="lg-line"></i>飞行航线</span></div>
+    </div>
+    <div class="map-toolbar">
+      <button class="tb" onclick="resetView(cur)">🎯 重置视角</button>
+      <button class="tb" onclick="zoomBy(cur,1.35)">🔍＋ 放大</button>
+      <button class="tb" onclick="zoomBy(cur,1/1.35)">🔍－ 缩小</button>
+      <button class="tb" onclick="toggleLabels(this)">🔤 省份名 开/关</button>
+      <span class="lit-chip" id="litChip">✨ 已点亮 0 处</span>
+    </div>
+    <div id="chinaMap" style="height:560px"></div>
+    <div id="worldMap" style="height:560px;display:none"></div>
+    <div id="mapFallback" class="map-fallback" style="display:none"></div>
+    <div class="route-note">
+      <span><i class="rdot" style="background:#ff6b57"></i>红点 = 热门打卡地</span>
+      <span><i class="rdot" style="background:#ffd76a"></i>金环 = 已点亮目的地</span>
+      <span><i class="rdot" style="background:#7ea6d9"></i>白字 = 省份 / 国家名（点击名字也能飞过去）</span>
+      <span>🖱 滚轮缩放 · 已禁用拖拽平移（避免镜头漂移）</span>
+    </div>
+    <div class="map-note">📍 坐标获取方式：爬虫抓取公开地理数据 + 高德/百度<b>坐标拾取器</b>（lbs.amap.com/tools/picker）校准 · 本原型地图数据来自 ECharts 在线资源</div>
+  </div>
+</div></section>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+<script src="js/map.js?v=1105"></script>
+<script>
+let cur=null,labelsOn=true;
+const seedKey='fmw_lit_seed';
+/* 首次访问点亮 3 处示例足迹（真实打卡会持续增加），可在打卡页删除 */
+function ensureSeedLit(){
+  if(localStorage.getItem(seedKey))return;
+  const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
+  const today=new Date().toISOString().slice(0,10);
+  [['erhai','大理 · 洱海生态廊道','示例足迹：环海西路骑行 12km，才村码头日出绝了。'],
+   ['gugong','北京 · 故宫博物院','示例足迹：六百年紫禁城，红墙黄瓦拍不够。'],
+   ['inari','京都 · 伏见稻荷大社','示例足迹：清晨六点的千本鸟居，几乎无人。']].forEach(([id,dest,text],i)=>{
+    if(!albums.find(a=>a.dest===spotById(id).n))albums.push({id:'seed'+i,dest,city:spotById(id).city,date:today,text,mood:'😌 治愈放松',costs:[{k:'🎫 门票',v:i*10+20}],total:i*10+20,imgs:[],hasVideo:false});
+  });
+  localStorage.setItem('fmw_albums',JSON.stringify(albums));
+  localStorage.setItem(seedKey,'1');
+}
+function buildMaps(){
+  ensureSeedLit();
+  const lit=litSet();
+  $('#litChip').textContent='✨ 已点亮 '+lit.size+' 处';
+  cur=createWanderMap('chinaMap','cn',{spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openSpot});
+  world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openSpot});
+}
+function toggleLabels(btn){
+  labelsOn=!labelsOn;
+  [cur,world].forEach(c=>{if(!c)return;const o=c.getOption();
+    c.setOption({geo:o.geo.map((g,i)=>i===o.geo.length-1?{label:{show:labelsOn}}:g)})});
+  toast(labelsOn?'🔤 省份名已显示':'省份名已隐藏');
+}
+$$('#mapTabs button').forEach(b=>b.onclick=()=>{
+  mapMode=b.dataset.m;
+  $$('#mapTabs button').forEach(x=>x.classList.toggle('on',x===b));
+  $('#chinaMap').style.display=mapMode==='cn'?'block':'none';
+  $('#worldMap').style.display=mapMode==='world'?'block':'none';
+  const target=mapMode==='cn'?cur:world;
+  if(target){requestAnimationFrame(()=>requestAnimationFrame(()=>syncMapGeo(target)))}
+});
+let world=null;
+loadECharts(ok=>{
+  if(!ok){$('#mapFallback').style.display='grid';toast('在线地图资源加载失败，请检查网络');return}
+  try{buildMaps()}catch(e){console.warn(e)}
+  /* 深度链接：map.html?spot=xxx 自动打开详情 */
+  const sid=WGO.q('spot');
+  if(sid&&spotById(sid)){
+    const s=spotById(sid),c=s.rg==='cn'?cur:world;
+    if(c){$$('#mapTabs button').forEach(x=>x.classList.toggle('on',x.dataset.m===s.rg));
+      $('#chinaMap').style.display=s.rg==='cn'?'block':'none';
+      $('#worldMap').style.display=s.rg==='ab'?'block':'none';
+      setTimeout(()=>{flyTo(c,[s.lng,s.lat],3.4);openSpot(sid)},600);
+    }
+  }
+  if(user&&user.nick&&localStorage.getItem(seedKey)&&!localStorage.getItem('fmw_lit_toast')){
+    localStorage.setItem('fmw_lit_toast','1');
+    setTimeout(()=>toast('✨ 你打卡过的地方已点亮成金色，点击查看详情','ok'),1200);
+  }
+});
+</script>
+</body>
+</html>

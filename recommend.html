@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>猜你喜欢 · 协同过滤推荐 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">COLLABORATIVE FILTERING</div>
+  <h2>🎯 猜你喜欢 · 协同过滤推荐</h2>
+  <p>基于「用户 × 景点」评分行为矩阵的 <b>UserCF（找相似用户）</b> + <b>ItemCF（找相似景点）</b> 融合推荐，余弦相似度计算，冷启动用<b>热门兜底</b>。给景点打几颗星，推荐立刻刷新。</p>
+  <p style="margin-top:10px"><span class="api-chip" id="apiChip"><span class="dot"></span>正在探测后端…</span></p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="blk-head"><h4>⭐ 第一步 · 给你去过的景点评分</h4><span class="blk-sub">评分数据将写入数据库 rating_record 表（后端在线时）</span></div>
+  <div class="rate-strip" id="rateStrip"></div>
+
+  <div class="blk-head" style="margin-top:16px"><h4>✨ 第二步 · 为你推荐</h4><span class="blk-sub" id="recMode">🧮 当前算法：…</span></div>
+  <div class="rec-grid" id="recGrid"></div>
+
+  <div class="algo-note" style="margin-top:18px">
+    <b style="color:var(--gold)">🧮 算法说明（毕业设计答辩要点）</b><br>
+    · <b>UserCF</b>：对用户-景点评分矩阵按行做 <code>余弦相似度</code>，取 Top-10 相似用户，加权预测目标用户对未交互景点的评分 → <code>sim(u,v)=Σ r_ui·r_vi / (√Σr_ui²·√Σr_vi²)</code><br>
+    · <b>ItemCF</b>：按列计算景点间共现相似度，用用户已评高分的景点加权推算相似景点<br>
+    · <b>融合</b>：<code>score = 0.5×UserCF + 0.5×ItemCF</code>；无评分行为时自动降级为「热度 × 评分」热门兜底，解决冷启动<br>
+    · 后端由 <b>Spring Boot + MyBatis-Plus</b> 实现同款算法（D:\wandergo-backend），评分存 <b>MySQL rating_record</b> 表；前端离线时用同一套种子矩阵本地演示
+  </div>
+
+  <div class="blk-head" style="margin-top:22px"><h4>🕷 爬虫真实数据源</h4><span class="blk-sub">已入库 <b id="crawlCount">0</b> 条 · 运行 D:\wandergo-crawler\run.bat 可重新抓取</span></div>
+  <div class="crawl-grid" id="crawlGrid"><div class="empty-tip">加载中…</div></div>
+
+  <p class="src-note" style="margin-top:16px">🖼 版权声明：推荐卡片配图为 AI 引擎按 <b>4K 超清规格</b>重渲染的示意画面，构图灵感来源于对应平台创作者的公开打卡内容（卡片右上角已标注来源平台与作者，如 📕小红书 @阿澈的镜头）；本平台仅作学习演示用途，不作商用。如涉及权益请联系删除。</p>
+</div></section>
+
+<script src="js/data.js?v=1106"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1106"></script>
+<script src="js/core.js?v=1106"></script>
+<script src="js/recommend.js?v=1106"></script>
+</body>
+</html>

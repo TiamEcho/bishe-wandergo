@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WANDERGO 管理端 · 景点维护 / 用户管理 / 内容审核</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus@2.8.8/dist/index.css">
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<div id="adminApp" v-cloak>
+
+  <!-- ================= 登录 ================= -->
+  <div class="adm-login" v-if="!token">
+    <div class="adm-login-card">
+      <div class="lg-brand"><span class="lg-logo">✈️</span><div><b>WANDERGO 管理端</b><i>Vue 3 + Element Plus + Axios</i></div></div>
+      <p class="lg-sub">景点信息维护 · 用户管理 · 内容审核（JWT 鉴权，接口对应 Spring Boot /api/admin/*）</p>
+      <el-form :model="form" label-position="top" @submit.prevent>
+        <el-form-item label="管理员账号">
+          <el-input v-model="form.username" placeholder="admin" size="large" clearable />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="form.password" type="password" show-password placeholder="admin123" size="large" @keyup.enter="doLogin" />
+        </el-form-item>
+        <el-button type="primary" size="large" style="width:100%" :loading="loading" @click="doLogin">登 录</el-button>
+      </el-form>
+      <div class="lg-tip" :class="{bad:tipBad}">{{tip}}</div>
+      <div class="lg-acts">
+        <el-button link @click="demoMode">后端未启动？进入离线演示模式</el-button>
+        <el-button link @click="goHome">← 返回前台</el-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 控制台 ================= -->
+  <div class="adm-wrap" v-else>
+    <header class="adm-head">
+      <div class="hd-l"><span class="lg-logo sm">✈️</span><b>WANDERGO 管理端</b><el-tag size="small" :type="offline?'info':'success'" effect="dark">{{offline?'离线演示':'MySQL 已连接'}}</el-tag></div>
+      <div class="hd-r"><span class="who">{{nick}}</span><el-button size="small" @click="logout">退出</el-button></div>
+    </header>
+
+    <div class="adm-stats">
+      <div class="stat" v-for="s in stats" :key="s.k">
+        <span class="ic">{{s.ic}}</span>
+        <div><b>{{s.v}}</b><p>{{s.k}}</p></div>
+      </div>
+    </div>
+
+    <el-tabs v-model="tab" class="adm-tabs" @tab-change="onTab">
+      <!-- 景点维护 -->
+      <el-tab-pane label="🏞 景点维护" name="spot">
+        <div class="bar">
+          <el-input v-model="kw" placeholder="搜索景点名称 / 城市" clearable style="max-width:280px" @keyup.enter="loadSpots" @clear="loadSpots" />
+          <el-button type="primary" @click="loadSpots">查询</el-button>
+          <el-button @click="openEdit(null)">＋ 新增景点</el-button>
+          <span class="bar-tip">共 {{spots.length}} 条 · 数据来源：爬虫抓取 + 坐标拾取器校准</span>
+        </div>
+        <el-table :data="spots" height="460" stripe class="adm-table" empty-text="暂无数据（后端未启动可进入离线演示模式）">
+          <el-table-column prop="spotId" label="编码" width="110" />
+          <el-table-column prop="name" label="景点名称" min-width="150" />
+          <el-table-column prop="city" label="城市" width="90" />
+          <el-table-column prop="region" label="区域" width="80">
+            <template #default="s"><el-tag size="small" :type="s.row.region==='cn'?'danger':'info'">{{s.row.region==='cn'?'国内':'国外'}}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="lng" label="经度" width="95" />
+          <el-table-column prop="lat" label="纬度" width="95" />
+          <el-table-column prop="rating" label="评分" width="80" />
+          <el-table-column prop="price" label="门票" width="100" />
+          <el-table-column label="操作" width="140" fixed="right">
+            <template #default="s">
+              <el-button link type="primary" @click="openEdit(s.row)">编辑</el-button>
+              <el-button link type="danger" @click="delSpot(s.row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 用户管理 -->
+      <el-tab-pane label="👥 用户管理" name="user">
+        <el-table :data="users" height="500" stripe class="adm-table" empty-text="暂无用户">
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="username" label="昵称" min-width="140" />
+          <el-table-column prop="role" label="角色" width="100">
+            <template #default="s"><el-tag size="small" :type="s.row.role==='admin'?'warning':'info'">{{s.row.role==='admin'?'管理员':'普通用户'}}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="注册时间" min-width="170" />
+          <el-table-column label="状态" width="150">
+            <template #default="s">
+              <el-switch :model-value="s.row.status!==0" :disabled="s.row.role==='admin'" @change="v=>toggleUser(s.row,v)" />
+              <span class="sw-txt">{{s.row.status===0?'已封禁':'正常'}}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 内容审核 -->
+      <el-tab-pane label="🛡 内容审核" name="audit">
+        <div class="bar">
+          <el-radio-group v-model="auditStatus" @change="loadAudit">
+            <el-radio-button :value="0">待审核 {{pending}}</el-radio-button>
+            <el-radio-button :value="1">已通过</el-radio-button>
+            <el-radio-button :value="2">已驳回</el-radio-button>
+          </el-radio-group>
+        </div>
+        <el-table :data="audits" height="460" stripe class="adm-table" empty-text="暂无待审核内容">
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="spotId" label="景点编码" width="120" />
+          <el-table-column prop="nick" label="用户" width="120" />
+          <el-table-column prop="content" label="内容" min-width="260" />
+          <el-table-column prop="createdAt" label="提交时间" width="170" />
+          <el-table-column label="操作" width="160" fixed="right">
+            <template #default="s">
+              <el-button v-if="s.row.status!==1" link type="success" @click="handleAudit(s.row,1)">通过</el-button>
+              <el-button v-if="s.row.status!==2" link type="danger" @click="handleAudit(s.row,2)">驳回</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 景点编辑弹窗 -->
+    <el-dialog v-model="dlg" :title="editing.id?'编辑景点':'新增景点'" width="620px" class="adm-dlg">
+      <el-form :model="editing" label-width="90px">
+        <div class="grid2">
+          <el-form-item label="景点编码"><el-input v-model="editing.spotId" placeholder="如 erhai" /></el-form-item>
+          <el-form-item label="景点名称"><el-input v-model="editing.name" /></el-form-item>
+          <el-form-item label="城市"><el-input v-model="editing.city" /></el-form-item>
+          <el-form-item label="省份"><el-input v-model="editing.province" /></el-form-item>
+          <el-form-item label="区域">
+            <el-select v-model="editing.region" style="width:100%"><el-option label="国内" value="cn" /><el-option label="国外" value="ab" /></el-select>
+          </el-form-item>
+          <el-form-item label="评分"><el-input-number v-model="editing.rating" :min="0" :max="5" :step="0.1" style="width:100%" /></el-form-item>
+          <el-form-item label="经度"><el-input-number v-model="editing.lng" :precision="4" :step="0.1" style="width:100%" /></el-form-item>
+          <el-form-item label="纬度"><el-input-number v-model="editing.lat" :precision="4" :step="0.1" style="width:100%" /></el-form-item>
+          <el-form-item label="建议时长"><el-input v-model="editing.hours" placeholder="2-3 小时" /></el-form-item>
+          <el-form-item label="门票"><el-input v-model="editing.price" placeholder="¥60" /></el-form-item>
+        </div>
+        <el-form-item label="交通"><el-input v-model="editing.traffic" /></el-form-item>
+        <el-form-item label="地址"><el-input v-model="editing.address" /></el-form-item>
+        <el-form-item label="简介"><el-input v-model="editing.description" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dlg=false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveSpot">保存</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/element-plus@2.8.8/dist/index.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/admin.js?v=1105"></script>
+</body>
+</html>

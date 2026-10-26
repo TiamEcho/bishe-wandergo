@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅行大转盘 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">WHEEL OF DESTINY</div>
+  <h2>🎡 旅行大转盘 · 不知道去哪就交给命运</h2>
+  <p>先选范围（国内按<b>省份</b>、国外按<b>国家</b>），转盘会按该区域的候选城市<b>等分扇区</b>；停下后别针钉住结果，弹出小卡片，可以直接让 AI 规划这趟。</p>
+</div></section>
+
+<!-- ============ 第 1 步 · 选择范围 ============ -->
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="wk-card">
+    <div class="wk-step"><span class="wk-no">1</span><div><h4>选择转盘范围</h4><p>国内按省份拆到地级市，国外按国家拆到州 / 地区</p></div></div>
+
+    <div class="wk-seg" id="rgSeg">
+      <button class="on" data-rg="cn">🇨🇳 国内 · 省 → 市</button>
+      <button data-rg="ab">🌍 国外 · 国家 → 州</button>
+    </div>
+
+    <div class="wk-picker">
+      <label class="wk-field">
+        <span id="provLabel">省份</span>
+        <input id="provInput" list="provList" placeholder="输入或选择省份，如：江苏" autocomplete="off">
+        <datalist id="provList"></datalist>
+      </label>
+      <label class="wk-field">
+        <span id="cityLabel">城市</span>
+        <select id="citySel"></select>
+      </label>
+      <button class="btn gold wk-build" id="buildBtn">🎡 生成转盘</button>
+    </div>
+
+    <div class="wk-summary" id="pickTip">已选：<b>江苏省</b> · 13 个候选城市，扇区将平均分成 13 份</div>
+  </div>
+</div></section>
+
+<!-- ============ 第 2 步 · 转盘 ============ -->
+<section class="sec" style="padding-top:0"><div class="wrap">
+  <div class="wk-card">
+    <div class="wk-step"><span class="wk-no">2</span><div><h4>转盘开转</h4><p id="wheelMeta">候选 0 个 · 点击中间 GO，或按空格键</p></div></div>
+
+    <div class="wk-stage">
+      <div class="wk-wheel-col">
+        <div class="wk-wheel" id="wheelHost">
+          <div class="wk-pointer" id="wkPointer">🔻</div>
+          <div class="wk-pin" id="wkPin" aria-hidden="true"></div>
+          <div class="wk-disc" id="wheelDisc"></div>
+          <button class="wk-go" id="spinBtn" title="开始转盘">GO</button>
+        </div>
+        <div class="wk-legend">
+          <span><i class="dot" style="background:#f3da96"></i>候选扇区</span>
+          <span><i class="dot" style="background:#e06a5e"></i>本次命中</span>
+          <span>🖱 点击 GO / 空格 开转</span>
+        </div>
+      </div>
+
+      <aside class="wk-result" id="wRes">
+        <div class="wk-empty">
+          <span>🎯</span>
+          <h5>结果会出现在这里</h5>
+          <p>转盘停下后，被选中的城市会亮起来，<br>同时弹出一张「目的地小卡」。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 第 3 步 · 历史 ============ -->
+<section class="sec " style="padding-top:0"><div class="wrap">
+  <div class="wk-card">
+    <div class="wk-step"><span class="wk-no">3</span><div><h4>转盘历史</h4><p>记录保留在本机 · 点击卡片在<b>本页</b>展开详情，不会跳走</p></div></div>
+    <div class="wk-hist-grid" id="wHist"></div>
+  </div>
+</div></section>
+
+<script src="js/data.js?v=1108"></script>
+<script src="js/regions.js?v=1108"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1108"></script>
+<script src="js/core.js?v=1108"></script>
+<script src="js/wheel.js?v=1108"></script>
+</body>
+</html>

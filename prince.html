@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跟着小王子去旅行 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">TRAVEL WITH THE LITTLE PRINCE</div>
+  <h2>👑 跟着小王子去旅行</h2>
+  <p>「所有的大人都曾经是小孩。」沿着 B612 的航线：落日、玫瑰、狐狸与星空。</p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="spot-mini-list">
+    <div class="spot-mini" onclick="openSpot('oia')"><img data-img="oia" alt="伊亚"><div><h5>一天看 44 次落日 🌅</h5><div class="city">伊亚小镇 · 忧伤时的专属浪漫</div><div class="icon-chips"><span class="hl">🌅 爱琴海落日</span><span>🪐 B612 同款</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('圣托里尼')">🤖 AI 规划 →</button></div></div></div>
+    <div class="spot-mini" onclick="openSpot('ubud')"><img data-img="ubud" alt="乌布"><div><h5>玫瑰与被驯服的花园 🌹</h5><div class="city">乌布梯田 · 「正因为你为玫瑰花费了时间」</div><div class="icon-chips"><span class="hl">🌾 丛林秋千</span><span>🦊 驯养之地</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('巴厘岛')">🤖 AI 规划 →</button></div></div></div>
+    <div class="spot-mini" onclick="openSpot('ice')"><img data-img="ice" alt="冰岛"><div><h5>会说话的星空与狐狸 ❄️</h5><div class="city">黄金圈 · 极光夜是星星的悄悄话</div><div class="icon-chips"><span class="hl">🌌 极光</span><span>✈️ 飞行员航线</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('冰岛')">🤖 AI 规划 →</button></div></div></div>
+    <div class="spot-mini" onclick="openSpot('paris')"><img data-img="paris" alt="巴黎"><div><h5>飞行员的起点 ✈️</h5><div class="city">巴黎 · 圣埃克苏佩里起飞的地方</div><div class="icon-chips"><span class="hl">🗼 故乡坐标</span><span>📜 手稿博物馆</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('巴黎')">🤖 AI 规划 →</button></div></div></div>
+  </div>
+  <div class="dbtns" style="margin-top:18px"><button class="btn line" onclick="WGO.go('novel.html')">📖 上一站：跟着小说去旅行</button><button class="btn gold" onclick="WGO.go('map.html')">🗺 打开环球地图</button></div>
+</div></section>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+</body>
+</html>
