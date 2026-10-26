@@ -1,0 +1,8 @@
+# PostgreSQL Profile（Render 云端部署）
+# 激活：设置环境变量 SPRING_PROFILES_ACTIVE=postgres
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/wandergo}
+    username: ${PG_USERNAME:postgres}
+    password: ${PG_PASSWORD:postgres}

@@ -1,0 +1,22 @@
+# WanderGo · Render 一键部署配置
+# 用法：GitHub 仓库 Settings → Secrets → 手动触发 Render（或直接把此文件放到 Render 的 render.yaml 配置里）
+# 推荐方式：在 Render Dashboard 手动创建 Web Service + MySQL Service，比自动更稳。见下方 README 部署步骤。
+
+services:
+  - name: wandergo-backend
+    type: web
+    runtime: java
+    rootDir: wandergo-backend
+    buildCommand: mvn -B -DskipTests clean package
+    startCommand: java -jar target/*.jar
+    env:
+      - key: PORT
+        value: "10000"
+      - key: JWT_SECRET
+        value: "WandergoFlyMeToTheWorld2026GraduationProjectSecretKey"
+    healthCheckPath: /api/spot/list
+    plan: free
+
+  - name: wandergo-db
+    type: mysql
+    plan: free
