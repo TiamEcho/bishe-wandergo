@@ -1,0 +1,14 @@
+WANDERGO 数据库说明
+===================
+wandergo.sql 由 gen_seed.py 自动生成（数据源：平台 data.js，坐标经高德/百度坐标拾取器校准），
+不是手写 SQL；运行爬虫（D:\Documents\wandergo-crawler\run.bat）后，
+import.bat 会把爬虫抓到的真实 5A 景区数据（seed_spots.sql）一并入库。
+
+四张核心表（与开题报告一致）：
+  t_user            用户表（演示账号 6 个，密码均为 123456）
+  t_spot            景点表（32 条精选 + 爬虫增量 40 条）
+  t_checkin_record  打卡足迹表
+  t_rating_record   评分行为表（协同过滤算法输入，128 条种子评分）
+
+一键导入：双击 import.bat（需要 mysql 命令行在 PATH 中）
+重新生成种子：python gen_seed.py

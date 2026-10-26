@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 旅行规划 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">AI TRAVEL PLANNER</div>
+  <h2>AI 智能规划 · 模块化输出</h2>
+  <p>问题解析 → 爬虫抓取全网攻略 → 数据清洗分析 → 模块化生成：景点、<b>路线图</b>、出行方式（<b>可视化图表 + 平台比价跳转</b>）、价格规划、<b>行程备案</b>（雨天 / 累了）、<b>人群注意事项</b>、打卡视频与 Plog，每个模块都可点开详情。</p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="ai-hero-box">
+    <div class="ai-title"><span class="spark">✦</span>AI 旅行规划师 · Fly Me Intelligence</div>
+    <p class="ai-sub">示例：「我想去大理玩 3 天，预算 3000，喜欢湖景和慢生活」</p>
+    <div class="ai-input">
+      <input id="aiInput" placeholder="告诉我你的目的地、天数和预算，AI 为你生成模块化攻略…">
+      <button class="btn gold" id="aiGo" style="height:46px;padding:0 26px">✨ 生成规划</button>
+    </div>
+    <div class="ai-chips" id="aiChips">
+      <button>我想去大理玩 3 天，预算 3000</button>
+      <button>成都九寨沟 4 日亲子游</button>
+      <button>日本红叶季 6 天怎么玩</button>
+      <button>巴黎 5 天预算 2 万</button>
+      <button>冰岛极光环岛自驾</button>
+      <button>三亚 4 天海岛度假</button>
+      <button>张家界 4 天怎么玩</button>
+      <button>清迈 5 天慢生活</button>
+      <button>马尔代夫蜜月 5 天</button>
+    </div>
+    <div class="pipeline" id="pipeline">
+      <div class="steps">
+        <div class="step" data-s="0"><span class="ico">🔍</span>理解你的问题</div>
+        <div class="step" data-s="1"><span class="ico">🕷</span>爬虫抓取全网攻略</div>
+        <div class="step" data-s="2"><span class="ico">📊</span>数据清洗与分析</div>
+        <div class="step" data-s="3"><span class="ico">🧩</span>模块化方案生成</div>
+      </div>
+      <div class="pipe-bar"><i id="pipeBar"></i></div>
+    </div>
+    <div class="plan-head" id="planHead"></div>
+    <div class="mod-grid" id="modGrid"></div>
+  </div>
+</div></section>
+
+<script src="js/data.js?v=1109"></script>
+<script src="js/poi_route.js?v=1109"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1109"></script>
+<script src="js/core.js?v=1109"></script>
+<script src="js/map.js?v=1109"></script>
+<script src="js/ai.js?v=1109"></script>
+<script>
+/* 深度链接：ai.html?dest=大理 自动生成方案 */
+const _dest=WGO.q('dest');
+if(_dest){$('#aiInput').value='我想去'+_dest+'玩，帮我做一份模块化攻略';setTimeout(()=>runAI($('#aiInput').value),700)}
+</script>
+</body>
+</html>

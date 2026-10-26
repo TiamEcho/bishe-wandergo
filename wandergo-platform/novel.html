@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跟着小说去旅行 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">TRAVEL WITH NOVELS</div>
+  <h2>📖 跟着小说去旅行</h2>
+  <p>每一部小说都藏着一座城。点击卡片走进书里的场景，或让 AI 按小说氛围生成整趟旅程。</p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="spot-mini-list">
+    <div class="spot-mini" onclick="openSpot('paris')"><img data-img="paris" alt="巴黎"><div><h5>《悲惨世界》· 巴黎</h5><div class="city">雨果笔下的塞纳河与革命街垒</div><div class="icon-chips"><span class="hl">🗼 埃菲尔铁塔</span><span>📚 文学地标</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('巴黎')">🤖 AI 规划 →</button></div></div></div>
+    <div class="spot-mini" onclick="openSpot('inari')"><img data-img="inari" alt="京都"><div><h5>《古都》· 京都</h5><div class="city">川端康成里的千年寂寂町屋</div><div class="icon-chips"><span class="hl">⛩️ 千本鸟居</span><span>🎎 和风古意</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('日本')">🤖 AI 规划 →</button></div></div></div>
+    <div class="spot-mini" onclick="openSpot('sagrada')"><img data-img="sagrada" alt="巴塞罗那"><div><h5>《风之影》· 巴塞罗那</h5><div class="city">遗忘之书墓园与高迪的迷宫</div><div class="icon-chips"><span class="hl">⛪ 圣家堂</span><span>🕯 书中秘境</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('巴塞罗那')">🤖 AI 规划 →</button></div></div></div>
+    <div class="spot-mini" onclick="openSpot('cp')"><img data-img="cp" alt="纽约"><div><h5>《了不起的盖茨比》· 纽约</h5><div class="city">爵士时代的绿灯与长岛夜宴</div><div class="icon-chips"><span class="hl">🍂 中央公园</span><span>🥂 复古摩登</span><button class="more" style="all:unset;cursor:pointer;color:var(--gold);font-size:10.5px" onclick="event.stopPropagation();askAI('纽约')">🤖 AI 规划 →</button></div></div></div>
+  </div>
+  <div class="dbtns" style="margin-top:18px"><button class="btn gold" onclick="WGO.go('prince.html')">👑 下一站：跟着小王子去旅行 →</button></div>
+</div></section>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+</body>
+</html>

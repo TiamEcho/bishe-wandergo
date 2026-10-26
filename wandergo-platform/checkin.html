@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的打卡 · 奖励与排行 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">CHECK IN & GET REWARDS</div>
+  <h2>📍 我的打卡 · 攻略 / 视频 / Plog 一键成册</h2>
+  <p>提交打卡 → 自动生成<b>纪念册页</b>（含路线动画、花费明细、BGM）→ 同步到社区成为别人的真实攻略 → 足迹在地图上<b style="color:var(--gold)">点亮成金色</b>。打卡次数攒徽章，冲进同城 / 全国榜还有<b>小奖励</b>。</p>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="map-card">
+    <form id="ckForm">
+      <div class="ck-type-tabs" id="ckTypeTabs">
+        <button type="button" data-t="post" class="on">📝 打卡攻略</button>
+        <button type="button" data-t="video">🎬 打卡视频合集</button>
+        <button type="button" data-t="plog">📷 Plog</button>
+      </div>
+      <p style="font-size:11.5px;color:var(--muted);margin:-4px 0 12px" id="typeHint">📝 打卡攻略：图文 + 花费明细，会成为别人的真实攻略</p>
+      <div class="ck-grid">
+        <div class="ck-l">
+          <div class="frow">
+            <div class="fcol"><label>📍 去了哪儿</label><select id="ckDest"></select></div>
+            <div class="fcol"><label>📅 哪一天</label><input id="ckDate" type="date" required></div>
+          </div>
+          <div class="fcol"><label>✍️ 旅程故事（纪念册会引用成金句）</label><textarea id="ckText" rows="3" placeholder="例：环海西路骑到才村码头时，日出正好落在洱海上…"></textarea></div>
+          <label>🖼 上传图片 / 打卡视频</label>
+          <div class="upzone" id="upZone">点击或拖拽上传 · 支持多图 + 视频（自动压缩）</div>
+          <input type="file" id="ckFiles" multiple accept="image/*,video/*" hidden>
+          <div class="up-previews" id="upPreviews"></div>
+          <div class="fcol"><label>🎵 纪念册 BGM</label>
+            <select id="ckBgm"><option value="none">不配乐</option></select></div>
+          <div class="fcol"><label>😌 这次旅行的心情标签</label><div class="moods" id="moods">
+            <button type="button" class="on">😌 治愈放松</button><button type="button">🥳 狂欢快乐</button><button type="button">🌧 崩溃又 recovery</button><button type="button">🏔 震撼到失语</button><button type="button">🍜 吃饱喝足</button>
+          </div></div>
+        </div>
+        <div class="ck-r">
+          <div class="fcol"><label>💰 花费明细（自动汇总）</label><div id="costRows"></div>
+            <button type="button" class="btn line" id="addCost" style="margin-top:8px;padding:7px 14px">＋ 加一条花费</button>
+            <div class="cost-sum">合计 <b id="costSum">¥ 0</b></div></div>
+          <button type="submit" class="btn gold" style="width:100%;height:48px;font-size:15px;margin-top:10px">📸 提交打卡 · 生成纪念册</button>
+          <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.7">提交后：① 自动生成纪念册页（可回看）② 同步到社区动态 ③ 地图上该目的地点亮成金色 ④ 打卡数据计入奖励与排行榜（后端在线时写入 MySQL checkin_record 表）</p>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="blk-head" style="margin-top:22px"><h4>🏆 打卡奖励 · 徽章体系</h4><span class="blk-sub">打卡攒徽章 · 视频创作有奖 · 榜单有名次奖励</span></div>
+  <div class="reward-grid" id="rewardGrid"></div>
+
+  <div class="blk-head" style="margin-top:22px"><h4>📊 打卡排行榜</h4><span class="blk-sub">同城 / 全国双榜 · 榜单数据存于后端（离线时演示）</span></div>
+  <div class="rank-wrap">
+    <div class="rank-card"><h4>🇨🇳 全国打卡榜 TOP10</h4><div id="rankNation"></div></div>
+    <div class="rank-card"><h4>🏙 同城打卡榜<select id="rankCity"><option>北京</option><option>上海</option><option>广州</option><option>成都</option></select></h4><div id="rankCityList"></div></div>
+  </div>
+  <div class="rank-tip" id="rankTip" style="margin-top:12px"></div>
+
+  <div class="blk-head" style="margin-top:22px"><h4>🪄 我的纪念册</h4><span class="blk-sub">每次打卡自动生成一页 · 点开回看</span></div>
+  <div class="albums-grid" id="albumsGrid"></div>
+</div></section>
+
+<script src="js/data.js?v=1108"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1108"></script>
+<script src="js/core.js?v=1108"></script>
+<script src="js/checkin.js?v=1108"></script>
+<script>$('#ckBgm').innerHTML='<option value="none">不配乐</option>'+BGM_LIST.map(b=>`<option value="${b[0]}">${b[2]} ${b[1]}</option>`).join('');</script>
+</body>
+</html>

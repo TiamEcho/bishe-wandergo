@@ -1,0 +1,30 @@
+WANDERGO 后端启动说明
+=====================
+
+1. 环境要求
+   - JDK 17+、Maven 3.8+
+   - MySQL 8.0（先执行 D:\Documents\wandergo-db\import.bat 导入数据库）
+
+2. 修改数据库密码
+   - 打开 src/main/resources/application.yml，把 spring.datasource.password 改为本机 MySQL 密码
+   - 或启动前设置环境变量后手动运行 mvn spring-boot:run
+
+3. 一键启动
+   - 双击 run.bat（内部执行 mvn spring-boot:run）
+   - 看到 “WANDERGO 后端已启动 http://localhost:8080” 即成功
+
+4. 接口一览
+   POST /api/user/register  注册（返回 JWT token）
+   POST /api/user/login     登录（返回 JWT token）
+   GET  /api/user/list      用户列表
+   GET  /api/spot/list      景点列表（可带 region=cn|ab、kw=关键词）
+   GET  /api/recommend      协同过滤推荐（?nick=xx&n=8）
+   POST /api/checkin/add    打卡上报
+   POST /api/rating/add     评分上报（协同过滤输入）
+   GET  /api/rank           排行榜（?scope=nation|city&city=北京）
+
+5. 前端联调
+   - 前端（wandergo-platform）会自动探测 http://localhost:8080
+   - 后端在线时：注册/登录写入 t_user，打卡写入 t_checkin_record，
+     推荐页显示「Spring Boot 后端 UserCF（MySQL 评分数据）」
+   - 后端离线时：前端自动降级为本地演示模式，页面功能不受影响

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WANDERGO · 设计理念与功能总览</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<!-- ============ Hero ============ -->
+<header class="hero" id="home">
+  <div class="stars"></div><div class="stars2"></div><div class="moon"></div>
+  <div class="wrap hero-grid">
+    <div>
+      <div class="hero-kicker">WANDERGO · FLY ME TO THE WORLD</div>
+      <h1>Fly Me to <em>the World</em></h1>
+      <p class="sub">基于 Vue + Spring Boot + 协同过滤的旅游打卡平台 —— AI 帮你规划 → 地图带你走 → 真实打卡 → 自动生成纪念册，再成为别人的真实攻略。</p>
+      <p class="loop"><b>AI</b> 模块化攻略 · <b>MAP</b> 3D 实景地图 · <b>CF</b> 协同过滤推荐 · <b>THEME</b> 主题随心换</p>
+      <div class="hero-cta">
+        <button class="btn gold" onclick="WGO.go('map.html')">🗺 进入 3D 地图</button>
+        <button class="btn ghost" onclick="document.getElementById('concept').scrollIntoView()">💡 看设计理念</button>
+      </div>
+      <div class="hero-stats">
+        <span>🌍 <b>32</b> 精选国内外景点</span><span>🤖 <b>9</b> 套模块化 AI 攻略</span><span>📸 <b>真实打卡</b> 社区共建</span><span>🎯 <b>协同过滤</b> 智能推荐</span>
+      </div>
+    </div>
+    <div class="globe-wrap">
+      <div class="globe-wrap" style="position:relative">
+        <div class="globe">
+          <span class="dotmark" style="top:34%;left:58%"></span>
+          <span class="dotmark" style="top:52%;left:34%;animation-delay:.8s"></span>
+          <span class="dotmark" style="top:66%;left:70%;animation-delay:1.6s"></span>
+        </div>
+        <div class="orbit"><span class="sat"></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="plane-scene">
+    <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
+    <div class="plane-track"><div class="bob">
+      <svg viewBox="0 0 225 88">
+        <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6e3ae"/><stop offset="1" stop-color="#c8973f"/></linearGradient></defs>
+        <line x1="0" y1="46" x2="66" y2="46" stroke="#e7c76d" stroke-width="2.5" stroke-dasharray="2 10" stroke-linecap="round" opacity=".8"/>
+        <g>
+          <path d="M70 46 q22 -12 44 0 q-22 10 -44 0z" fill="url(#pg)" opacity=".9"/>
+          <ellipse cx="128" cy="46" rx="42" ry="12.5" fill="url(#pg)"/>
+          <path d="M104 46 L84 22 L96 20 L118 42 Z" fill="#b57f2e"/>
+          <path d="M168 38 L182 26 L186 30 L176 44 Z" fill="#b57f2e"/>
+          <circle cx="173" cy="46" r="4.5" fill="#1d2434" opacity=".8"/>
+          <rect x="106" y="36" width="34" height="9" rx="4.5" fill="#8fb6e8" opacity=".9"/>
+          <ellipse cx="172" cy="46" rx="5" ry="12" fill="none" stroke="#8a6a2c" stroke-width="2" opacity=".55"/>
+          <g>
+            <rect x="112" y="24" width="15" height="13" rx="5" fill="#5f8f5a"/>
+            <circle cx="119.5" cy="19" r="7" fill="#f7d9a8"/>
+            <circle cx="115.5" cy="14" r="3.4" fill="#e9c56a"/><circle cx="121" cy="12.5" r="3.6" fill="#e9c56a"/><circle cx="125.5" cy="15.5" r="3" fill="#e9c56a"/>
+            <path d="M110 27 q-13 2 -22 8 q11 -1 20 -4z" fill="#e06a5e"/>
+          </g>
+        </g>
+      </svg>
+    </div></div>
+  </div>
+  <svg class="hero-curve" viewBox="0 0 1440 90" preserveAspectRatio="none" style="display:block;width:100%;height:64px"><path fill="currentColor" d="M0,64 C240,10 480,6 720,34 C960,62 1200,66 1440,30 L1440,90 L0,90 Z"/></svg>
+</header>
+
+<!-- ============ 设计理念 ============ -->
+<section class="sec" id="concept">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kick">DESIGN PHILOSOPHY</div>
+      <h2>我们的设计理念</h2>
+      <p>WANDERGO 不只是攻略网站，而是一个「故事旅行宇宙」：让每一次出行都被 AI 妥善安排、被地图温柔指引、被打卡认真记录，最终沉淀成纪念册与社区里帮助他人的真实攻略。</p>
+    </div>
+    <div class="concept-grid">
+      <div class="concept-card"><span class="cn">01</span><span class="ci">🤖</span><h4>AI 先行 · 模块化输出</h4><p>问题解析 → 爬虫抓取全网攻略 → 数据清洗 → 模块化生成。景点、交通、预算、备案每个模块独立成卡，点进去都有数据图表与可跳转的平台比价。</p></div>
+      <div class="concept-card"><span class="cn">02</span><span class="ci">🗺</span><h4>地图即世界</h4><p>五层 3D 挤出的中国/世界地图，白色省份名清晰可见；滚轮缩放、点击飞行，打卡过的地方会点亮成金色图标——你的足迹就是你的勋章。</p></div>
+      <div class="concept-card"><span class="cn">03</span><span class="ci">📸</span><h4>真实打卡 · 反哺社区</h4><p>照片、视频、花费、心情一键成册；同步到社区后，你的行程就成了别人的攻略。打卡攒徽章，同城与全国榜单给你小奖励。</p></div>
+      <div class="concept-card"><span class="cn">04</span><span class="ci">🎯</span><h4>协同过滤 · 越用越懂你</h4><p>基于评分行为矩阵的 UserCF / ItemCF 推荐，冷启动用热门兜底；每张 4K 推荐卡都标注灵感来源平台与创作者，尊重每一份原创。</p></div>
+    </div>
+    <div class="flow-strip">
+      <div class="flow-step"><span class="fi">🤖</span><b>AI 规划</b><span>模块化攻略</span></div>
+      <div class="flow-arrow">➜</div>
+      <div class="flow-step"><span class="fi">🗺</span><b>3D 地图</b><span>点亮足迹</span></div>
+      <div class="flow-arrow">➜</div>
+      <div class="flow-step"><span class="fi">📸</span><b>真实打卡</b><span>花费与感受</span></div>
+      <div class="flow-arrow">➜</div>
+      <div class="flow-step"><span class="fi">🪄</span><b>纪念册</b><span>自动排版</span></div>
+      <div class="flow-arrow">➜</div>
+      <div class="flow-step"><span class="fi">💬</span><b>社区共享</b><span>成为他人攻略</span></div>
+      <div class="flow-arrow">➜</div>
+      <div class="flow-step"><span class="fi">🎯</span><b>协同过滤</b><span>推荐下一站</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 功能模块导航 ============ -->
+<section class="sec sec-alt" id="modules">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kick">FUNCTION MODULES</div>
+      <h2>功能模块 · 每个方块都是独立页面</h2>
+      <p>点击任意模块进入对应页面；左侧导航图标与主题颜色全站通用，可随时收起侧栏。</p>
+    </div>
+    <div class="module-grid" id="moduleGrid"></div>
+  </div>
+</section>
+
+<footer><div class="wrap"><div class="fnote">基于 Vue + Spring Boot + 协同过滤的旅游打卡平台设计与实现 · 毕业设计演示</div></div></footer>
+
+<script src="js/data.js?v=1105"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1105"></script>
+<script src="js/core.js?v=1105"></script>
+<script>
+const MODULES=[
+ ['map.html','🌍','环球地图 · 3D 实景','五层 3D 地图 + 白色省份名 + 滚轮缩放 + 点击飞行；打卡过的地方点亮金色图标，可查看详情。',''],
+ ['ai.html','🤖','AI 旅行规划','模块化输出：景点 / 交通比价 / 预算 / 视频与 Plog；含雨天备案、休息点与老人小孩注意事项。',''],
+ ['recommend.html','🎯','猜你喜欢 · 协同过滤','基于评分矩阵的 UserCF + ItemCF 推荐，热门兜底冷启动；4K 卡片标注灵感来源平台。','NEW'],
+ ['checkin.html','📍','我的打卡 · 奖励','发布打卡攻略 / 视频合集 / Plog；自动生成纪念册，打卡攒徽章，同城 / 全国排行赢小奖励。',''],
+ ['community.html','💬','旅行社区','多平台真实攻略聚合（抖音 / 小红书 / 快手 / Instagram / YouTube），话题热度榜 + 人群适配图表。',''],
+ ['memories.html','🎬','旅行纪念视频','打卡视频精选播放器，9 种 WebAudio 合成 BGM 任你配，纪念册随时回看。',''],
+ ['wheel.html','🎡','旅行大转盘','不知道去哪？让转盘替你决定：国内 / 国外两组候选，转出目的地一键跳转 AI 规划。','NEW'],
+ ['novel.html','📖','跟着小说去旅行','每一部小说都藏着一座城：悲惨世界·巴黎、古都·京都、风之影·巴塞罗那、盖茨比·纽约。',''],
+ ['prince.html','👑','跟着小王子去旅行','沿 B612 航线：伊亚 44 次落日、乌布玫瑰花园、冰岛极光夜与飞行员的起点巴黎。',''],
+ ['workbench.html','🧳','旅行工作台','手账工坊 / 协同计划（机酒识别·记账分摊·投票）/ 小众文创素材库。',''],
+ ['me.html','🧭','个人中心','我的足迹统计、打卡记录、评分管理、徽章墙与后端同步状态。','']
+];
+document.getElementById('moduleGrid').innerHTML=MODULES.map((m,i)=>`
+ <a class="mod-card ${m[4]?'new':''}" href="${m[0]}" style="animation-delay:${i*.06}s">
+   <span class="mi2">${m[1]}</span><h4>${m[2]}</h4><p>${m[3]}</p><span class="go2">进入模块 →</span>
+ </a>`).join('');
+</script>
+</body>
+</html>

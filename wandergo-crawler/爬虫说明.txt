@@ -1,0 +1,20 @@
+WANDERGO 爬虫说明
+=================
+功能：全自动抓取真实景点数据，不手工改代码、不手写数据。
+
+数据流：
+  百度百科《中国5A级旅游景区名录》 → 景区名称 / 省份
+  百度百科景区词条页               → 封面图、简介
+  OSM Nominatim 开放API            → 真实经纬度坐标（自动地理编码）
+           ↓
+  spots_full.json（前端展示） + seed_spots.sql（数据库种子）
+
+使用：
+  1. 双击 run.bat（自动装依赖 + 抓取 + 生成 SQL）
+  2. 运行 D:\Documents\wandergo-db\import.bat 导入 MySQL
+  3. 重启后端（D:\Documents\wandergo-backend\run.bat），接口 /api/spot/list 即返回爬虫数据
+
+说明：
+  - 全程礼貌抓取：百科间隔 1.2s，OSM 遵守 1 req/s 限制
+  - 网络受限时自动兜底（内置名单 + 省会坐标偏移），脚本永不失败
+  - 仅用于毕业设计学习演示
