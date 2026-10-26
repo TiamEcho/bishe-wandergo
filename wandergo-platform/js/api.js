@@ -5,7 +5,20 @@
  * 超时 / 失败自动降级本地模式（localStorage + data.js）
  * ========================================================= */
 const WGOAPI=(()=>{
-  const BASE=localStorage.getItem('wgo_api')||'http://localhost:8080';
+  /* ---- 接口地址自动切换 ----
+   * 1) localStorage 的 wgo_api 优先级最高（手动覆盖，如临时指向别的服务器）
+   *    在控制台执行：localStorage.setItem('wgo_api','http://1.2.3.4:8080') 后刷新
+   * 2) 本地打开（localhost / 127.0.0.1 / file:// / GitHub Pages 预览）→ 本机 8080
+   * 3) 部署在云服务器上（http/https 访问）→ 同主机 8080 端口
+   * 失败会自动降级本地模式，不会白屏
+   */
+  const _host=location.hostname;
+  const _isLocal=/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(_host)
+    ||location.protocol==='file:'
+    ||/\.github\.io$/i.test(_host);
+  const _auto=_isLocal?'http://localhost:8080'
+    :(location.protocol==='https:'?location.origin:location.protocol+'//'+_host+':8080');
+  const BASE=localStorage.getItem('wgo_api')||_auto;
   let backendUp=null; // null=未知 true=在线 false=离线
   /* Axios 实例（CDN 加载失败时回退原生 fetch，保证离线可用） */
   const ax=window.axios?window.axios.create({baseURL:BASE,timeout:1800}):null;

@@ -30,7 +30,8 @@ echo 使用解释器: %PYCMD%
 echo [1/2] 安装依赖（requests / beautifulsoup4）...
 %PYCMD% -m pip install -q -r requirements.txt
 echo [2/2] 开始抓取并生成 SQL ...
-%PYCMD% crawler.py --limit 40
+rem 演示模式：分阶段醒目日志 + 结果汇总（答辩投屏用）
+%PYCMD% crawler.py --limit 40 --demo
 echo.
 echo 完成！运行 D:\Documents\wandergo-db\import.bat 将数据导入 MySQL
 pause

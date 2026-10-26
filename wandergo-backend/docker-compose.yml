@@ -1,0 +1,73 @@
+# ============================================================
+# WANDERGO 一键部署编排（MySQL 8 + Spring Boot + Nginx 静态前端）
+# ------------------------------------------------------------
+# 用法（Docker 已安装）：
+#   cd wandergo-backend
+#   docker compose up -d --build        # 首次构建约 3-6 分钟
+#   docker compose logs -f api          # 看后端日志
+#   docker compose down                 # 停止（数据保留在 volumes）
+#   docker compose down -v              # 停止并清空数据库（重新初始化）
+#
+# 访问：
+#   前端  http://<服务器IP>/            （Nginx 80 端口）
+#   接口  http://<服务器IP>:8080/api/...
+#
+# 数据库初始化：首次启动时 mysql 容器会自动按序号执行 3 个 SQL
+#   01 建库建表 → 02 管理端/社区升级 → 03 爬虫抓取的 5A 景区数据
+# ============================================================
+services:
+  db:
+    image: mysql:8.0
+    container_name: wandergo-db
+    restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-wandergo2026}
+      MYSQL_DATABASE: wandergo
+      TZ: Asia/Shanghai
+    volumes:
+      - db_data:/var/lib/mysql
+      - ../wandergo-db/wandergo.sql:/docker-entrypoint-initdb.d/01-wandergo.sql:ro
+      - ../wandergo-db/upgrade_admin.sql:/docker-entrypoint-initdb.d/02-upgrade_admin.sql:ro
+      - ../wandergo-crawler/seed_spots.sql:/docker-entrypoint-initdb.d/03-seed_spots.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-wandergo2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [wgo]
+
+  api:
+    build: .
+    container_name: wandergo-api
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/wandergo?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-wandergo2026}
+    ports:
+      - "8080:8080"
+    networks: [wgo]
+
+  web:
+    image: nginx:alpine
+    container_name: wandergo-web
+    restart: always
+    depends_on: [api]
+    volumes:
+      - ../wandergo-platform:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+    networks: [wgo]
+
+volumes:
+  db_data:
+
+networks:
+  wgo:
+    driver: bridge

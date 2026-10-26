@@ -26,7 +26,7 @@ except ImportError:
     BeautifulSoup = None
 
 HEADERS = {
-    "User-Agent": "WandergoEduCrawler/1.0 (graduation project; contact: student@example.com)",
+    "User-Agent": "WandergoEduCrawler/1.0 (+https://github.com/TiamEcho/bishe-wandergo)",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
 BAIKE_HEADERS = {
@@ -35,6 +35,7 @@ BAIKE_HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
 LIST_URL = "https://baike.baidu.com/item/%E4%B8%AD%E5%9B%BD5A%E7%BA%A7%E6%97%85%E6%B8%B8%E6%99%AF%E5%8C%BA%E5%90%8D%E5%BD%95"
+WIKI_LIST_URL = "https://zh.wikipedia.org/wiki/%E5%9B%BD%E5%AE%B65A%E7%BA%A7%E6%97%85%E6%B8%B8%E6%99%AF%E5%8C%BA"
 ITEM_URL = "https://baike.baidu.com/item/"
 NOMINATIM = "https://nominatim.openstreetmap.org/search?q={q}&format=json&limit=1&accept-language=zh"
 
@@ -97,25 +98,65 @@ def strip_suffix(s):
 
 
 def fetch_5a_list(limit):
-    """抓取 5A 名录词条页，解析 (省份, 景区名) 列表"""
-    try:
-        html = http_get(LIST_URL)
-    except Exception as e:
-        print(f"[warn] 名录页抓取失败({e.__class__.__name__})，使用内置名单兜底")
+    """抓取 5A 名录词条页，解析 (省份, 景区名) 列表
+    数据源优先级：百度百科 → 中文维基百科（百科反爬 403 时自动切换）→ 内置名单
+    """
+    html, src = "", ""
+    for url, label in ((LIST_URL, "百度百科"), (WIKI_LIST_URL, "中文维基百科")):
+        try:
+            html = http_get(url)
+            if "5A" in html:
+                src = label
+                break
+            html = ""
+        except Exception as e:
+            print(f"[warn] {label}名录页抓取失败({e.__class__.__name__})，尝试下一个数据源")
+    if not html:
+        print("[warn] 在线名录均不可达，使用内置名单兜底")
         return FALLBACK[:limit]
+    print(f"[info] 数据源：{src}")
     pairs, seen = [], set()
+    prov_keys = set(PROV_CENTER.keys())
+    spot_kw = ("景区", "风景", "名胜", "古城", "古镇", "古村", "博物", "寺", "庙", "山", "湖",
+               "陵", "窟", "园", "桥", "塔", "宫", "滩", "岛", "峡", "谷", "洞", "泉", "瀑",
+               "关", "楼", "城", "林", "草原", "沙", "湾", "江", "河")
+
+    def is_spot(t):
+        if not (4 <= len(t) <= 25):
+            return False
+        if re.search(r"(省|市|区|县|自治区|特别行政区|盟|州)$", t):   # 行政区划名排除
+            return False
+        return (re.fullmatch(r"[\u4e00-\u9fa5A-Za-z0-9·\-（）()]+", t) is not None
+                and any(k in t for k in spot_kw))
+
+    def is_prov(t):
+        # 只认 34 个省级行政区，避免把「开封市」「佛山市」误判为省份
+        return strip_suffix(t) in prov_keys
+
     if BeautifulSoup is not None:
         soup = BeautifulSoup(html, "html.parser")
         for table in soup.find_all("table"):
+            last_prov = ""          # 维基表格用 rowspan，后续行省份为空 → 继承上一行
             for tr in table.find_all("tr"):
                 cells = [td.get_text(" ", strip=True) for td in tr.find_all(["td", "th"])]
-                if len(cells) < 3:
+                if len(cells) < 2:
                     continue
-                prov, name = cells[1], cells[2]
-                if not re.fullmatch(r"[\u4e00-\u9fa5A-Za-z0-9·]{4,25}", name) or name in seen:
+                prov, name = "", ""
+                for c in cells:
+                    if not name and is_spot(c):
+                        name = c
+                    elif not prov and is_prov(c):
+                        prov = strip_suffix(c)
+                    if name and prov:
+                        break
+                if not prov:
+                    prov = last_prov
+                elif prov:
+                    last_prov = prov
+                if not name or name in seen:
                     continue
                 seen.add(name)
-                pairs.append((prov[:8], name))
+                pairs.append(((prov or "中国")[:8], name))
     if not pairs:
         pat = re.compile(
             r">([\u4e00-\u9fa5]{2,8}(?:省|市|自治区))[^>]*>.{0,120}?"
@@ -141,21 +182,36 @@ def fetch_detail(name):
         return "", ""
 
 
+def _km(a, b):
+    """球面距离（km），用于校验 OSM 结果是否落在该省内"""
+    import math
+    dlat = (b[1] - a[1]) * math.pi / 180
+    dlng = (b[0] - a[0]) * math.pi / 180
+    s = (math.sin(dlat / 2) ** 2
+         + math.cos(a[1] * math.pi / 180) * math.cos(b[1] * math.pi / 180) * math.sin(dlng / 2) ** 2)
+    return 2 * 6371 * math.asin(math.sqrt(s))
+
+
 def fetch_geo(name, province):
-    """OSM Nominatim → 真实经纬度（自动化坐标，失败按省会兜底并标记）"""
-    query = quote(f"{name} {province}")
-    try:
-        data = requests.get(NOMINATIM.format(q=query), headers=HEADERS, timeout=12).json()
-        time.sleep(1.1)  # Nominatim 要求 ≤1 req/s，礼貌抓取
-        if data:
-            return float(data[0]["lon"]), float(data[0]["lat"]), "osm"
-    except Exception:
-        pass
+    """OSM Nominatim → 真实经纬度（自动化坐标，失败按省会兜底并标记）
+    依次尝试：景区名+省份 → 景区名+省份+中国 → 景区名；命中且距离省会 <900km 才采纳
+    """
+    prov = strip_suffix(province)
+    center = PROV_CENTER.get(prov, (104.0, 35.0))
+    for q in (f"{name} {prov}", f"{name} {prov} 中国", name):
+        try:
+            data = requests.get(NOMINATIM.format(q=quote(q)), headers=HEADERS, timeout=12).json()
+            time.sleep(1.1)  # Nominatim 要求 ≤1 req/s，礼貌抓取
+            if data:
+                p = (float(data[0]["lon"]), float(data[0]["lat"]))
+                if _km(center, p) <= 900:      # 防止匹配到同名异地景点
+                    return p[0], p[1], "osm"
+        except Exception:
+            time.sleep(1.1)
     h = hashlib.md5(name.encode("utf-8")).hexdigest()
-    base = PROV_CENTER.get(strip_suffix(province), (104.0, 35.0))
     # 兜底：省会坐标加确定性的小偏移，保证点位不重叠且可复现
-    return (round(base[0] + (int(h[:2], 16) - 128) / 400, 3),
-            round(base[1] + (int(h[2:4], 16) - 128) / 400, 3), "fallback")
+    return (round(center[0] + (int(h[:2], 16) - 128) / 400, 3),
+            round(center[1] + (int(h[2:4], 16) - 128) / 400, 3), "fallback")
 
 
 def guess_cat(name):
@@ -180,13 +236,25 @@ def main():
     ap = argparse.ArgumentParser(description="WANDERGO 景点数据爬虫（真实数据 + 自动化坐标 + 生成SQL）")
     ap.add_argument("--limit", type=int, default=40, help="最多抓取条数（默认 40）")
     ap.add_argument("--out", default=str(Path(__file__).parent), help="输出目录")
+    ap.add_argument("--demo", action="store_true", help="答辩演示模式：分阶段打印醒目日志")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
 
-    print("== WANDERGO · 景点数据自动化爬虫 ==")
+    if args.demo:
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║   WANDERGO · 景点数据自动化爬虫 · 答辩演示模式                ║
+║   链路：百度百科 5A 名录 → 词条详情 → OSM 真实经纬度          ║
+╚══════════════════════════════════════════════════════════════╝""")
+
+    print("\n[1/3] 抓取百度百科《中国5A级旅游景区名录》…")
     pairs = fetch_5a_list(args.limit)
+    print(f"      ✓ 解析到 {len(pairs)} 条景区（含省份与名称）")
+
     spots, sql_rows = [], []
+    print(f"\n[2/3] 逐条抓取详情与坐标（共 {len(pairs)} 条，礼貌限速约 1 秒/条）…")
     for i, (prov, name) in enumerate(pairs, 1):
         print(f"  ({i}/{len(pairs)}) {prov} · {name} …", end=" ", flush=True)
         h = hashlib.md5(name.encode("utf-8")).hexdigest()
@@ -210,16 +278,31 @@ def main():
             .format(sid=spot["spot_id"], n=esc(name), city=esc(city), prov=esc(spot["province"]),
                     addr=esc(spot["address"]), lng=lng, lat=lat, rating=spot["rating"],
                     tags=esc(spot["tags"]), desc=esc(spot["desc"]), heat=spot["heat"]))
-        print(f"ok ({geo_src})")
+        detail_flag = "图+简介" if (img and desc) else ("简介" if desc else "仅坐标")
+        geo_flag = "OSM真实坐标" if geo_src == "osm" else "省会兜底"
+        print(f"✓ {detail_flag} · {geo_flag} · ({lng}, {lat})")
 
+    print("\n[3/3] 写出文件…")
     (out / "spots_full.json").write_text(json.dumps(spots, ensure_ascii=False, indent=2), encoding="utf-8")
     sql = ("-- 由 WANDERGO 爬虫自动生成 · 来源：百度百科5A名录 + OSM Nominatim 坐标\n"
            "-- 生成时间: %s\nDELETE FROM t_spot WHERE spot_id LIKE 's5a%%';\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
     sql += "INSERT INTO t_spot (spot_id,name,city,province,region,address,lng,lat,hours,traffic,price,rating,tags,description,heat,source) VALUES\n"
     sql += ",\n".join(sql_rows) + ";\n"
     (out / "seed_spots.sql").write_text(sql, encoding="utf-8")
-    print(f"[done] spots_full.json ({len(spots)} 条) + seed_spots.sql 已生成于 {out}")
+
+    osm_n = sum(1 for s in spots if s["geo_src"] == "osm")
+    img_n = sum(1 for s in spots if s.get("img"))
+    print(f"""
+┌──────────────────── 抓取结果汇总 ────────────────────┐
+│  景区总数      : {len(spots):>4} 条
+│  真实坐标(OSM) : {osm_n:>4} 条   （其余为省会兜底，可重跑）
+│  含封面图      : {img_n:>4} 条
+│  省份覆盖      : {len(set(s['province'] for s in spots)):>4} 个
+│  总耗时        : {time.time() - t0:>4.1f} 秒
+│  输出          : spots_full.json / seed_spots.sql
+└──────────────────────────────────────────────────────┘""")
     print("下一步：运行 D:\\Documents\\wandergo-db\\import.bat 一键导入 MySQL")
+    print("      或 docker compose 首次启动时自动导入")
 
 
 if __name__ == "__main__":
