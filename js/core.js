@@ -35,11 +35,16 @@ function initTheme(){
   function applyCustom(silent){
     const acH=cusMode==='comp'?cusH+180:cusMode==='ana'?cusH+26:cusH;
     const dpH=cusMode==='ana'?cusH-26:acH;
-    const deep=hsl(dpH,cusS,Math.max(30,cusL-16));
+    /* 可读性保底：--gold 在深色面板（L≈6-23%）上作文字/图标色，
+       所以无论用户怎么调，文字用的主色亮度钳制在 [52,80]，
+       渐变深处钳制在 [38,72]，保证任何颜色下文字都清晰可见 */
+    const safeL=Math.max(52,Math.min(80,cusL));
+    const deepL=Math.max(38,Math.min(72,cusL-16));
+    const deep=hsl(dpH,cusS,deepL);
     const r=document.documentElement.style;
-    r.setProperty('--gold',hsl(acH,cusS,cusL));
+    r.setProperty('--gold',hsl(acH,cusS,safeL));
     r.setProperty('--gold-deep',deep);
-    r.setProperty('--gold-grad',`linear-gradient(180deg,${hsl(acH,cusS,Math.min(74,cusL+8))},${deep})`);
+    r.setProperty('--gold-grad',`linear-gradient(180deg,${hsl(acH,cusS,Math.min(82,safeL+10))},${deep})`);
     r.setProperty('--line-gold',hsl(acH,70,60,.34));
     r.setProperty('--glass',hsl(acH,55,60,.08));
     r.setProperty('--hero-a',hsl(cusH,42,6));
@@ -377,8 +382,8 @@ function initChrome(){
         <div class="tf-wheelrow">
           <div class="hue-wheel" id="hueWheel"><i id="wheelKnob"></i></div>
           <div class="tf-wheelctl">
-            <label>饱和 <input type="range" id="cusS" min="25" max="95" value="62"></label>
-            <label>亮度 <input type="range" id="cusL" min="38" max="68" value="54"></label>
+            <label>饱和 <input type="range" id="cusS" min="15" max="100" value="62"></label>
+            <label>亮度 <input type="range" id="cusL" min="28" max="85" value="54"></label>
             <div class="cp-modes" id="cpModes">
               <button class="mini on" data-m="mono">单色系</button>
               <button class="mini" data-m="comp">AI 互补</button>

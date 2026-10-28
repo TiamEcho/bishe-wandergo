@@ -129,6 +129,26 @@ const TOPICS=[
  {id:'t6',name:'舌尖上的旅行',heat:90,up:11,desc:'为一顿饭奔赴一座城：夜市、老字号与街头小吃的朝圣',spots:['chiangmai','ys','cp'],fit:{'情侣出行':85,'亲子家庭':72,'独自背包':88,'摄影出片':65,'美食寻味':99}}
 ];
 const topicById=id=>TOPICS.find(t=>t.id===id);
+/* ================= 地点词库：帖子正文「想去」地点标注 / 社区搜索建议用 ================= */
+const CITY_KEYS=['北京','上海','天津','重庆','哈尔滨','长春','沈阳','大连','石家庄','太原','呼和浩特','呼伦贝尔','济南','青岛','威海','烟台','南京','苏州','常州','无锡','杭州','宁波','温州','合肥','黄山','福州','厦门','泉州','南昌','庐山','婺源','郑州','洛阳','开封','武汉','宜昌','恩施','长沙','张家界','凤凰','广州','深圳','珠海','佛山','潮汕','南宁','桂林','阳朔','北海','海口','三亚','成都','九寨沟','稻城','色达','贵阳','黔东南','昆明','大理','丽江','香格里拉','西双版纳','拉萨','日喀则','林芝','西安','延安','兰州','敦煌','张掖','西宁','茶卡','银川','中卫','乌鲁木齐','喀什','伊犁','喀纳斯','吐鲁番','阿勒泰','香港','澳门','台北','东京','京都','大阪','巴黎','冰岛','清迈','曼谷','马尔代夫','巴厘岛','圣托里尼','新加坡','纽约','悉尼','巴塞罗那','迪拜','皇后镇','瑞士','土耳其','埃及','摩洛哥','威尼斯','伦敦','首尔','岘港','仙本那'];
+/* 从一段文本里提取提到的地点（城市 + 景点名），供「想去」点亮与搜索建议 */
+function extractPlaces(text){
+  const t=String(text||'');if(!t)return [];
+  const out=[];
+  CITY_KEYS.forEach(c=>{if(t.includes(c)&&!out.includes(c))out.push(c)});
+  (typeof SPOTS!=='undefined'?SPOTS:[]).forEach(s=>{if((t.includes(s.n)||(s.city&&t.includes(s.city)))&&!out.includes(s.n))out.push(s.n)});
+  return out.slice(0,6);
+}
+/* 想去清单：本地持久化（后端在线时同时写库），key=地点名 */
+function readWants(){try{return JSON.parse(localStorage.getItem('fmw_wants')||'{}')}catch(e){return{}}}
+function toggleWant(name,from){
+  const w=readWants();
+  if(w[name]){delete w[name];localStorage.setItem('fmw_wants',JSON.stringify(w));return false}
+  w[name]={t:Date.now(),from:from||''};
+  localStorage.setItem('fmw_wants',JSON.stringify(w));
+  if(typeof WGOAPI!=='undefined'&&WGOAPI.wantToggle)WGOAPI.wantToggle(name,from);
+  return true;
+}
 /* ================= BGM 曲库 · 文创素材库 ================= */
 const BGM_LIST=[
  ['fresh','清新漫步','🌿'],['calm','宁静夜航','🌙'],['retro','复古胶片','📼'],

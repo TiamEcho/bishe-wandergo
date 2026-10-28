@@ -2,24 +2,65 @@
  * WANDERGO PLATFORM · 社区 community.js
  * 动态流（视频/Vlog/Plog/图文）+ 多平台筛选 + 4K 精选 + 话题热度榜
  * ========================================================= */
-let feedFilter='all',platFilter='all',heatSort='heat';
-/* ---- 后端社区数据（含 B 站爬虫帖）：首次进页面拉一次，筛选时复用缓存 ---- */
+let feedFilter='all',platFilter='all',heatSort='heat',feedSort='new',feedKw='';
+/* ---- 后端社区数据（含 B 站爬虫帖）：首次进页面拉一次，筛选时复用缓存；
+   后端不在线时降级读取 js/posts_crawl.json（由爬虫导出脚本生成，仍是真实抓取数据） ---- */
 let dbPosts=[],dbLoaded=false,topicDefs=[];
 async function ensureDb(){
   if(dbLoaded)return;
-  const [p,t]=await Promise.all([WGOAPI.postList('','new',0,30),WGOAPI.topics()]);
+  const [p,t]=await Promise.all([WGOAPI.postList('','new',0,50),WGOAPI.topics()]);
   if(t&&t.ok){
     topicDefs=t.list;
     window.TW_TOPIC_NAMES=window.TW_TOPIC_NAMES||{};
     t.list.forEach(x=>window.TW_TOPIC_NAMES[x.code]=x.name);
   }
   if(p&&p.ok)dbPosts=p.list.map(mapApiPost);
+  /* 离线降级：本地数据包（爬虫真实数据导出） */
+  if((!dbPosts.length||!topicDefs.length)&&typeof twLocalData==='function'){
+    const b=await twLocalData();
+    if(b){
+      if(!topicDefs.length&&b.topics&&b.topics.length){
+        topicDefs=b.topics;
+        window.TW_TOPIC_NAMES=window.TW_TOPIC_NAMES||{};
+        b.topics.forEach(x=>window.TW_TOPIC_NAMES[x.code]=x.name);
+      }
+      if(!dbPosts.length&&b.posts&&b.posts.length)dbPosts=b.posts.map(mapApiPost);
+    }
+  }
   dbLoaded=true;
 }
-/* 区域筛选沿用景点库：关联了景点就按景点所在区域，未关联的默认算国内 */
-function regionOf(spotId){
+/* 关键词搜索：命中标题 / 正文 / 地点 / 作者 / 词条名 */
+function kwHit(p){
+  if(!feedKw)return true;
+  const k=feedKw.toLowerCase();
+  const names=window.TW_TOPIC_NAMES||{};
+  const hay=[p.txt,p.content,p.loc,p.u,(p.topics||[]).map(t=>(topicById(t)||{}).name||names[t]||t).join(' ')].join(' ').toLowerCase();
+  return hay.includes(k);
+}
+/* 时间戳：后端帖用 createdAt，静态演示帖解析「x 小时前 / x 天前」等相对时间 */
+function postTs(p){
+  if(p._ts)return p._ts;
+  let ts=0;
+  const c=p.createdAt||'';
+  if(c){const d=new Date(String(c).replace(' ','T'));if(!isNaN(d))ts=d.getTime()}
+  if(!ts){
+    const t=p.time||'';const now=Date.now();let m;
+    if(m=/(\d+)\s*小时前/.exec(t))ts=now-m[1]*3600e3;
+    else if(m=/(\d+)\s*天前/.exec(t))ts=now-m[1]*86400e3;
+    else if(/昨天/.test(t))ts=now-86400e3;
+    else if(m=/(\d{1,2})-(\d{1,2})/.exec(t)){const d=new Date();d.setMonth(+m[1]-1);d.setDate(+m[2]);ts=d.getTime()}
+    else ts=now;
+  }
+  p._ts=ts;return ts;
+}
+/* 区域筛选沿用景点库：关联了景点就按景点所在区域；
+   未关联景点的（多为爬虫帖）按地点文案里的国外地名推断，保证「国外」筛选可用 */
+const AB_HINTS=['东京','京都','大阪','日本','巴黎','冰岛','圣托里尼','希腊','巴厘岛','曼谷','泰国','新加坡','纽约','美国','悉尼','澳大利亚','巴塞罗那','西班牙','马尔代夫','迪拜','皇后镇','新西兰','芬兰','瑞士','土耳其','埃及','摩洛哥','威尼斯','意大利','伦敦','英国','首尔','韩国','岘港','越南','仙本那','马来西亚'];
+function regionOf(spotId,loc){
   const s=(typeof SPOTS!=='undefined'?SPOTS:[]).find(x=>x.id===spotId);
-  return s?s.rg:'cn';
+  if(s)return s.rg;
+  if(loc&&AB_HINTS.some(k=>String(loc).includes(k)))return 'ab';
+  return 'cn';
 }
 /* 后端 Post → 社区卡片字段，和静态帖保持同一套渲染契约 */
 function mapApiPost(p){
@@ -27,9 +68,9 @@ function mapApiPost(p){
   return {
     id:p.id,db:true,type:p.type,spotId:p.spotId||'',
     plat:p.source==='bilibili'?'bili':(p.client||'go'),
-    rg:regionOf(p.spotId),
+    rg:regionOf(p.spotId,p.location),
     img:TW.cover(p),u:p.nick||'旅行者',c:'linear-gradient(135deg,#e7c76d,#cfa24a)',
-    time:(p.createdAt||'').slice(5,16),loc:p.location||'',
+    time:(p.createdAt||'').slice(5,16),createdAt:p.createdAt||'',loc:p.location||'',
     txt:p.title||'',content:p.content||'',topics:codes,bgm:p.bgm||'',
     likes:p.likeCount||0,cmts:p.commentCount||0,real:p.source==='user',liked:false,
     sourceUrl:p.sourceUrl||''
@@ -95,7 +136,7 @@ function mountFeedVue(){
           </div>
         </div>
       </div>
-      <div class="empty-tip" v-if="!store.items.length">该平台暂无内容，试试其他平台筛选～</div>`
+      <div class="empty-tip" v-if="!store.items.length">没有匹配的内容，换个关键词或筛选条件试试～</div>`
   }).mount('#feedGrid');
   return feedApp;
 }
@@ -103,7 +144,8 @@ async function renderFeed(){
   await ensureDb();
   const mine=JSON.parse(localStorage.getItem('fmw_posts')||'[]');
   const all=[...dbPosts,...mine,...POSTS];
-  const list=all.filter(p=>(feedFilter==='all'?true:feedFilter==='video'||feedFilter==='plog'?p.type===feedFilter:p.rg===feedFilter)&&(platFilter==='all'?true:p.plat===platFilter));
+  const list=all.filter(p=>(feedFilter==='all'?true:feedFilter==='video'||feedFilter==='plog'?p.type===feedFilter:p.rg===feedFilter)&&(platFilter==='all'?true:p.plat===platFilter)&&kwHit(p));
+  list.sort((a,b)=>feedSort==='hot'?((b.likes*3+b.cmts*5)-(a.likes*3+a.cmts*5)):(postTs(b)-postTs(a)));
   if(mountFeedVue()){feedStore.items=list.map(decoratePost);return}
   const names=window.TW_TOPIC_NAMES||{};
   $('#feedGrid').innerHTML=list.map(p=>{
@@ -126,10 +168,30 @@ async function renderFeed(){
         <div class="tchips">${chips}</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;align-items:center">${typeTag}${realTag}<span class="more-link">查看全文 →</span></div>
         <div class="pfoot"><span class="act" ${act}>♡ <i style="font-style:normal" class="ln">${p.likes}</i></span><span>💬 ${p.cmts}</span><span style="margin-left:auto;font-size:10.5px">${pl.n}</span></div>
-      </div></div>`}).join('')||'<div class="empty-tip">该平台暂无内容，试试其他平台筛选～</div>';
+      </div></div>`}).join('')||'<div class="empty-tip">没有匹配的内容，换个关键词或筛选条件试试～</div>';
 }
-$$('#feedTabs button').forEach(b=>b.onclick=()=>{feedFilter=b.dataset.f;$$('#feedTabs button').forEach(x=>x.classList.toggle('on',x===b));renderFeed()});
+$$('#feedTabs > button').forEach(b=>b.onclick=()=>{feedFilter=b.dataset.f;$$('#feedTabs > button').forEach(x=>x.classList.toggle('on',x===b));renderFeed()});
 $$('#platTabs button').forEach(b=>b.onclick=()=>{platFilter=b.dataset.p;$$('#platTabs button').forEach(x=>x.classList.toggle('on',x===b));renderFeed()});
+/* ---- 动态流排序：最新（发布时间倒序，默认）/ 最热（点赞+评论加权） ---- */
+$$('#feedSort .mini').forEach(b=>b.onclick=()=>{feedSort=b.dataset.s;$$('#feedSort .mini').forEach(x=>x.classList.toggle('on',x===b));renderFeed()});
+/* ---- 社区搜索：地点 / 关键词 → 标题、正文、地点、作者、词条全字段匹配 ---- */
+function doCommunitySearch(){
+  feedKw=($('#twSearch').value||'').trim();
+  const acts=$('#twSearchActs');
+  if(feedKw){
+    acts.style.display='flex';
+    $('#twSearchHint').textContent='「'+feedKw+'」的社区搜索结果：';
+  }else acts.style.display='none';
+  renderFeed();
+  const g=$('#feedGrid');if(g)g.scrollIntoView({behavior:'smooth'});
+}
+if($('#twSearchGo')){
+  $('#twSearchGo').onclick=doCommunitySearch;
+  $('#twSearch').addEventListener('keydown',e=>{if(e.key==='Enter')doCommunitySearch()});
+  $('#twSearchAI').onclick=()=>{if(feedKw)WGO.go('ai.html',{dest:feedKw})};
+  $('#twSearchTopic').onclick=()=>{WGO.go('topic.html',{kw:feedKw})};
+  $('#twSearchClear').onclick=()=>{$('#twSearch').value='';feedKw='';$('#twSearchActs').style.display='none';renderFeed()};
+}
 function likePost(el,id){el.classList.toggle('liked');const n=el.querySelector('.ln');n.textContent=+n.textContent+(el.classList.contains('liked')?1:-1);el.firstChild.textContent=el.classList.contains('liked')?'♥ ':'♡ '}
 /* ---- 精选 4K 摄影 ---- */
 function renderFeatured(){
@@ -192,4 +254,6 @@ document.addEventListener('DOMContentLoaded',()=>{renderFeed();renderFeatured();
   const pid=WGO.q('post');
   if(pid)setTimeout(()=>{ /^\d+$/.test(pid)?openDbPost(pid):openPost(pid) },300);
   const tid=WGO.q('topic');if(tid)setTimeout(()=>openTopic(tid),300);
+  /* 深度链接：community.html?kw=新疆 直接带搜索词进来（推荐模块 / 首页搜索跳转用） */
+  const kw=WGO.q('kw');if(kw&&$('#twSearch')){$('#twSearch').value=kw;doCommunitySearch()}
 });

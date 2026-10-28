@@ -16,7 +16,7 @@ const topicApp = Vue.createApp({
       recs: [],
       total: 0,
       sort: 'hot',
-      kw: '',
+      kw: WGO.q('kw') || '',
       loading: true
     };
   },
@@ -49,28 +49,45 @@ const topicApp = Vue.createApp({
         _codes: codes,
         _chips: codes.map(c => window.TW_TOPIC_NAMES[c] || c),
         _time: (p.createdAt || '').slice(5, 16),
-        _liked: false
+        _liked: (typeof localLikes === 'function') ? !!localLikes()[p.id] : false
       });
     },
     async loadTopics() {
       const r = await WGOAPI.topics();
-      this.topics = (r && r.ok) ? r.list : [];
-      this.topics.forEach(t => { window.TW_TOPIC_NAMES[t.code] = t.name; });
+      let list = (r && r.ok) ? r.list : null;
+      /* 后端离线：降级读本地爬虫数据包里的词条表 */
+      if (!list) { const b = await twLocalData(); list = b.topics || []; }
+      this.topics = list;
+      list.forEach(t => { window.TW_TOPIC_NAMES[t.code] = t.name; });
     },
     async loadTopic() {
       const r = await WGOAPI.topicDetail(this.code);
-      if (r && r.ok) this.topic = r.topic;
-      else { this.topic = { name: '词条不存在', description: '该词条可能已被合并或删除，返回广场看看其他词条。' }; }
+      if (r && r.ok) { this.topic = r.topic; return; }
+      const b = await twLocalData();
+      const t = (b.topics || []).find(x => x.code === this.code);
+      this.topic = t || { name: '词条不存在', description: '该词条可能已被合并或删除，返回广场看看其他词条。' };
     },
     async loadPosts() {
       const r = await WGOAPI.postList(this.code, this.sort, 0, 30);
-      this.posts = (r && r.ok) ? r.list.map(this.deco) : [];
-      this.total = (r && r.ok) ? r.total : 0;
+      if (r && r.ok) { this.posts = r.list.map(this.deco); this.total = r.total; return; }
+      /* 离线降级：本地数据包按词条编码过滤 + 热度/时间排序 */
+      const b = await twLocalData();
+      const list = (b.posts || []).filter(p => (p.topics || '').split(',').includes(this.code));
+      list.sort((x, y) => this.sort === 'hot'
+        ? ((y.likeCount || 0) * 3 + (y.commentCount || 0) * 5) - ((x.likeCount || 0) * 3 + (x.commentCount || 0) * 5)
+        : String(y.createdAt || '').localeCompare(String(x.createdAt || '')));
+      this.posts = list.map(this.deco);
+      this.total = list.length;
     },
     async loadRecs() {
       const me = TW.me();
       const r = await WGOAPI.postRecommend(me ? me.nick : '', 4);
-      this.recs = (r && r.ok) ? r.list.map(x => Object.assign(this.deco(x.post), { _reason: x.reason })) : [];
+      if (r && r.ok) { this.recs = r.list.map(x => Object.assign(this.deco(x.post), { _reason: x.reason })); return; }
+      /* 离线降级：推荐 = 本地数据包里热度最高的真实抓取帖 */
+      const b = await twLocalData();
+      this.recs = (b.posts || []).slice()
+        .sort((x, y) => (y.likeCount || 0) - (x.likeCount || 0)).slice(0, 4)
+        .map(x => Object.assign(this.deco(x), { _reason: '🔥 热门真实打卡（爬虫数据包）' }));
     },
     setSort(s) {
       if (this.sort === s) return;
@@ -85,13 +102,17 @@ const topicApp = Vue.createApp({
     goPublish(code) { WGO.go('publish.html', { topic: code || this.code }); },
     goCommunity() { location.href = 'community.html'; },
     goMap(id) { WGO.go('map.html', { spot: id }); },
-    /* 卡片上的点赞也走真实接口：成功才改数字，失败提示，不制造假互动 */
+    /* 卡片上的点赞：在线写库；离线降级 localStorage，不做假互动 */
     async like(p) {
       if (!TW.requireLogin()) return;
       const r = await WGOAPI.postLike(p.id);
-      if (!r || !r.ok) { toast((r && r.msg) || '点赞失败，请确认后端已启动'); return; }
-      p._liked = r.liked;
-      p.likeCount = r.count;
+      if (r && r.ok) { p._liked = r.liked; p.likeCount = r.count; return; }
+      const lk = localLikes(); const on = !lk[p.id];
+      lk[p.id] = on; if (!on) delete lk[p.id];
+      localStorage.setItem('fmw_plikes', JSON.stringify(lk));
+      p._liked = on;
+      p.likeCount = Math.max(0, (p.likeCount || 0) + (on ? 1 : -1));
+      toast(on ? '已点赞（离线模式，记录在本地）♥' : '已取消点赞');
     }
   },
   async mounted() {

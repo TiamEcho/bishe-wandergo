@@ -80,6 +80,9 @@ const WGOAPI=(()=>{
     postAdd(payload){return req('/api/post/add',{method:'POST',body:payload},8000)},
     postComment(postId,content){return req('/api/post/comment/add',{method:'POST',body:{postId,content}},8000)},
     postLike(postId){return req('/api/post/like/toggle',{method:'POST',body:{postId}},8000)},
+    /* 「想去」地点收藏：后端在线时写 t_post_want，离线时前端 localStorage 兜底（data.js toggleWant） */
+    wantToggle(name,from){return req('/api/post/want/toggle',{method:'POST',body:{place:name,from:from||''}},4000)},
+    wantList(){return req('/api/post/want/list')},
     bgmList(kw){return req('/api/bgm/list?kw='+encodeURIComponent(kw||''))},
     postRecommend(nick,n){return req('/api/post/recommend?nick='+encodeURIComponent(nick||'')+'&n='+(n||6))},
     /* 管理端（需 admin JWT） */
