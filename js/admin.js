@@ -34,8 +34,23 @@ createApp({
       ],
       spots: [], kw: '',
       users: [], audits: [], auditStatus: 0, pending: 0,
+      /* 爬虫实时数据 tab：crawl 存后端统计，crawlLimit 是本次抓取条数，crawling 控制按钮 loading */
+      crawl: { crawled: '-', manual: '-', lastCrawl: '', lastCrawlCount: 0 },
+      crawlLimit: 5, crawling: false,
+      /* 社区数据 tab：统计 + 帖子表 + 抓取条数 */
+      community: { posts: '-', userPosts: '-', crawlPosts: '-', comments: '-', crawlComments: '-', topics: '-', lastCrawl: '' },
+      communityList: [], communityLimit: 10, communityCrawling: false,
       dlg: false, editing: {}
     };
+  },
+  computed: {
+    /* 从全量景点里筛出「爬虫入库」的数据：source 以百度百科开头，或带 source_url 溯源链接。
+       手工校准的 32 条这两者都为空，天然被排除，不用另开接口 */
+    crawlList() {
+      return this.spots.filter(s =>
+        (s.source && String(s.source).indexOf('百度百科') === 0) || !!s.sourceUrl
+      );
+    }
   },
   mounted() {
     if (this.token) this.loadAll();
@@ -75,7 +90,67 @@ createApp({
     async loadAll() {
       await Promise.all([this.loadSpots(), this.loadUsers(), this.loadAudit(), this.loadStats()]);
     },
-    onTab() {},
+    onTab(name) {
+      /* 切到「爬虫实时数据」时才拉统计，避免登录后一次性打太多接口；
+         景点列表顺带刷新一次，保证表格里的 sourceUrl / crawlTime 是最新的 */
+      if (name === 'crawl') { this.loadCrawlStats(); this.loadSpots(); }
+      /* 社区数据：统计 + 帖子表一起拉，表格里 sourceUrl 可点开原视频 */
+      if (name === 'community') { this.loadCommunityStats(); this.loadCommunityList(); }
+    },
+    /* 社区统计（帖子 / 站内发布 / B 站抓取 / 评论 / 词条数） */
+    async loadCommunityStats() {
+      if (this.offline) return;
+      const r = await WGOAPI.adminCommunityStats();
+      if (r && r.ok) this.community = r;
+    },
+    async loadCommunityList() {
+      if (this.offline) return;
+      const r = await WGOAPI.adminCommunityList(60);
+      this.communityList = (r && r.ok) ? r.list : [];
+    },
+    /* 真实执行社区爬虫：后端同步阻塞几十秒，按钮 loading 并提示勿关页面 */
+    async runCommunityCrawl() {
+      if (this.offline) { ElMessage.warning('离线演示模式不执行真实爬虫'); return; }
+      this.communityCrawling = true;
+      try {
+        const r = await WGOAPI.adminCommunityCrawl(this.communityLimit);
+        if (r && r.ok) {
+          ElMessage.success(`抓取完成：${r.total} 条视频，新增 ${r.inserted}、更新 ${r.updated}，评论 ${r.comments} 条（${r.seconds}s）`);
+          await Promise.all([this.loadCommunityStats(), this.loadCommunityList()]);
+        } else {
+          ElMessage.error((r && (r.msg || r.log)) || '抓取失败，请查看后端日志');
+        }
+      } finally {
+        this.communityCrawling = false;
+      }
+    },
+    /* 爬虫统计（爬虫入库条数 / 手工校准条数 / 最近抓取时间） */
+    async loadCrawlStats() {
+      if (this.offline) return;
+      const r = await WGOAPI.adminCrawlStats();
+      if (r && r.ok) {
+        this.crawl = {
+          crawled: r.crawled, manual: r.manual,
+          lastCrawl: r.lastCrawl || '', lastCrawlCount: r.lastCrawlCount || 0
+        };
+      }
+    },
+    /* 真实执行 Python 爬虫：后端同步阻塞几十秒，所以按钮 loading + 提示不要关页面 */
+    async runCrawl() {
+      if (this.offline) { ElMessage.warning('离线演示模式不执行真实爬虫'); return; }
+      this.crawling = true;
+      try {
+        const r = await WGOAPI.adminCrawl(this.crawlLimit);
+        if (r && r.ok) {
+          ElMessage.success(`抓取完成：新增 ${r.inserted} 条，更新 ${r.updated} 条`);
+          await Promise.all([this.loadCrawlStats(), this.loadSpots()]);
+        } else {
+          ElMessage.error((r && r.msg) || '抓取失败，请查看后端日志');
+        }
+      } finally {
+        this.crawling = false;
+      }
+    },
     async loadStats() {
       if (this.offline) return;
       const r = await WGOAPI.adminOverview();
@@ -168,7 +243,8 @@ createApp({
         rating: x.rating || 4.5,
         price: x.price || '—',
         hours: x.hours || '', traffic: x.traffic || '',
-        address: x.address || '', description: x.desc || x.description || ''
+        address: x.address || '', description: x.desc || x.description || '',
+        source: x.src || x.source || '', sourceUrl: x.source_url || '', crawlTime: x.crawl_time || ''
       }));
       const albums = JSON.parse(localStorage.getItem('fmw_albums') || '[]');
       const names = [...new Set(albums.map(a => a.city).filter(Boolean))].slice(0, 5);
@@ -182,6 +258,8 @@ createApp({
       this.stats[3].v = Object.keys(getRatesSafe()).length;
       this.pending = DEMO_AUDIT.filter(a => a.status === 0).length;
       this.stats[4].v = this.pending;
+      /* 离线演示时爬虫 tab 也给出条数，避免用户切过去看到三个「-」以为页面坏了 */
+      this.crawl = { crawled: this.spots.length, manual: 0, lastCrawl: '演示数据', lastCrawlCount: this.spots.length };
       this.audits = DEMO_AUDIT.filter(a => a.status === this.auditStatus);
     }
   }

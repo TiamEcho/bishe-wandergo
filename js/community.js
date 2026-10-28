@@ -3,16 +3,49 @@
  * 动态流（视频/Vlog/Plog/图文）+ 多平台筛选 + 4K 精选 + 话题热度榜
  * ========================================================= */
 let feedFilter='all',platFilter='all',heatSort='heat';
+/* ---- 后端社区数据（含 B 站爬虫帖）：首次进页面拉一次，筛选时复用缓存 ---- */
+let dbPosts=[],dbLoaded=false,topicDefs=[];
+async function ensureDb(){
+  if(dbLoaded)return;
+  const [p,t]=await Promise.all([WGOAPI.postList('','new',0,30),WGOAPI.topics()]);
+  if(t&&t.ok){
+    topicDefs=t.list;
+    window.TW_TOPIC_NAMES=window.TW_TOPIC_NAMES||{};
+    t.list.forEach(x=>window.TW_TOPIC_NAMES[x.code]=x.name);
+  }
+  if(p&&p.ok)dbPosts=p.list.map(mapApiPost);
+  dbLoaded=true;
+}
+/* 区域筛选沿用景点库：关联了景点就按景点所在区域，未关联的默认算国内 */
+function regionOf(spotId){
+  const s=(typeof SPOTS!=='undefined'?SPOTS:[]).find(x=>x.id===spotId);
+  return s?s.rg:'cn';
+}
+/* 后端 Post → 社区卡片字段，和静态帖保持同一套渲染契约 */
+function mapApiPost(p){
+  const codes=(p.topics||'').split(',').filter(Boolean);
+  return {
+    id:p.id,db:true,type:p.type,spotId:p.spotId||'',
+    plat:p.source==='bilibili'?'bili':(p.client||'go'),
+    rg:regionOf(p.spotId),
+    img:TW.cover(p),u:p.nick||'旅行者',c:'linear-gradient(135deg,#e7c76d,#cfa24a)',
+    time:(p.createdAt||'').slice(5,16),loc:p.location||'',
+    txt:p.title||'',content:p.content||'',topics:codes,bgm:p.bgm||'',
+    likes:p.likeCount||0,cmts:p.commentCount||0,real:p.source==='user',liked:false,
+    sourceUrl:p.sourceUrl||''
+  };
+}
 /* ---- 帖子流：Vue 3 岛屿渲染（筛选/点赞为响应式，页面其余动效保持原生） ---- */
 let feedStore=null,feedApp=null;
 function decoratePost(p){
-  const pl=PLAT[p.plat||'go'];
+  const pl=PLAT[p.plat||'go']||PLAT.go;
+  const names=window.TW_TOPIC_NAMES||{};
   return Object.assign({},p,{
-    img:p.imgs&&p.imgs[0]?IMG(P[p.imgs[0]]):'',
+    img:p.img||(p.imgs&&p.imgs[0]?IMG(P[p.imgs[0]]):''),
     platName:pl.n,platIcon:pl.i,platKey:p.plat||'go',
-    bgmLabel:p.bgm?BGMI(p.bgm):'',
-    chips:(p.topics||[]).filter(t=>topicById(t)).map(t=>({id:t,name:topicById(t).name})),
-    liked:false
+    bgmLabel:p.bgm?(p._bgmName||(typeof TW!=='undefined'?TW.bgmName(p.bgm):'')||BGMI(p.bgm)):'',
+    chips:(p.topics||[]).filter(t=>topicById(t)||names[t]).map(t=>({id:t,name:(topicById(t)||{}).name||names[t]})),
+    liked:!!p.liked
   });
 }
 function mountFeedVue(){
@@ -21,14 +54,23 @@ function mountFeedVue(){
   feedApp=Vue.createApp({
     setup(){return{store:feedStore}},
     methods:{
-      openPost(p){openPost(p.id)},
-      like(p,e){e.stopPropagation();p.liked=!p.liked;p.likes+=p.liked?1:-1},
-      topic(t,e){e.stopPropagation();openTopic(t.id)}
+      openFeedPost(p){if(p&&p.db)openDbPost(p.id);else openPost(p.id)},
+      /* 后端帖子的点赞写 MySQL，静态帖保持本地演示交互 */
+      async like(p,e){
+        e.stopPropagation();
+        if(!p.db){p.liked=!p.liked;p.likes+=p.liked?1:-1;return}
+        if(!TW.requireLogin())return;
+        const r=await WGOAPI.postLike(p.id);
+        if(!r||!r.ok){toast((r&&r.msg)||'点赞失败，请确认后端已启动');return}
+        p.liked=r.liked;p.likes=r.count;
+      },
+      topic(t,e){e.stopPropagation();openTopic(t.id)},
+      imgErr(p,e){e.target.onerror=null;if(p.spotId&&P[p.spotId])e.target.src=IMG(P[p.spotId])}
     },
     template:`
-      <div class="post" v-for="p in store.items" :key="p.id" @click="openPost(p)" style="cursor:pointer">
+      <div class="post" v-for="p in store.items" :key="p.id" @click="openFeedPost(p)" style="cursor:pointer">
         <div class="pimg">
-          <img :src="p.img" loading="lazy">
+          <img :src="p.img" loading="lazy" referrerpolicy="no-referrer" @error="imgErr(p,$event)">
           <template v-if="p.type==='video'"><span class="vbadge"><i>▶</i></span><span class="moren">{{p.bgmLabel}}</span></template>
           <span class="moren" v-if="p.type==='plog'">📷 Plog</span>
           <span class="plat" :class="'pb-'+p.platKey" style="position:absolute;top:9px;right:9px">{{p.platIcon}} {{p.platName}}</span>
@@ -57,20 +99,24 @@ function mountFeedVue(){
   }).mount('#feedGrid');
   return feedApp;
 }
-function renderFeed(){
+async function renderFeed(){
+  await ensureDb();
   const mine=JSON.parse(localStorage.getItem('fmw_posts')||'[]');
-  const all=[...mine,...POSTS];
+  const all=[...dbPosts,...mine,...POSTS];
   const list=all.filter(p=>(feedFilter==='all'?true:feedFilter==='video'||feedFilter==='plog'?p.type===feedFilter:p.rg===feedFilter)&&(platFilter==='all'?true:p.plat===platFilter));
   if(mountFeedVue()){feedStore.items=list.map(decoratePost);return}
+  const names=window.TW_TOPIC_NAMES||{};
   $('#feedGrid').innerHTML=list.map(p=>{
-    const pl=PLAT[p.plat||'go'];
+    const pl=PLAT[p.plat||'go']||PLAT.go;
     const typeTag=p.type==='video'?'<span class="tagpill ab">🎬 打卡视频</span>':p.type==='plog'?'<span class="tagpill cn">📷 Plog</span>':'';
     const realTag=p.real?'<span class="tagpill real">真实攻略</span>':'';
-    const chips=(p.topics||[]).map(t=>topicById(t)?`<span class="topic-chip" onclick="event.stopPropagation();openTopic('${t}')"># ${topicById(t).name}</span>`:'').join('');
-    return `<div class="post" onclick="openPost('${p.id}')" style="cursor:pointer">
+    const chips=(p.topics||[]).map(t=>(topicById(t)||names[t])?`<span class="topic-chip" onclick="event.stopPropagation();openTopic('${t}')"># ${(topicById(t)||{}).name||names[t]}</span>`:'').join('');
+    const img=p.img||IMG(P[p.imgs&&p.imgs[0]?p.imgs[0]:'erhai']);
+    const act=p.db?`onclick="event.stopPropagation();twToggleLike(${p.id},this)"`:`onclick="event.stopPropagation();likePost(this,'${p.id}')"`;
+    return `<div class="post" onclick="${p.db?'openDbPost('+p.id+')':'openPost(\''+p.id+'\')'}" style="cursor:pointer">
       <div class="pimg">
-        <img src="${IMG(P[p.imgs[0]])}" loading="lazy">
-        ${p.type==='video'?'<span class="vbadge"><i>▶</i></span><span class="moren">'+BGMI(p.bgm)+'</span>':''}
+        <img src="${img}" loading="lazy" referrerpolicy="no-referrer">
+        ${p.type==='video'?'<span class="vbadge"><i>▶</i></span><span class="moren">'+(p.db?(TW.bgmName(p.bgm)||''):BGMI(p.bgm))+'</span>':''}
         ${p.type==='plog'?'<span class="moren">📷 Plog</span>':''}
         <span class="plat pb-${p.plat||'go'}" style="position:absolute;top:9px;right:9px">${pl.i} ${pl.n}</span>
       </div>
@@ -79,7 +125,7 @@ function renderFeed(){
         <p class="ptxt">${p.txt}</p>
         <div class="tchips">${chips}</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;align-items:center">${typeTag}${realTag}<span class="more-link">查看全文 →</span></div>
-        <div class="pfoot"><span class="act" onclick="event.stopPropagation();likePost(this,'${p.id}')">♡ <i style="font-style:normal" class="ln">${p.likes}</i></span><span>💬 ${p.cmts}</span><span style="margin-left:auto;font-size:10.5px">${pl.n}</span></div>
+        <div class="pfoot"><span class="act" ${act}>♡ <i style="font-style:normal" class="ln">${p.likes}</i></span><span>💬 ${p.cmts}</span><span style="margin-left:auto;font-size:10.5px">${pl.n}</span></div>
       </div></div>`}).join('')||'<div class="empty-tip">该平台暂无内容，试试其他平台筛选～</div>';
 }
 $$('#feedTabs button').forEach(b=>b.onclick=()=>{feedFilter=b.dataset.f;$$('#feedTabs button').forEach(x=>x.classList.toggle('on',x===b));renderFeed()});
@@ -97,39 +143,32 @@ function openFeat(i){
     <p class="fd-body">这张入选「精选 4K 摄影」的作品由 AI 图片引擎按 4K 超清规格渲染，完整保留了拍摄现场的光影与色彩层次。</p>
     <p class="src-note">🖼 声明：精选图片由 AI 引擎按 4K 规格重渲染生成，场景信息来自创作者真实打卡（${PLAT[f.plat].n} · ${f.by}）。</p></div>`);
 }
-/* ---- 话题热度榜 ---- */
+/* ---- 话题热度榜：热度与帖子数由 MySQL 统计，爬虫新增词条也会出现在榜上 ---- */
 function renderTopics(){
-  const list=[...TOPICS].sort((a,b)=>heatSort==='heat'?b.heat-a.heat:b.up-a.up);
-  $('#heatList').innerHTML=list.map((t,i)=>`<div class="heat-row" onclick="openTopic('${t.id}')">
-    <span class="rk ${i<3?'top':''}">${i+1}</span>
-    <div class="hi"><h5># ${t.name}</h5><p>${t.spots.length} 个关联目的地 · 点击查看人群适配图表</p><div class="hbar"><i style="width:${t.heat}%"></i></div></div>
-    <div class="hn"><b>${t.heat}</b><span class="up">▲ 涨幅 ${t.up}%</span></div></div>`).join('');
+  ensureDb().then(()=>{
+    const list=topicDefs.length?topicDefs.map(t=>({code:t.code,name:t.name,heat:t.heat||0,count:t.postCount||0,source:t.source}))
+      :TOPICS.map(t=>({code:t.id,name:t.name,heat:t.heat,count:t.spots.length,source:'system'}));
+    list.sort((a,b)=>heatSort==='count'?b.count-a.count:b.heat-a.heat);
+    $('#heatList').innerHTML=list.map((t,i)=>`<div class="heat-row" onclick="openTopic('${t.code}')">
+      <span class="rk ${i<3?'top':''}">${i+1}</span>
+      <div class="hi"><h5># ${t.name}</h5><p>${t.count} 条帖子 · 点击进入词条页看全部内容${t.source==='crawl'?' · 🕷 爬虫词条':''}</p><div class="hbar"><i style="width:${Math.min(100,t.heat)}%"></i></div></div>
+      <div class="hn"><b>${t.heat}</b><span class="up">${t.count} 帖</span></div></div>`).join('');
+  });
 }
 $$('.sorter .mini').forEach(b=>b.onclick=()=>{heatSort=b.dataset.s;$$('.sorter .mini').forEach(x=>x.classList.toggle('on',x===b));renderTopics()});
+/* 词条不再用弹窗，统一跳到独立词条页（能发布、能评论、能分享链接） */
 function openTopic(tid){
-  const t=topicById(tid);if(!t)return;
-  const posts=POSTS.filter(p=>(p.topics||[]).includes(tid));
-  const fitRows=Object.entries(t.fit).map(([k,v])=>`<div class="fitrow"><span>${k}</span><div class="fbar"><i data-w="${v}"></i></div><b>${v}</b></div>`).join('');
-  const spotChips=t.spots.map(id=>{const s=spotById(id);return s?`<span class="topic-chip" onclick="closeModal();setTimeout(()=>openSpot('${id}'),200)">📍 ${s.n}</span>`:''}).join('');
-  const postRows=posts.map(p=>`<div class="mini-post" onclick="openPost('${p.id}')"><img src="${IMG(P[p.imgs[0]])}"><div style="flex:1;min-width:0"><h5>${PLAT[p.plat||'go'].i} ${PLAT[p.plat||'go'].n} · ${p.u}</h5><p>${p.txt}</p></div><span class="more-link">查看 →</span></div>`).join('')||'<p class="fd-note">该话题暂无帖子，欢迎打卡补充～</p>';
-  openModal(`<div class="dbody">
-    <div class="topic-head"><div><div class="kick">TOPIC COMMUNITY · 话题社区</div><h3 style="font-size:18px;font-weight:900"># ${t.name}</h3><p style="color:var(--muted);font-size:12.5px;margin-top:4px">${t.desc}</p></div>
-    <div class="hn big" style="text-align:right;flex:none"><b style="font-size:26px;font-weight:900;color:var(--gold)">${t.heat}</b><span class="up" style="display:block;font-size:10.5px;color:var(--ok)">▲ 涨幅 ${t.up}%</span></div></div>
-    <h4 class="fd-sec">📊 人群适配度分析（适合哪种旅行方式）</h4>
-    <div class="fitwrap">${fitRows}</div>
-    <h4 class="fd-sec">🗺 话题目的地索引</h4><div class="chips">${spotChips}</div>
-    <h4 class="fd-sec">💬 话题社区 · 精选帖子</h4>${postRows}
-    <p class="src-note">📊 声明：热度指数与人群适配度由 AI 爬虫对全网社交平台（抖音 / 小红书 / 快手 / Instagram / YouTube 等）及本站真实打卡数据抓取、清洗后加权整理生成，仅供参考，不构成出行承诺。</p></div>`);
-  setTimeout(()=>$$('#modalBox .fbar i').forEach(el=>el.style.width=el.dataset.w+'%'),80);
+  if(!tid)return;
+  WGO.go('topic.html',{id:tid});
 }
 /* ---- 帖子详情 ---- */
 function openPost(pid){
   const p=(JSON.parse(localStorage.getItem('fmw_posts')||'[]').find(x=>x.id===pid))||POSTS.find(x=>x.id===pid);if(!p)return;
-  const pl=PLAT[p.plat||'go'];
+  const pl=PLAT[p.plat||'go']||PLAT.go;
   const chips=(p.topics||[]).map(t=>topicById(t)?`<span class="topic-chip" onclick="event.stopPropagation();openTopic('${t}')"># ${topicById(t).name}</span>`:'').join('');
-  const gal=p.imgs.map(k=>`<img src="${IMG(P[k])}" onclick="openImgLightbox('${k}')">`).join('');
-  const videoBtn=p.type==='video'?`<button class="btn gold" style="width:100%;margin:10px 0" onclick="openVideo({t:'${(p.txt||'').slice(0,16)}…',loc:'${p.loc}',imgs:['${p.imgs.join("','")}'],bgm:'${p.bgm||'fresh'}'})">▶ 播放打卡视频（${BGMI(p.bgm)}）</button>`:'';
-  openModal(`<div class="fd-img big"><img src="${IMG(P[p.imgs[0]])}">${p.type==='video'?'<span class="vbadge"><i>▶</i></span>':''}<span class="plat pb-${p.plat||'go'}" style="position:absolute;top:10px;right:10px">${pl.i} ${pl.n}</span></div>
+  const gal=(p.imgs||['erhai']).map(k=>`<img src="${IMG(P[k])}" onclick="openImgLightbox('${k}')">`).join('');
+  const videoBtn=p.type==='video'?`<button class="btn gold" style="width:100%;margin:10px 0" onclick="openVideo({t:'${(p.txt||'').slice(0,16)}…',loc:'${p.loc}',imgs:['${(p.imgs||['erhai']).join("','")}'],bgm:'${p.bgm||'fresh'}'})">▶ 播放打卡视频（${BGMI(p.bgm)}）</button>`:'';
+  openModal(`<div class="fd-img big"><img src="${IMG(P[(p.imgs||['erhai'])[0]])}">${p.type==='video'?'<span class="vbadge"><i>▶</i></span>':''}<span class="plat pb-${p.plat||'go'}" style="position:absolute;top:10px;right:10px">${pl.i} ${pl.n}</span></div>
     <div class="dbody">
     <div class="pu"><span class="av" style="background:${p.c}">${p.u[0]}</span><div><h5>${p.u}</h5><p>${p.time} · 📍 ${p.loc}</p></div></div>
     <p class="fd-body">${p.txt}</p>
@@ -149,7 +188,8 @@ function openImgLightbox(k){
     ${s?`<p class="fd-body">${s.desc}</p><div class="dbtns"><button class="btn gold" onclick="closeModal();setTimeout(()=>openSpot('${s.id}'),200)">📍 查看景点攻略</button></div>`:''}</div>`,true);
 }
 document.addEventListener('DOMContentLoaded',()=>{renderFeed();renderFeatured();renderTopics();
-  /* 深度链接 */
-  const pid=WGO.q('post');if(pid)setTimeout(()=>openPost(pid),300);
+  /* 深度链接：帖子 id 是数字说明在 MySQL 里，走后端详情；否则是静态演示帖 */
+  const pid=WGO.q('post');
+  if(pid)setTimeout(()=>{ /^\d+$/.test(pid)?openDbPost(pid):openPost(pid) },300);
   const tid=WGO.q('topic');if(tid)setTimeout(()=>openTopic(tid),300);
 });

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>发布作品 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+<link rel="stylesheet" href="css/community.css">
+</head>
+<body>
+
+<div id="pubApp" v-cloak>
+  <section class="tw-hero"><div class="wrap">
+    <div class="tw-crumb"><a href="community.html">旅行社区</a> / <a href="topic.html">词条广场</a> / 发布作品</div>
+    <div class="kick">CREATE · 发布作品</div>
+    <h1>把你的旅行，发成<em>别人的攻略</em></h1>
+    <p class="sub">支持图文 / Plog / 视频三种形式，可挂最多 3 个词条、配上 BGM 与定位。发布后立即写入 MySQL，出现在对应词条页与社区动态流中。</p>
+  </div></section>
+
+  <div class="tw-main">
+    <div class="tw-compose-wrap">
+
+      <!-- ============ 左侧：发布器 ============ -->
+      <div class="tw-panel">
+        <div class="tw-seg">
+          <button :class="{on:type==='img'}" @click="type='img'">🖼 图文</button>
+          <button :class="{on:type==='plog'}" @click="type='plog'">📷 Plog</button>
+          <button :class="{on:type==='video'}" @click="type='video'">🎬 视频</button>
+        </div>
+
+        <div class="tw-field">
+          <div class="tw-label">封面 <span class="hint">从场景库选一张，或粘贴图片地址</span></div>
+          <div class="tw-cover-pick">
+            <div class="tw-cover-prev">
+              <img v-if="preview" :src="preview" referrerpolicy="no-referrer" alt="封面预览">
+              <span v-else>封面预览</span>
+            </div>
+            <div style="flex:1;min-width:220px">
+              <input class="tw-input" v-model="cover" placeholder="https://… 图片地址（可留空，用所选场景图）">
+              <div class="tw-scenes" style="margin-top:10px">
+                <div class="tw-scene" v-for="s in scenes" :key="s.k" :class="{on:spotId===s.k}" @click="pickScene(s)">
+                  <img :src="s.img" loading="lazy" :alt="s.name"><span>{{s.name}}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tw-field">
+          <div class="tw-label">标题 <span class="hint">不填会自动截取正文前 24 字</span></div>
+          <input class="tw-input" v-model="title" maxlength="120" placeholder="例：洱海日出｜把风的声音都录进去了">
+        </div>
+
+        <div class="tw-field">
+          <div class="tw-label">正文 <span class="tw-count">{{content.length}} / 2000</span></div>
+          <textarea class="tw-textarea" v-model="content" maxlength="2000"
+            placeholder="路线、花费、踩坑提示、当时的心情… 真实的细节最打动人"></textarea>
+        </div>
+
+        <div class="tw-field" v-if="type==='video'">
+          <div class="tw-label">视频地址 <span class="hint">支持 B 站 / YouTube 链接或 .mp4 直链</span></div>
+          <input class="tw-input" v-model="videoUrl" placeholder="https://www.bilibili.com/video/BV…">
+          <div class="tw-video-prev" v-if="bvid">
+            <iframe :src="'//player.bilibili.com/player.html?bvid='+bvid+'&page=1&autoplay=0'" scrolling="no" frameborder="0" allowfullscreen></iframe>
+          </div>
+          <div class="tw-video-prev" v-else-if="/\.(mp4|webm)(\?|$)/i.test(videoUrl)">
+            <video :src="videoUrl" controls playsinline></video>
+          </div>
+        </div>
+
+        <div class="tw-field">
+          <div class="tw-label">定位 <span class="hint">选一个景点会自动带出城市</span></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <select class="tw-input" style="flex:1;min-width:200px" v-model="spotId" @change="onSpot">
+              <option value="">不关联景点</option>
+              <option v-for="s in spots" :key="s.id" :value="s.id">{{s.n}} · {{s.city}}</option>
+            </select>
+            <input class="tw-input" style="flex:1;min-width:180px" v-model="location" placeholder="定位文案，如 大理 · 洱海生态廊道">
+          </div>
+        </div>
+
+        <div class="tw-field">
+          <div class="tw-label">词条 <span class="hint">最多选 3 个，发布后可在词条页被检索到</span></div>
+          <div class="tw-topic-pool">
+            <button class="tw-pick" v-for="t in topicPool" :key="t.code"
+                    :class="{on:picked.includes(t.code)}" @click="toggleTopic(t.code)"># {{t.name}}</button>
+          </div>
+        </div>
+
+        <div class="tw-field">
+          <div class="tw-label">BGM <span class="hint">按情绪 / 场景搜索配对，可试听</span></div>
+          <div class="tw-bgm-search">
+            <input class="tw-input" v-model="bgmKw" @input="searchBgm" placeholder="试试搜「治愈」「公路」「夜晚」">
+            <button class="tw-btn ghost" @click="bgmKw='';searchBgm()">重置</button>
+          </div>
+          <div class="tw-bgm-results">
+            <div class="tw-bgm-row" v-for="b in bgmList" :key="b.code" :class="{on:bgm===b.code}" @click="bgm=b.code">
+              <span class="em">{{b.emoji}}</span>
+              <div><div class="nm">{{b.name}}</div><div class="mo">{{b.mood}} · {{b.bpm}} BPM · {{b.duration}}</div></div>
+              <span class="go" @click.stop="play(b.code)">{{bgm===b.code?'已选':'♪ 试听'}}</span>
+            </div>
+            <div class="tw-bgm-empty" v-if="!bgmList.length">没有匹配的曲目，换个关键词试试</div>
+          </div>
+        </div>
+
+        <div class="tw-submit">
+          <span class="tip">发布即写入 MySQL；请勿上传侵权素材。爬虫抓取的 Vlog 会保留原平台链接，站内作品需自己对内容负责。</span>
+          <button class="tw-btn ghost" @click="goCommunity">取消</button>
+          <button class="tw-btn gold" :disabled="publishing" @click="submit">{{publishing?'发布中…':'发 布 作 品'}}</button>
+        </div>
+      </div>
+
+      <!-- ============ 右侧：提示 + 词条 ============ -->
+      <aside>
+        <div class="tw-side-card">
+          <h4>👤 当前身份</h4>
+          <p style="font-size:12px;color:var(--muted);line-height:1.8" v-if="me">
+            已登录：<b style="color:var(--gold)">{{me.nick}}</b><br>发布的作品会归到这个昵称下。
+          </p>
+          <p style="font-size:12px;color:var(--muted);line-height:1.8" v-else>
+            还没登录。发布 / 评论 / 点赞都需要登录，<a href="javascript:openAuth('login')" style="color:var(--gold)">点这里登录</a>。
+          </p>
+        </div>
+        <div class="tw-side-card">
+          <h4>📌 发布小贴士</h4>
+          <ol>
+            <li>标题带具体地名，搜索命中率更高</li>
+            <li>正文写清交通、花费与避坑点</li>
+            <li>选 2~3 个词条，内容会被更多同好看到</li>
+            <li>视频优先用 B 站链接，站内可直接播放</li>
+          </ol>
+        </div>
+        <div class="tw-side-card">
+          <h4>🏷 热门词条</h4>
+          <div class="tw-topic-pool">
+            <button class="tw-pick" v-for="t in hotTopics" :key="'h'+t.code" @click="toggleTopic(t.code)"># {{t.name}}</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js?v=1108"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1113"></script>
+<script src="js/core.js?v=1113"></script>
+<script src="js/postdetail.js?v=1108"></script>
+<script src="js/publish.js?v=1108"></script>
+</body>
+</html>

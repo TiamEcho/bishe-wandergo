@@ -76,6 +76,86 @@
         </el-table>
       </el-tab-pane>
 
+      <!-- 爬虫实时数据 -->
+      <el-tab-pane label="🕷 爬虫实时数据" name="crawl">
+        <div class="adm-stats">
+          <div class="stat"><span class="ic">🕷</span><div><b>{{crawl.crawled}}</b><p>爬虫入库条数</p></div></div>
+          <div class="stat"><span class="ic">🖐</span><div><b>{{crawl.manual}}</b><p>手工校准条数</p></div></div>
+          <div class="stat"><span class="ic">🕒</span><div><b class="sm">{{crawl.lastCrawl || '—'}}</b><p>最近抓取时间</p></div></div>
+        </div>
+        <div class="bar">
+          <span class="bar-tip">抓取条数</span>
+          <el-input-number v-model="crawlLimit" :min="1" :max="60" />
+          <el-button type="primary" :loading="crawling" @click="runCrawl">🔄 重新爬取</el-button>
+          <span class="bar-tip">真实执行 Python 爬虫，5 条约 20~180 秒（受百科反爬影响），请勿关闭页面</span>
+        </div>
+        <div class="bar">
+          <span class="bar-tip">共 {{crawlList.length}} 条 · 来源链接可点开原词条核对数据真伪</span>
+        </div>
+        <el-table :data="crawlList" height="420" stripe class="adm-table" v-loading="crawling"
+                  element-loading-text="爬虫执行中，请勿关闭页面…" empty-text="暂无爬虫数据">
+          <el-table-column prop="name" label="景点名" min-width="160" />
+          <el-table-column prop="city" label="城市" width="90" />
+          <el-table-column prop="region" label="区域" width="80">
+            <template #default="s"><el-tag size="small" :type="s.row.region==='cn'?'danger':'info'">{{s.row.region==='cn'?'国内':'国外'}}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="lng" label="经度" width="95" />
+          <el-table-column prop="lat" label="纬度" width="95" />
+          <el-table-column prop="source" label="来源" min-width="170" />
+          <el-table-column label="来源链接" min-width="150">
+            <template #default="s">
+              <el-link v-if="s.row.sourceUrl" :href="s.row.sourceUrl" target="_blank" type="primary" :underline="false">百科词条 ↗</el-link>
+              <span v-else class="bar-tip">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="抓取时间" width="170">
+            <template #default="s">
+              <span v-if="s.row.crawlTime">{{s.row.crawlTime}}</span>
+              <span v-else class="bar-tip">—</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 社区数据（B 站公开接口真实抓取） -->
+      <el-tab-pane label="💬 社区数据" name="community">
+        <div class="adm-stats">
+          <div class="stat"><span class="ic">📝</span><div><b>{{community.posts}}</b><p>社区帖子总数</p></div></div>
+          <div class="stat"><span class="ic">👤</span><div><b>{{community.userPosts}}</b><p>站内用户发布</p></div></div>
+          <div class="stat"><span class="ic">📺</span><div><b>{{community.crawlPosts}}</b><p>B 站爬虫 Vlog</p></div></div>
+          <div class="stat"><span class="ic">💬</span><div><b>{{community.crawlComments}}</b><p>爬虫抓取评论</p></div></div>
+          <div class="stat"><span class="ic">🏷</span><div><b>{{community.topics}}</b><p>词条数</p></div></div>
+        </div>
+        <div class="bar">
+          <span class="bar-tip">抓取条数</span>
+          <el-input-number v-model="communityLimit" :min="1" :max="30" />
+          <el-button type="primary" :loading="communityCrawling" @click="runCommunityCrawl">📺 抓取 B 站旅行 Vlog</el-button>
+          <span class="bar-tip">真实调用 B 站公开搜索 + 评论接口，1 条约 3~8 秒；不下载视频、不抓私密数据</span>
+        </div>
+        <div class="bar"><span class="bar-tip">共 {{communityList.length}} 条 · 来源链接可点开原视频核对 · 爬虫最新内容时间：{{community.lastCrawl || '—'}}</span></div>
+        <el-table :data="communityList" height="420" stripe class="adm-table" v-loading="communityCrawling"
+                  element-loading-text="社区爬虫执行中，请勿关闭页面…" empty-text="暂无社区数据">
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="title" label="标题" min-width="240" />
+          <el-table-column prop="nick" label="作者" width="130" />
+          <el-table-column label="来源" width="100">
+            <template #default="s">
+              <el-tag size="small" :type="s.row.source==='bilibili'?'warning':'success'">{{s.row.source==='bilibili'?'B站爬虫':'站内'}}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="topics" label="词条" width="140" />
+          <el-table-column prop="likeCount" label="点赞" width="80" />
+          <el-table-column prop="commentCount" label="评论" width="75" />
+          <el-table-column label="原链接" width="95">
+            <template #default="s">
+              <el-link v-if="s.row.sourceUrl" :href="s.row.sourceUrl" target="_blank" type="primary" :underline="false">打开 ↗</el-link>
+              <span v-else class="bar-tip">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="内容时间" width="165" />
+        </el-table>
+      </el-tab-pane>
+
       <!-- 用户管理 -->
       <el-tab-pane label="👥 用户管理" name="user">
         <el-table :data="users" height="500" stripe class="adm-table" empty-text="暂无用户">
@@ -151,7 +231,7 @@
 <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/element-plus@2.8.8/dist/index.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1105"></script>
-<script src="js/admin.js?v=1105"></script>
+<script src="js/api.js?v=1113"></script>
+<script src="js/admin.js?v=1113"></script>
 </body>
 </html>

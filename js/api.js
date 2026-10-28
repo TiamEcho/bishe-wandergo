@@ -16,7 +16,10 @@ const WGOAPI=(()=>{
   const _isLocal=/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(_host)
     ||location.protocol==='file:';
   const _isGithubIO=/\.github\.io$/i.test(_host);
-  /* Render 后端：在 Render 部署后把这里换成你自己的 Service URL */
+  /* Render 后端（占位）：等 Render 部署成功后，把双引号里换成你拿到的真实 URL。
+   * 在 GitHub Pages 上也可以临时用 localStorage 覆盖：
+   *   localStorage.setItem('wgo_api','https://真实后端URL.onrender.com')
+   * 然后刷新页面。 */
   const RENDER_BACKEND='https://wandergo-backend.onrender.com';
   const _auto=_isLocal?'http://localhost:8080'
     :_isGithubIO?RENDER_BACKEND
@@ -67,6 +70,18 @@ const WGOAPI=(()=>{
     comments(spotId){return req('/api/comment/list?spotId='+encodeURIComponent(spotId))},
     addComment(spotId,content){return req('/api/comment/add',{method:'POST',body:{spotId,content}})},
     toggleLike(spotId){return req('/api/like/toggle',{method:'POST',body:{spotId}})},
+    /* ---------- 社区 2.0：词条 / 帖子 / 评论 / 点赞 / BGM / 推荐 ---------- */
+    topics(kw){return req('/api/topic/list?kw='+encodeURIComponent(kw||''))},
+    topicDetail(code,offset){return req('/api/topic/detail?code='+encodeURIComponent(code)+'&offset='+(offset||0))},
+    postList(topic,sort,offset,limit){return req('/api/post/list?topic='+encodeURIComponent(topic||'')
+      +'&sort='+encodeURIComponent(sort||'hot')+'&offset='+(offset||0)+'&limit='+(limit||30))},
+    postDetail(id,nick){return req('/api/post/detail?id='+encodeURIComponent(id)+'&nick='+encodeURIComponent(nick||''))},
+    /* 发布作品：登录态由 Authorization 头带上，后端优先取 token 里的用户名 */
+    postAdd(payload){return req('/api/post/add',{method:'POST',body:payload},8000)},
+    postComment(postId,content){return req('/api/post/comment/add',{method:'POST',body:{postId,content}},8000)},
+    postLike(postId){return req('/api/post/like/toggle',{method:'POST',body:{postId}},8000)},
+    bgmList(kw){return req('/api/bgm/list?kw='+encodeURIComponent(kw||''))},
+    postRecommend(nick,n){return req('/api/post/recommend?nick='+encodeURIComponent(nick||'')+'&n='+(n||6))},
     /* 管理端（需 admin JWT） */
     adminOverview(){return req('/api/admin/overview')},
     adminSpots(kw){return req('/api/admin/spot/list?kw='+encodeURIComponent(kw||''))},
@@ -75,6 +90,15 @@ const WGOAPI=(()=>{
     adminUsers(){return req('/api/admin/user/list')},
     adminUserStatus(id,status){return req('/api/admin/user/status',{method:'POST',body:{id,status}})},
     adminAudit(status){return req('/api/admin/audit/list?status='+status)},
-    adminAuditHandle(id,status){return req('/api/admin/audit/handle',{method:'POST',body:{id,status}})}
+    adminAuditHandle(id,status){return req('/api/admin/audit/handle',{method:'POST',body:{id,status}})},
+    /* 爬虫统计：管理端「🕷 爬虫实时数据」顶部三块统计卡 */
+    adminCrawlStats(){return req('/api/admin/crawl/stats')},
+    /* 真实执行 Python 爬虫并回写 MySQL：后端同步阻塞最长 420 秒，
+       全局默认 timeout 只有 1.8 秒，必须在这里单独放大到 480 秒，否则请求会被前端自己中断 */
+    adminCrawl(limit){return req('/api/admin/crawl?limit='+encodeURIComponent(limit||5),{method:'POST'},480000)},
+    /* 社区爬虫：B 站公开接口抓 Vlog 与评论，写库；同样需要放大超时 */
+    adminCommunityStats(){return req('/api/admin/community/stats')},
+    adminCommunityList(limit){return req('/api/admin/community/list?limit='+(limit||40))},
+    adminCommunityCrawl(limit){return req('/api/admin/community/crawl?limit='+encodeURIComponent(limit||10),{method:'POST'},420000)}
   };
 })();

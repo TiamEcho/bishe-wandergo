@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>词条社区 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+<link rel="stylesheet" href="css/community.css">
+</head>
+<body>
+
+<div id="topicApp" v-cloak>
+
+  <!-- ================= 头部 ================= -->
+  <section class="tw-hero"><div class="wrap">
+    <div class="tw-crumb">
+      <a href="community.html">旅行社区</a> /
+      <template v-if="code">{{topic.name || '词条'}}</template><template v-else>词条广场</template>
+    </div>
+    <template v-if="!code">
+      <div class="kick">TOPIC SQUARE</div>
+      <h1>发现<em>词条</em>，找到同频的旅行者</h1>
+      <p class="sub">每个词条都是一个内容入口：点开就能看到带该词条的全部帖子与 Vlog，可以评论、讨论、跟帖发布。词条数据与帖子上限来自 MySQL，Vlog 与平台评论由后端爬虫实时抓取。</p>
+      <div class="tw-hero-acts">
+        <button class="tw-btn gold" @click="goPublish()">＋ 发布作品</button>
+        <button class="tw-btn ghost" @click="goCommunity()">💬 返回社区动态</button>
+        <span style="font-size:11.5px;color:var(--muted)">{{topics.length}} 个词条 · {{totalPosts}} 条内容</span>
+      </div>
+    </template>
+  </div></section>
+
+  <div class="tw-main">
+
+    <!-- ================= 词条广场 ================= -->
+    <template v-if="!code">
+      <div class="tw-feed-head" style="margin-top:6px">
+        <h2>🏷 全部词条</h2>
+        <input class="tw-input" style="max-width:240px;height:38px;padding:0 14px" v-model="kw" placeholder="搜索词条 / 关键词">
+      </div>
+      <div class="tw-topic-grid" v-if="filteredTopics.length">
+        <article class="tw-topic-card" v-for="t in filteredTopics" :key="t.code" @click="openTopic(t.code)">
+          <span class="tw-topic-arrow">→</span>
+          <h3><span>#</span> {{t.name}}</h3>
+          <p>{{t.description || '暂无简介'}}</p>
+          <div class="tw-heatbar"><i :style="{width:(t.heat||0)+'%'}"></i></div>
+          <div class="tw-topic-meta">
+            <span class="hot">🔥 热度 {{t.heat||0}}</span>
+            <span class="cnt">{{t.postCount||0}} 条帖子</span>
+            <span class="cnt" v-if="t.source==='crawl'">🕷 爬虫词条</span>
+          </div>
+        </article>
+      </div>
+      <div class="tw-empty" v-else-if="!loading"><b>🏷</b>没有匹配的词条</div>
+    </template>
+
+    <!-- ================= 词条详情 ================= -->
+    <template v-else>
+      <div class="tw-topic-hero">
+        <div style="min-width:0">
+          <div class="kick" style="font-size:10.5px;letter-spacing:.24em;color:var(--gold);font-weight:800">TOPIC COMMUNITY</div>
+          <h1><span>#</span> {{topic.name}}</h1>
+          <p class="desc">{{topic.description}}</p>
+          <div class="tw-chips" style="margin-top:14px" v-if="spotChips.length">
+            <span class="tw-chip" style="cursor:pointer" v-for="s in spotChips" :key="s.id"
+                  @click="goMap(s.id)">📍 {{s.n}}</span>
+          </div>
+        </div>
+        <div class="tw-topic-stats">
+          <div><b>{{total}}</b><span>条内容</span></div>
+          <div><b>{{topic.heat||0}}</b><span>热度指数</span></div>
+          <div><b>{{spotChips.length}}</b><span>关联目的地</span></div>
+        </div>
+      </div>
+      <div class="tw-hero-acts">
+        <button class="tw-btn gold" @click="goPublish(code)">＋ 发布到 #{{topic.name}}</button>
+        <button class="tw-btn ghost" @click="goCommunity()">💬 社区动态</button>
+      </div>
+
+      <div class="tw-feed-head">
+        <h2>该词条下的内容</h2>
+        <div class="tw-sorts">
+          <button class="tw-sort" :class="{on:sort==='hot'}" @click="setSort('hot')">🔥 热门</button>
+          <button class="tw-sort" :class="{on:sort==='new'}" @click="setSort('new')">🕒 最新</button>
+        </div>
+      </div>
+
+      <div class="tw-post-grid" v-if="posts.length">
+        <post-card v-for="p in posts" :key="p.id" :p="p"
+                   @open="openPost" @like="like" @topic="openTopic"></post-card>
+      </div>
+      <div class="tw-empty" v-else-if="loading">
+        <div class="tw-post-grid"><div class="tw-skeleton" v-for="i in 3" :key="i"></div></div>
+      </div>
+      <div class="tw-empty" v-else><b>📭</b>该词条还没有内容，来发布第一条作品吧</div>
+    </template>
+
+    <!-- ================= 为你推荐 ================= -->
+    <div class="tw-feed-head" style="margin-top:34px">
+      <h2>✨ 为你推荐</h2>
+      <span class="cnt">协同过滤画像 + 内容热度混合排序，推荐理由直接可见</span>
+    </div>
+    <div class="tw-post-grid" v-if="recs.length">
+      <post-card v-for="r in recs" :key="'r'+r.id" :p="r"
+                 @open="openPost" @like="like" @topic="openTopic"></post-card>
+    </div>
+    <div class="tw-empty" v-else><b>🎯</b>{{loading?'正在计算推荐…':'登录后打卡 / 评分 / 点赞，推荐会更懂你'}}</div>
+  </div>
+</div>
+
+<script src="js/data.js?v=1108"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1113"></script>
+<script src="js/core.js?v=1113"></script>
+<script src="js/postdetail.js?v=1108"></script>
+<script src="js/topic.js?v=1108"></script>
+</body>
+</html>

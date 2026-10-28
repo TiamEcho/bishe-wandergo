@@ -330,7 +330,7 @@ function initSearch(){
 /* ================= 共享页面骨架（侧栏/主题工坊/搜索/页脚/弹窗） ================= */
 const NAVS=[
  ['index.html','🏠','旅行首页'],['novel.html','📖','跟着小说去旅行'],['prince.html','👑','跟着小王子去旅行'],
- ['map.html','🌍','环球地图'],['ai.html','🤖','AI 旅行规划'],['community.html','💬','旅行社区'],
+ ['map.html','🌍','环球地图'],['ai.html','🤖','AI 旅行规划'],['community.html','💬','旅行社区'],['topic.html','🏷','词条广场'],
  ['checkin.html','📍','我的打卡'],['memories.html','🎬','旅行纪念视频'],['workbench.html','🧳','旅行工作台'],
  ['recommend.html','🎯','猜你喜欢 · 推荐'],['wheel.html','🎡','旅行大转盘']
 ];
