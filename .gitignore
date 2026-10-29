@@ -1,0 +1,5 @@
+# 临时产物与工具目录，不进仓库
+.trae-html-share-packages/
+.screenshots/
+runs/
+site-deploy/

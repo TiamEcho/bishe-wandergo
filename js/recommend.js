@@ -148,8 +148,9 @@ async function refreshRec(){
   renderRec(null);
 }
 function apiChipRender(){
-  const up=WGOAPI.status();
   const chip=$('#apiChip');
+  if(!chip)return;/* 页面没有状态芯片时静默跳过，避免在导览页 iframe 里报错 */
+  const up=WGOAPI.status();
   chip.className='api-chip '+(up===true?'on':up===false?'off':'');
   chip.innerHTML=`<span class="dot"></span>${up===true?'Spring Boot 后端在线 · MySQL 已连接':up===false?'后端离线 · 本地演示模式（启动 D:\\wandergo-backend 可切换）':'正在探测后端…'}`;
 }

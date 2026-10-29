@@ -11,9 +11,7 @@
 
 <section class="sec page-hero"><div class="wrap">
   <div class="kick">CHECK IN & GET REWARDS</div>
-  <h2>📍 我的打卡 · 攻略 / 视频 / Plog 一键成册</h2>
-  <p>提交打卡 → 自动生成<b>纪念册页</b>（含路线动画、花费明细、BGM）→ 同步到社区成为别人的真实攻略 → 足迹在地图上<b style="color:var(--gold)">点亮成金色</b>。打卡次数攒徽章，冲进同城 / 全国榜还有<b>小奖励</b>。</p>
-</div></section>
+  <h2>📍 我的打卡 · 攻略 / 视频 / Plog 一键成册</h2></div></section>
 
 <section class="sec" style="padding-top:6px"><div class="wrap">
   <div class="map-card">
@@ -27,7 +25,9 @@
       <div class="ck-grid">
         <div class="ck-l">
           <div class="frow">
-            <div class="fcol"><label>📍 去了哪儿</label><select id="ckDest"></select></div>
+            <div class="fcol"><label>📍 去了哪儿 <span class="hint">全国省市 + 景点都能搜</span></label>
+              <input id="ckDestQ" class="ck-q" placeholder="🔍 搜索地名 / 景点，如 新疆、喀纳斯、常州">
+              <select id="ckDest"></select></div>
             <div class="fcol"><label>📅 哪一天</label><input id="ckDate" type="date" required></div>
           </div>
           <div class="fcol"><label>✍️ 旅程故事（纪念册会引用成金句）</label><textarea id="ckText" rows="3" placeholder="例：环海西路骑到才村码头时，日出正好落在洱海上…"></textarea></div>
@@ -35,7 +35,9 @@
           <div class="upzone" id="upZone">点击或拖拽上传 · 支持多图 + 视频（自动压缩）</div>
           <input type="file" id="ckFiles" multiple accept="image/*,video/*" hidden>
           <div class="up-previews" id="upPreviews"></div>
-          <div class="fcol"><label>🎵 纪念册 BGM</label>
+          <div class="fcol"><label>🎵 纪念册 BGM <span class="hint">抖音热榜 / 国风 / 治愈 都能搜</span></label>
+            <input id="ckBgmQ" class="ck-q" placeholder="🔍 搜索 BGM 风格，如 热榜、鼓点、国风">
+            <div class="bgm-chips" id="bgmChips"></div>
             <select id="ckBgm"><option value="none">不配乐</option></select></div>
           <div class="fcol"><label>😌 这次旅行的心情标签</label><div class="moods" id="moods">
             <button type="button" class="on">😌 治愈放松</button><button type="button">🥳 狂欢快乐</button><button type="button">🌧 崩溃又 recovery</button><button type="button">🏔 震撼到失语</button><button type="button">🍜 吃饱喝足</button>
@@ -66,12 +68,38 @@
   <div class="albums-grid" id="albumsGrid"></div>
 </div></section>
 
-<script src="js/data.js?v=1115"></script>
+<script src="js/data.js?v=1119"></script>
 <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1115"></script>
-<script src="js/core.js?v=1113"></script>
-<script src="js/checkin.js?v=1108"></script>
-<script>$('#ckBgm').innerHTML='<option value="none">不配乐</option>'+BGM_LIST.map(b=>`<option value="${b[0]}">${b[2]} ${b[1]}</option>`).join('');</script>
+<script src="js/api.js?v=1119"></script>
+<script src="js/core.js?v=1119"></script>
+<script src="js/checkin.js?v=1119"></script>
+<script>
+/* 目的地 / BGM 搜索：输入即时过滤下拉选项 */
+function ckFilterDest(){
+  const q=($('#ckDestQ').value||'').trim().toLowerCase();
+  const sel=$('#ckDest');
+  if(!q){sel.innerHTML=destOptionsHtml();return}
+  const hits=[];
+  (typeof SPOTS!=='undefined'?SPOTS:[]).forEach(s=>{
+    if((s.n+s.city).toLowerCase().includes(q))hits.push(`<option value="${s.id}">${s.n} · ${s.city}</option>`);
+  });
+  DEST_LIST.forEach(x=>{if((x[0]+x[1]).toLowerCase().includes(q))hits.push(`<option value="${x[0]}">${x[0]} · ${x[1]}</option>`)});
+  sel.innerHTML=hits.length?hits.join(''):'<option value="">没有匹配的地点，换个词试试</option>';
+  if(hits.length===1)sel.selectedIndex=0;
+}
+function ckFilterBgm(){
+  const q=($('#ckBgmQ').value||'').trim().toLowerCase();
+  const list=q?BGM_LIST.filter(b=>(b[1]+b[3]).toLowerCase().includes(q)):BGM_LIST;
+  $('#ckBgm').innerHTML='<option value="none">不配乐</option>'+(list.length?list.map(b=>`<option value="${b[0]}">${b[2]} ${b[1]}</option>`).join(''):'<option value="">没有匹配的 BGM</option>');
+  $('#bgmChips').innerHTML=(q?list:BGM_LIST.filter(b=>/热榜|抖音/.test(b[3]))).slice(0,8)
+    .map(b=>`<button type="button" class="bgm-chip" onclick="$('#ckBgm').value='${b[0]}';$$('.bgm-chip').forEach(x=>x.classList.remove('on'));this.classList.add('on')">${b[2]} ${b[1]}</button>`).join('');
+}
+$('#ckDest').innerHTML=destOptionsHtml();
+$('#ckDestQ').addEventListener('input',ckFilterDest);
+$('#ckBgmQ').addEventListener('input',ckFilterBgm);
+ckFilterBgm();
+</script>
 </body>
 </html>
+

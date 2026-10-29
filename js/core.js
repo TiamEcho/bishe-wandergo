@@ -22,7 +22,28 @@ const WGO={
   _fireResize(){WGO._rz.forEach(f=>{try{f()}catch(e){}})}
 };
 /* ================= 主题 ================= */
-function setTheme(t){document.documentElement.dataset.theme=t;localStorage.setItem('fmw_theme',t);$$('#themeDrop [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));toast('主题已切换 ✨');}
+function setTheme(t){
+  /* 切回预设主题时必须清掉自定义配色的行内变量，否则会一直覆盖预设 */
+  if(t!=='custom'){
+    const st=document.documentElement.style;
+    ['--gold','--gold-deep','--gold-grad','--line-gold','--glass','--hero-a','--hero-b','--stars-op',
+     '--bg','--bg-soft','--panel','--panel-2','--panel-3','--ink','--ink-2','--muted','--line',
+     '--accent-ink','--shadow','--ok','--err','--blue'].forEach(k=>st.removeProperty(k));
+    const dot=$('#fabDot');if(dot)dot.style.display='none';
+  }
+  document.documentElement.dataset.theme=t;localStorage.setItem('fmw_theme',t);
+  $$('#themeDrop [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  toast('主题已切换 ✨');
+}
+/* ---- 主题样式（皮肤）：与主题颜色独立，可自由组合 ---- */
+const SKINS={none:'默认',prince:'小王子',kitty:'Hello Kitty',anime:'动漫',guofeng:'中国风',minimal:'极简'};
+function setSkin(k,silent){
+  k=k||'none';
+  document.documentElement.dataset.skin=k;
+  localStorage.setItem('fmw_skin',k);
+  $$('#skinRow [data-s]').forEach(b=>b.classList.toggle('on',b.dataset.s===k));
+  if(!silent)toast('主题样式已切换 · '+(SKINS[k]||'默认'));
+}
 function initTheme(){
   $('#themeBtn').onclick=e=>{e.stopPropagation();$('#themeDrop').classList.toggle('show')};
   document.addEventListener('click',e=>{if(!e.target.closest('#themeFab'))$('#themeDrop').classList.remove('show')});
@@ -30,33 +51,57 @@ function initTheme(){
   const _st=localStorage.getItem('fmw_theme')||'night';
   document.documentElement.dataset.theme=_st;
   /* ---- 自定义配色引擎 ---- */
-  window.cusH=210;window.cusS=62;window.cusL=54;window.cusMode='mono';
+  window.cusH=210;window.cusS=62;window.cusL=54;window.cusMode='mono';window.cusBase='dark';
   const hsl=(h,s,l,a=1)=>`hsla(${((h%360)+360)%360},${Math.max(0,Math.min(100,s))}%,${Math.max(0,Math.min(100,l))}%,${a})`;
   function applyCustom(silent){
     const acH=cusMode==='comp'?cusH+180:cusMode==='ana'?cusH+26:cusH;
     const dpH=cusMode==='ana'?cusH-26:acH;
-    /* 可读性保底：--gold 在深色面板（L≈6-23%）上作文字/图标色，
-       所以无论用户怎么调，文字用的主色亮度钳制在 [52,80]，
-       渐变深处钳制在 [38,72]，保证任何颜色下文字都清晰可见 */
-    const safeL=Math.max(52,Math.min(80,cusL));
-    const deepL=Math.max(38,Math.min(72,cusL-16));
+    /* 深浅基底：跟随系统 / 手动深色 / 手动浅色。基底决定整套中性色，
+       主色亮度按基底反推，保证「文字色 / 面板色」永远有足够对比度 */
+    const isDark=(cusBase==='auto'?!(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches):cusBase==='dark');
+    /* 主色亮度：深色底上要亮（58-84），浅色底上要深（26-48），否则文字看不见 */
+    const safeL=isDark?Math.max(58,Math.min(84,cusL)):Math.max(26,Math.min(48,Math.round(cusL*.6)));
+    const deepL=isDark?Math.max(42,Math.min(74,safeL-16)):Math.max(20,Math.min(42,safeL-10));
     const deep=hsl(dpH,cusS,deepL);
     const r=document.documentElement.style;
     r.setProperty('--gold',hsl(acH,cusS,safeL));
     r.setProperty('--gold-deep',deep);
-    r.setProperty('--gold-grad',`linear-gradient(180deg,${hsl(acH,cusS,Math.min(82,safeL+10))},${deep})`);
-    r.setProperty('--line-gold',hsl(acH,70,60,.34));
-    r.setProperty('--glass',hsl(acH,55,60,.08));
-    r.setProperty('--hero-a',hsl(cusH,42,6));
-    r.setProperty('--hero-b',hsl(cusMode==='comp'?acH:((cusH+dpH)/2),50,21));
-    r.setProperty('--bg',hsl(cusH,32,6));
-    r.setProperty('--bg-soft',hsl(cusH,30,9));
-    r.setProperty('--panel',hsl(cusH,28,12));
-    r.setProperty('--panel-2',hsl(cusH,26,17));
-    r.setProperty('--panel-3',hsl(cusH,24,23));
+    r.setProperty('--gold-grad',`linear-gradient(180deg,${hsl(acH,cusS,isDark?Math.min(88,safeL+10):Math.max(22,safeL-8))},${deep})`);
+    r.setProperty('--line-gold',isDark?hsl(acH,70,60,.34):hsl(acH,55,40,.30));
+    r.setProperty('--glass',isDark?hsl(acH,55,60,.08):hsl(acH,45,40,.06));
+    r.setProperty('--hero-a',hsl(cusH,42,isDark?6:92));
+    r.setProperty('--hero-b',hsl(cusMode==='comp'?acH:((cusH+dpH)/2),isDark?50:38,isDark?21:78));
+    r.setProperty('--stars-op',isDark?1:0);
+    if(isDark){
+      r.setProperty('--bg',hsl(cusH,30,7));
+      r.setProperty('--bg-soft',hsl(cusH,28,10));
+      r.setProperty('--panel',hsl(cusH,26,12));
+      r.setProperty('--panel-2',hsl(cusH,24,17));
+      r.setProperty('--panel-3',hsl(cusH,22,23));
+      r.setProperty('--ink',hsl(cusH,18,96));
+      r.setProperty('--ink-2',hsl(cusH,16,82));
+      r.setProperty('--muted',hsl(cusH,12,64));
+      r.setProperty('--line','rgba(255,255,255,.10)');
+      r.setProperty('--accent-ink',hsl(cusH,30,10));
+      r.setProperty('--shadow','0 24px 60px -20px rgba(0,0,0,.6)');
+      r.setProperty('--ok','#6cc47a');r.setProperty('--err','#e5695e');r.setProperty('--blue','#7ea6d9');
+    }else{
+      r.setProperty('--bg',hsl(cusH,30,97));
+      r.setProperty('--bg-soft',hsl(cusH,28,99));
+      r.setProperty('--panel','#ffffff');
+      r.setProperty('--panel-2',hsl(cusH,34,95));
+      r.setProperty('--panel-3',hsl(cusH,32,90));
+      r.setProperty('--ink',hsl(cusH,32,12));
+      r.setProperty('--ink-2',hsl(cusH,22,30));
+      r.setProperty('--muted',hsl(cusH,14,46));
+      r.setProperty('--line',hsl(cusH,30,30,.14));
+      r.setProperty('--accent-ink','#ffffff');
+      r.setProperty('--shadow',`0 20px 50px -18px ${hsl(cusH,30,40,.22)}`);
+      r.setProperty('--ok','#2f8f52');r.setProperty('--err','#c9412f');r.setProperty('--blue','#3a6fb0');
+    }
     document.documentElement.dataset.theme='custom';
     localStorage.setItem('fmw_theme','custom');
-    localStorage.setItem('fmw_custom',JSON.stringify({h:cusH,s:cusS,l:cusL,m:cusMode}));
+    localStorage.setItem('fmw_custom',JSON.stringify({h:cusH,s:cusS,l:cusL,m:cusMode,b:cusBase}));
     $$('#themeDrop [data-t]').forEach(b=>b.classList.remove('on'));
     const dot=$('#fabDot');if(dot){dot.style.display='block';dot.style.background=hsl(acH,cusS,cusL)}
     const cp=$('#cpPrev');if(cp)cp.innerHTML=[hsl(acH,cusS,cusL),deep,hsl(cusH,26,17),hsl(acH+180,42,55)].map(c=>`<i style="background:${c}"></i>`).join('');
@@ -99,8 +144,17 @@ function initTheme(){
       $$('#cpModes .mini').forEach(x=>x.classList.toggle('on',x.dataset.m==='mono'));
       syncWheel();applyCustom();
     });
+    $$('#baseRow [data-b]').forEach(b=>b.onclick=()=>{
+      cusBase=b.dataset.b;
+      $$('#baseRow [data-b]').forEach(x=>x.classList.toggle('on',x===b));
+      applyCustom(true);toast(cusBase==='auto'?'跟随系统深浅 🌗':cusBase==='light'?'已切换浅色底 ☀️':'已切换深色底 🌙');
+    });
+    /* 主题样式（皮肤）独立于颜色，立即生效 */
+    $$('#skinRow [data-s]').forEach(b=>b.onclick=()=>setSkin(b.dataset.s));
+    setSkin(localStorage.getItem('fmw_skin')||'none',true);
   }
-  if(_st==='custom'){try{const c=JSON.parse(localStorage.getItem('fmw_custom')||'{}');if(c.h!=null){cusH=c.h;cusS=c.s;cusL=c.l;cusMode=c.m||'mono'}}catch(e){}syncWheel();applyCustom(true)}
+  if(_st==='custom'){try{const c=JSON.parse(localStorage.getItem('fmw_custom')||'{}');if(c.h!=null){cusH=c.h;cusS=c.s;cusL=c.l;cusMode=c.m||'mono';cusBase=c.b||'dark'}}catch(e){}syncWheel();
+    $$('#baseRow [data-b]').forEach(x=>x.classList.toggle('on',x.dataset.b===cusBase));applyCustom(true)}
 }
 /* ================= 侧栏 ================= */
 function initSidebar(){
@@ -286,7 +340,8 @@ function hl(text,q){const i=text.toLowerCase().indexOf(q.toLowerCase());return i
 function doSearch(raw){
   const q=(raw||'').trim().toLowerCase();
   const R=$('#srResults');
-  if(!q){R.innerHTML='<div class="sr-empty">输入关键词，或点上方快捷标签开始探索 ✈️<br><span>试试：「洱海」「巴黎」「vlog」「悲惨世界」「极光」</span></div>';return}
+  renderSugs(raw||'');
+  if(!q){R.innerHTML='<div class="sr-empty">输入关键词，或点上方快捷标签开始探索 ✈️<br><span>试试：「洱海」「巴黎」「新疆」「vlog」「极光」</span></div>';return}
   const groups=[];
   const posts=POSTS.filter(p=>((p.txt||'')+' '+(p.loc||'')+' '+(p.u||'')+' '+(PT_Q[p.type]||'图文')).toLowerCase().includes(q)).slice(0,6);
   if(posts.length)groups.push({icon:'💬',name:'社区动态 · 视频 / Vlog / Plog / 图文',items:posts.map(p=>({icon:POST_TYPE[p.type||'post'],t:hl((p.txt||p.loc||'').slice(0,34),q),sub:`${PLAT_LBL[p.plat||'go']} · ${p.u} · 📍${p.loc||'未知'}`,run:()=>WGO.go('community.html',{post:p.id})}))});
@@ -318,6 +373,23 @@ const NOVEL_LINKS=[
  {id:'ice',t:'会说话的星空与狐狸 ❄️',sub:'黄金圈 · 极光夜是星星的悄悄话',page:'prince.html'},
  {id:'paris',t:'飞行员的起点 ✈️',sub:'巴黎 · 圣埃克苏佩里起飞的地方',page:'prince.html'}
 ];
+/* 输入后出现的联想小词条：地点 / 词条 / 玩法；点一下填入，回车去独立搜索页 */
+function renderSugs(raw){
+  const box=$('#srSugs');if(!box)return;
+  const q=(raw||'').trim();
+  if(!q){box.innerHTML='';return}
+  const hits=[];
+  DEST_LIST.filter(d=>d[0].includes(q)||d[1].includes(q)).slice(0,4).forEach(d=>hits.push(d[0]));
+  TOPICS.filter(t=>t.name.includes(q)).slice(0,3).forEach(t=>hits.push('#'+t.name));
+  SPOTS.filter(s=>s.n.includes(q)||s.city.includes(q)).slice(0,3).forEach(s=>hits.push(s.n));
+  const uniq=[...new Set(hits)].slice(0,9);
+  box.innerHTML=uniq.map(k=>`<button class="sr-sug" data-k="${k.replace(/"/g,'')}">${k}</button>`).join('')
+    +'<button class="sr-sug sr-more" data-full="1">🔎 看完整搜索结果 ↵</button>';
+  box.querySelectorAll('.sr-sug').forEach(b=>b.onclick=()=>{
+    if(b.dataset.full){WGO.go('search.html',{kw:$('#searchInput').value.trim()||q});closeSearch();return}
+    $('#searchInput').value=b.dataset.k;doSearch(b.dataset.k);$('#searchInput').focus();
+  });
+}
 function openSearch(){$('#searchOv').classList.add('show');$('#searchInput').value='';doSearch('');setTimeout(()=>$('#searchInput').focus(),60)}
 function closeSearch(){$('#searchOv').classList.remove('show')}
 function initSearch(){
@@ -325,6 +397,9 @@ function initSearch(){
   $('#searchClose').onclick=closeSearch;
   $('#searchOv').onclick=e=>{if(e.target.id==='searchOv')closeSearch()};
   $('#searchInput').oninput=e=>doSearch(e.target.value);
+  $('#searchInput').onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();const kw=$('#searchInput').value.trim();closeSearch();WGO.go('search.html',{kw})}
+  };
   $$('#srQuick button').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.q;doSearch(b.dataset.q)});
   document.addEventListener('keydown',e=>{
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch()}
@@ -335,8 +410,8 @@ function initSearch(){
 /* ================= 共享页面骨架（侧栏/主题工坊/搜索/页脚/弹窗） ================= */
 const NAVS=[
  ['index.html','🏠','旅行首页'],['novel.html','📖','跟着小说去旅行'],['prince.html','👑','跟着小王子去旅行'],
- ['map.html','🌍','环球地图'],['ai.html','🤖','AI 旅行规划'],['community.html','💬','旅行社区'],['topic.html','🏷','词条广场'],
- ['checkin.html','📍','我的打卡'],['memories.html','🎬','旅行纪念视频'],['workbench.html','🧳','旅行工作台'],
+ ['map.html','🌍','环球地图'],['ai.html','🤖','AI 旅行规划'],['search.html','🔍','全站搜索'],['community.html','💬','旅行社区'],['topic.html','🏷','词条广场'],
+ ['checkin.html','📍','我的打卡'],['memories.html','🎬','旅行纪念视频'],['workbench.html','🧳','旅行工作台'],['guide.html','📘','模块导览'],
  ['recommend.html','🎯','猜你喜欢 · 推荐'],['wheel.html','🎡','旅行大转盘']
 ];
 const LOGO_SVG='<svg viewBox="0 0 24 24"><path d="M21.5 5.6c-.5-1-1.8-1.4-2.8-.9l-4.3 2.3-8.1-3.4c-.5-.2-1.1-.1-1.5.2l-.9.8c-.5.4-.4 1.2.2 1.5l6.5 3.3-3.7 2-2.9-.6c-.4-.1-.8 0-1.1.3l-.7.6c-.4.4-.3 1 .2 1.2l3.3 1.9 1.9 3.3c.3.5 1 .6 1.3.2l.6-.7c.3-.3.4-.7.3-1.1l-.6-2.9 3.7-2 3.3 6.5c.3.5 1.1.6 1.5.2l.8-.9c.3-.4.4-1 .2-1.5l-3.4-8.1 2.3-4.3c.5-.9.3-2.1-.6-2.6z" transform="scale(.9) translate(1.3,1.3)"/></svg>';
@@ -366,7 +441,7 @@ function initChrome(){
     <div class="theme-fab" id="themeFab">
       <div class="tf-panel" id="themeDrop">
         <h5>🎨 WANDERGO 主题工坊</h5>
-        <div class="tf-sec">预设主题</div>
+        <div class="tf-sec">主题颜色 · 预设</div>
         <div class="tf-presets">
           <button data-t="night" class="on"><i class="dot" style="background:#16294e"></i>星夜蓝</button>
           <button data-t="dawn"><i class="dot" style="background:#e9ba5e"></i>晨曦暖阳</button>
@@ -374,11 +449,17 @@ function initChrome(){
           <button data-t="sakura"><i class="dot" style="background:#f08cab"></i>樱粉列车</button>
           <button data-t="aurora"><i class="dot" style="background:#a8e2ff"></i>极光冰蓝</button>
         </div>
-        <div class="tf-sec">灵感色卡 · INS 风</div>
+        <div class="tf-sec">主题颜色 · 深浅基底</div>
+        <div class="base-row" id="baseRow">
+          <button data-b="dark" class="on">🌙 深色</button>
+          <button data-b="light">☀️ 浅色</button>
+          <button data-b="auto">🌗 跟随系统</button>
+        </div>
+        <div class="tf-sec">主题颜色 · 灵感色卡 · INS 风</div>
         <div class="pal-cards" id="palIns"></div>
-        <div class="tf-sec">灵感色卡 · 国风</div>
+        <div class="tf-sec">主题颜色 · 灵感色卡 · 国风</div>
         <div class="pal-cards" id="palGf"></div>
-        <div class="tf-sec">自定义色轮 · 点击或拖动取色</div>
+        <div class="tf-sec">主题颜色 · 自定义色轮（点外圈取色）</div>
         <div class="tf-wheelrow">
           <div class="hue-wheel" id="hueWheel"><i id="wheelKnob"></i></div>
           <div class="tf-wheelctl">
@@ -396,13 +477,23 @@ function initChrome(){
           <button class="btn gold" id="cusApply">应用配色</button>
           <button class="btn" id="aiPairBtn">🤖 AI 智能搭配</button>
         </div>
-        <p class="tf-note">自定义配色即时全站生效 · 随时可切回 5 套预设主题</p>
+        <div class="tf-sec">主题样式 · 可与任意颜色组合</div>
+        <div class="skin-row" id="skinRow">
+          <button data-s="none" class="on">🪶 默认</button>
+          <button data-s="prince">👑 小王子</button>
+          <button data-s="kitty">🎀 Hello Kitty</button>
+          <button data-s="anime">⚡ 动漫</button>
+          <button data-s="guofeng">🏮 中国风</button>
+          <button data-s="minimal">◻️ 极简</button>
+        </div>
+        <p class="tf-note">颜色与样式分开设置 · 任何配色都保证文字清晰可读</p>
       </div>
       <button class="fab-btn" id="themeBtn" title="主题工坊">🎨<i id="fabDot"></i></button>
     </div>
     <div class="search-ov" id="searchOv">
       <div class="search-box">
-        <div class="search-bar"><span>🔍</span><input id="searchInput" placeholder="搜视频 / Vlog / Plog / 书籍地点 / 景点 / 话题 / 文创店…"><button class="sr-esc" id="searchClose">ESC</button></div>
+        <div class="search-bar"><span>🔍</span><input id="searchInput" placeholder="搜视频 / Vlog / Plog / 地点 / 景点 / 词条…（回车看完整搜索结果）"><button class="sr-esc" id="searchClose">ESC</button></div>
+        <div class="sr-sugs" id="srSugs"></div>
         <div class="sr-quick" id="srQuick">
           <button data-q="视频">▶ 视频</button><button data-q="vlog">🎬 Vlog</button><button data-q="plog">📷 Plog</button><button data-q="书籍">📖 书籍地点</button><button data-q="极光">🌌 极光</button><button data-q="文创">🎨 文创店</button>
         </div>

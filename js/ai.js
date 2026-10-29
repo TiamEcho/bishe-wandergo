@@ -123,7 +123,7 @@ function genPlan(e){
     {m:'🚄 高铁/火车',t:far?'约 10h+':'约 2-5h',p:far?'¥800 起':'¥260 起',s:.75,note:'12306 提前购票'},
     {m:'🚗 自驾',t:'按路线',p:'油费+过路费',s:.7,note:'灵活自由，适合环线'}];
   return {
-    __gen:true,dest:name,days:days,from:'你的城市',budget:budget,budgetItems:budgetItems,
+    __gen:true,dest:name,days:days,from:'你的城市',prov:e[1]||'',budget:budget,budgetItems:budgetItems,
     spots:spots,routeDays:[spots.slice(0,1),spots.slice(1,2),spots.slice(2)].filter(a=>a.length),
     transport:transport,dist:rg==='ab'?0:far?2600:900,
     planB:{rain:'如遇降雨，改走'+name+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而通透出片。',rest:'逛累了找一家当地咖啡馆 / 茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就砍掉最远的一个点位，核心景区慢游半天也是完整的一天。'},
@@ -185,10 +185,20 @@ function runAI(q){
   $('#modGrid').classList.remove('show');$('#planHead').classList.remove('show');
   let p=0;$('#pipeBar').style.width='4%';
   const total=2600,seg=total/4;let si=0;
+  /* 等待提示：告诉用户还剩多久，避免以为卡住 */
+  const tip=$('#pipeTip')||document.getElementById('pipeTip');
+  let left=Math.round(total/1000);
+  const TIPS=['正在解析你的出行需求…','正在聚合全网真实攻略…','正在清洗数据、剔除广告…','正在模块化生成方案…'];
+  if(tip)tip.textContent='AI 正在思考：'+TIPS[0]+' · 约 '+left+' 秒';
+  const t2=setInterval(()=>{
+    left--;const idx=Math.min(3,Math.floor((total-left*1000)/seg));
+    if(tip){if(left>0)tip.textContent='AI 正在思考：'+TIPS[idx]+' · 约 '+left+' 秒';else tip.textContent='马上完成，正在排版模块…'}
+    if(left<=0)clearInterval(t2);
+  },1000);
   const t1=setInterval(()=>{
     if(si>0&&steps[si-1]){steps[si-1].classList.remove('doing');steps[si-1].classList.add('done')}
     if(si<4){steps[si].classList.add('doing');p=Math.min(97,(si+1)/4*96);$('#pipeBar').style.width=p+'%';si++}
-    else{clearInterval(t1);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(q))},420)}
+    else{clearInterval(t1);clearInterval(t2);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(q))},420)}
   },seg);
 }
 $('#aiGo').onclick=()=>runAI($('#aiInput').value);
@@ -261,12 +271,20 @@ function showPlan(plan){
     <h4><span class="mi">🎬</span>打卡视频推荐 · 带 BGM<span class="go">查看详情 →</span></h4>
     <div class="vcards">${plan.videos.map((v,i)=>`<div class="vcard" onclick="event.stopPropagation();openVideo({t:'${v.t}',loc:'${v.loc}',imgs:['${v.imgs.join("','")}'],bgm:'${v.bgm}'})"><img src="${IMG(P[v.imgs[0]])}" loading="lazy"><span class="play"><i>▶</i></span><span class="vtag">♪ BGM</span><div class="vfoot"><h6>${v.t}</h6><p>📍 ${v.loc}</p></div></div>`).join('')}</div>
   </div>
+  ${foodModHtml(plan)}
+  ${bgmModHtml(plan)}
+  ${crowdModHtml(plan)}
+  ${hotelModHtml(plan)}
   <div class="mod col-6 clickable" style="animation-delay:.55s" onclick="openMod('plog','${plan.dest}')">
     <h4><span class="mi">📷</span>Plog 推荐<span class="go">查看详情 →</span></h4>
     <div class="vcards">${plan.plogs.map(v=>`<div class="vcard" onclick="event.stopPropagation();openPlog('${v.t}','${plan.dest}','${v.img}','${encodeURIComponent(v.txt)}')"><img src="${IMG(P[v.img])}" loading="lazy"><div class="vfoot"><h6>${v.t}</h6><p>📍 ${plan.dest}</p></div></div>`).join('')}</div>
   </div>
   <div class="mod col-12" style="animation-delay:.6s;border-style:dashed"><h4><span class="mi">💡</span>AI 省钱贴士</h4><p style="font-size:12.5px;color:var(--ink-2)">${plan.tips}</p></div>`;
   grid.classList.add('show');
+  /* 侧边模块导航：可展开/收起，点击定位到对应模块 */
+  buildRail(plan);
+  /* 新模块：BGM 列表 + 人流饼图（等 DOM 就绪） */
+  setTimeout(()=>initPlanExtras(plan),40);
   /* 渲染路线小地图（百度风白底蓝线 + 住宿/美食点位 + 出行方式切换） */
   setTimeout(()=>{
     const el=$('#aiRouteMap');if(!el)return;
@@ -425,4 +443,172 @@ function drawCmpChart(plan){
       {name:'耗时(h)',type:'bar',data:plan.transport.map(t=>parseT(t.t)),itemStyle:{color:'#7ea6d9',borderRadius:[6,6,0,0]},label:{show:true,position:'top',color:'#7ea6d9',fontSize:10}},
       {name:'舒适度(百分制)',type:'bar',data:plan.transport.map(t=>Math.round(t.s*100)),itemStyle:{color:'#6cc47a',borderRadius:[6,6,0,0]},label:{show:true,position:'top',color:'#6cc47a',fontSize:10}}
     ]});
+}
+
+/* ================= 新增模块：美食 / BGM / 人流饼图 / 住宿对比 ================= */
+/* 地方代表性美食库（按省/城市，真实菜名与大致价位，供推荐与平台检索） */
+const FOOD_BY_REG={
+ '新疆':[['大盘鸡','皮带面拌进汤汁，两人份正好','¥68'],['烤包子','馕坑现打，羊肉洋葱馅','¥5/个'],['手抓饭','黄萝卜+羊腿，油亮喷香','¥28'],['酸奶粽子','蜂蜜酸奶浇凉粽，解暑','¥12']],
+ '西藏':[['藏面','碱面配牦牛肉汤，早餐首选','¥12'],['甜茶','一壶茶坐一下午','¥10'],['牦牛肉火锅','高原限定，暖身','¥120'],['糌粑','青稞炒面配酥油茶','¥15']],
+ '内蒙古':[['手把肉','清水煮羊肉蘸椒盐','¥88'],['咸奶茶+奶皮子','锅茶配炒米','¥30'],['烤羊排','草原炭火直烤','¥98'],['莜面窝窝','蘸羊肉汤','¥20']],
+ '云南':[['过桥米线','滚汤现烫，仪式感拉满','¥28'],['汽锅鸡','原汤蒸制，清甜','¥68'],['烤乳扇','奶香拉丝，街边小吃','¥10'],['菌子火锅','雨季限定，认准正规店','¥120']],
+ '四川':[['火锅','牛油锅底+毛肚鸭肠','¥90'],['钵钵鸡','冷串串，红油微辣','¥35'],['甜水面','甜辣粗面，口感特别','¥12'],['蛋烘糕','街头甜点，边走边吃','¥8']],
+ '重庆':[['小面','二两碱水面上麻辣浇头','¥12'],['火锅','九宫格老锅','¥95'],['酸辣粉','红薯粉配豌豆','¥10'],['烤脑花','夜市必点','¥18']],
+ '贵州':[['酸汤鱼','红酸汤+稻花鱼','¥88'],['丝娃娃','蘸水卷饼，清爽','¥20'],['肠旺面','肥肠血旺配脆哨','¥15'],['豆腐圆子','外脆内嫩','¥10']],
+ '广西':[['螺蛳粉','酸笋是灵魂','¥15'],['桂林米粉','卤水+锅烧','¥12'],['啤酒鱼','阳朔招牌','¥88'],['油茶','恭城打油茶','¥15']],
+ '广东':[['早茶','虾饺烧卖凤爪一盅两件','¥70'],['烧鹅','皮脆肉嫩配酸梅酱','¥68'],['潮汕牛肉火锅','现切八秒即熟','¥110'],['肠粉','早餐之王','¥12']],
+ '陕西':[['肉夹馍','腊汁肉+白吉馍','¥12'],['羊肉泡馍','自己掰馍才正宗','¥38'],['biangbiang面','宽面泼油','¥20'],['甑糕','糯米红枣，甜糯','¥8']],
+ '甘肃':[['兰州牛肉面','一清二白三红四绿','¥12'],['灰豆子','甜口小吃','¥8'],['驴肉黄面','敦煌特色','¥28'],['杏皮水','解腻冰饮','¥6']],
+ '青海':[['手抓羊肉','清水煮，蘸蒜泥','¥78'],['酿皮','厚切配辣油','¥10'],['尕面片','汤面片，暖胃','¥15'],['酸奶','老酸奶撒白糖','¥8']],
+ '湖南':[['臭豆腐','黑色外皮，外脆内嫩','¥10'],['口味虾','夜宵顶流','¥98'],['剁椒鱼头','蒸出来的鲜辣','¥88'],['米粉','码子随你加','¥15']],
+ '湖北':[['热干面','芝麻酱拌碱面','¥8'],['豆皮','糯米+蛋皮','¥10'],['排骨藕汤','湖北人的家常','¥38'],['小龙虾','油焖大虾','¥98']],
+ '福建':[['沙茶面','沙茶酱汤头','¥18'],['海蛎煎','蚵仔煎配甜辣酱','¥20'],['土笋冻','敢吃才是真吃货','¥15'],['佛跳墙','宴席硬菜','¥198']],
+ '浙江':[['片儿川','雪菜笋片肉片面','¥18'],['小笼包','皮薄汁多','¥20'],['西湖醋鱼','杭帮经典','¥78'],['葱包桧','街头小吃','¥8']],
+ '江苏':[['鸭血粉丝汤','南京人的深夜食堂','¥15'],['盐水鸭','咸鲜紧实','¥45'],['蟹粉小笼','秋季限定','¥48'],['大煮干丝','扬州早茶名品','¥28']],
+ '山东':[['煎饼卷大葱','山东人的浪漫','¥10'],['把子肉','济南快餐灵魂','¥18'],['海鲜大咖','青岛排档','¥128'],['甜沫','咸口早餐粥','¥6']],
+ '北京':[['烤鸭','片皮蘸糖，卷饼','¥168'],['炸酱面','手擀面配面码','¥25'],['卤煮','重口味爱好者的朝圣','¥30'],['豆汁焦圈','勇者挑战','¥12']],
+ '上海':[['生煎','底部焦脆，先咬一口','¥12'],['小笼包','南翔流派','¥25'],['葱油拌面','极简但上头','¥15'],['蟹壳黄','酥皮小点心','¥8']],
+ '东北':[['锅包肉','酸甜挂汁','¥45'],['杀猪菜','酸菜白肉血肠','¥58'],['烤冷面','街头顶流','¥10'],['铁锅炖','贴饼子炖大鹅','¥128']],
+ '海南':[['清补凉','椰奶+芋圆+西瓜','¥15'],['文昌鸡','白切蘸桔子汁','¥68'],['海鲜市场加工','买完找店做','¥120'],['椰子饭','椰香糯米','¥20']],
+ '国外':[['当地市场美食','先去本地市场逛一圈','¥60'],['招牌本地菜','认准门口排队的店','¥120'],['街边小吃','看人多的地方买','¥30'],['便利店限定','便宜又好吃','¥25']]
+};
+function foodRegion(plan){
+  const p=plan.prov||'',d=plan.dest||'';
+  const keys=Object.keys(FOOD_BY_REG);
+  if(keys.includes(p))return p;
+  for(const k of keys){if(k!=='国外'&&d.includes(k))return k}
+  if(p.includes('黑龙江')||p.includes('吉林')||p.includes('辽宁'))return '东北';
+  const map={'河北':'北京','天津':'北京','山西':'陕西','河南':'陕西','安徽':'江苏','江西':'湖南','台湾':'福建','香港':'广东','澳门':'广东','宁夏':'甘肃','上海':'上海','北京':'北京','重庆':'重庆'};
+  if(map[p])return map[p];
+  if(plan.__ab||/东京|京都|巴黎|伦敦|纽约|瑞士|土耳其|冰岛|埃及|摩洛哥|首尔|曼谷|新加坡|巴厘|马尔代夫/.test(d))return '国外';
+  return '四川';
+}
+function foodModHtml(plan){
+  const reg=foodRegion(plan),arr=FOOD_BY_REG[reg]||FOOD_BY_REG['四川'];
+  const dest=plan.dest;
+  const dp='https://www.dianping.com/search/keyword/0/0_'+encodeURIComponent(dest+'美食');
+  const mt='https://i.meituan.com/s/'+encodeURIComponent(dest+'美食');
+  return `<div class="mod col-12" style="animation-delay:.5s">
+    <h4><span class="mi">🍜</span>${dest} 必吃美食推荐 · ${reg}风味<span class="go">看评价 / 点外卖 →</span></h4>
+    <div class="food-grid">${arr.map(f=>`<div class="food-card"><div class="fh"><b>${f[0]}</b><span>${f[2]}</span></div><p>${f[1]}</p></div>`).join('')}</div>
+    <div class="food-links">
+      <a href="${dp}" target="_blank" rel="noopener">🏮 大众点评 · 看真实评分</a>
+      <a href="${mt}" target="_blank" rel="noopener">🛵 美团 · 到店 / 外卖</a>
+      <a href="https://www.ele.me" target="_blank" rel="noopener">🥡 饿了么 · 酒店点餐</a>
+      <a href="https://www.taobao.com" target="_blank" rel="noopener">🛒 淘宝闪购 · 零食补给</a>
+    </div>
+    <p class="mod-note">菜名与价位为当地代表性推荐，评分请点上方平台看实时数据；社区里搜「${dest} 美食」还能看到真实打卡。</p>
+  </div>`;
+}
+function bgmModHtml(plan){
+  return `<div class="mod col-6" style="animation-delay:.55s">
+    <h4><span class="mi">🎵</span>纪念册 BGM 自选<span class="go">搜风格 / 抖音热榜</span></h4>
+    <input id="planBgmQ" class="plan-q" placeholder="🔍 搜 BGM：热榜、鼓点、国风、治愈…">
+    <div class="bgm-list" id="planBgmList"></div>
+    <p class="mod-note">选中的 BGM 会用在你的打卡视频 / 纪念册里，发布时还能再换。</p>
+  </div>`;
+}
+function crowdModHtml(plan){
+  return `<div class="mod col-6" style="animation-delay:.6s">
+    <h4><span class="mi">👥</span>景点人流量分析 · 分时段饼图<span class="go" onclick="refreshCrowd()">🔄 刷新</span></h4>
+    <div id="crowdPie" class="pie-box"></div>
+    <div class="crowd-foot"><span id="crowdTip">正在估算客流…</span><i class="pulse"></i></div>
+  </div>`;
+}
+function hotelModHtml(plan){
+  const d=plan.dest;
+  const types=[
+    {k:'🏨 酒店',p:'¥380 / 晚',pros:['前台 24h，安全感高','隔音与床品稳定，睡得好','可寄存行李、叫车方便'],cons:['价格偏高，旺季翻倍','风格同质化，出片一般'],sc:[88,92,62,86,55]},
+    {k:'🛏 青旅',p:'¥95 / 床',pros:['便宜，适合背包独行','能拼车拼饭，认识同伴','位置多在老城核心'],cons:['多人间私密性差','隔音一般，作息互相影响'],sc:[93,70,96,48,60]},
+    {k:'🏡 民宿',p:'¥520 / 晚',pros:['设计感强，随手出片','有厨房 / 露台，适合长住','老板常给本地私藏线路'],cons:['服务不稳定，看房东','位置可能偏远，需自驾'],sc:[74,80,66,72,95]}
+  ];
+  const dims=['位置','卫生','性价比','安静度','出片'];
+  return `<div class="mod col-12" style="animation-delay:.65s">
+    <h4><span class="mi">🏨</span>${d} 住宿推荐分析 · 酒店 / 青旅 / 民宿<span class="go">优缺点一眼看清 →</span></h4>
+    <div class="hotel-grid">${types.map(t=>`
+      <div class="hotel-card">
+        <div class="hh"><b>${t.k}</b><span>${t.p}</span></div>
+        <div class="hbars">${dims.map((dm,i)=>`<div class="hb"><span>${dm}</span><i><b style="width:${t.sc[i]}%"></b></i><em>${t.sc[i]}</em></div>`).join('')}</div>
+        <div class="hpros">${t.pros.map(x=>`<div>✔ ${x}</div>`).join('')}</div>
+        <div class="hcons">${t.cons.map(x=>`<div>✘ ${x}</div>`).join('')}</div>
+        <a class="hlink" href="https://hotels.ctrip.com/hotels/list?city=0&keyword=${encodeURIComponent(d)}" target="_blank" rel="noopener">去携程比价 →</a>
+      </div>`).join('')}</div>
+    <p class="mod-note">评分维度为同类住宿的普遍画像（非单一商家），下单前请到平台上核对真实评论与近期差评。</p>
+  </div>`;
+}
+/* ================= 侧边模块导航 ================= */
+function buildRail(plan){
+  const rail=document.getElementById('modRail'),list=document.getElementById('railList');
+  const grid=document.getElementById('modGrid');
+  if(!rail||!list||!grid)return;
+  const mods=[...grid.querySelectorAll('.mod')];
+  list.innerHTML=mods.map((m,i)=>{
+    const t=m.querySelector('h4');
+    const icon=t&&t.querySelector('.mi')?t.querySelector('.mi').textContent:'🧩';
+    let name=t?t.textContent.replace(icon,'').replace(/查看详情.*|看评价.*|🔄 刷新/,'').trim():('模块 '+(i+1));
+    return `<button class="rail-item" data-i="${i}"><span>${icon}</span>${name.slice(0,9)}</button>`;
+  }).join('');
+  list.querySelectorAll('.rail-item').forEach(b=>b.onclick=()=>{
+    const m=mods[+b.dataset.i];if(!m)return;
+    m.scrollIntoView({behavior:'smooth',block:'center'});
+    m.classList.add('flash');setTimeout(()=>m.classList.remove('flash'),900);
+  });
+  rail.classList.add('show');
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  const tg=document.getElementById('railToggle');
+  if(tg)tg.onclick=()=>{
+    const rail=document.getElementById('modRail');
+    rail.classList.toggle('collapsed');
+    const saved=rail.classList.contains('collapsed')?'1':'0';
+    localStorage.setItem('fmw_rail_collapsed',saved);
+  };
+  if(localStorage.getItem('fmw_rail_collapsed')==='1')document.getElementById('modRail')?.classList.add('collapsed');
+});
+
+let __crowdTimer=null,__crowdInst=null;
+function crowdSegments(){
+  const base=[['08:00-11:00 上午',26],['11:00-14:00 午间',24],['14:00-17:00 下午',30],['17:00-20:00 傍晚',20]];
+  return base.map(x=>[x[0],Math.max(6,x[1]+Math.round((Math.random()-.5)*10))]);
+}
+function refreshCrowd(){
+  const el=document.getElementById('crowdPie');if(!el)return;
+  const segs=crowdSegments();
+  const tip=document.getElementById('crowdTip');
+  if(tip)tip.textContent='最近更新 '+new Date().toLocaleTimeString('zh-CN')+' · 每 15 秒刷新';
+  ensureECharts(ok=>{
+    if(!ok){el.innerHTML=segs.map(s=>`<div class="pie-fb"><span>${s[0]}</span><i><b style="width:${s[1]*2}%"></b></i><em>${s[1]}%</em></div>`).join('');return}
+    if(!__crowdInst||__crowdInst.getDom()!==el){__crowdInst=echarts.init(el)}
+    __crowdInst.setOption({backgroundColor:'transparent',
+      tooltip:{trigger:'item',backgroundColor:'rgba(15,23,42,.92)',borderColor:'rgba(231,199,109,.4)',textStyle:{color:'#fff',fontSize:12},formatter:'{b}<br/>占比 {d}%'},
+      color:['#e7c76d','#7ea6d9','#6cc47a','#e58fb1'],
+      series:[{type:'pie',radius:['46%','74%'],center:['50%','52%'],avoidLabelOverlap:true,
+        itemStyle:{borderColor:'rgba(10,14,24,.6)',borderWidth:2,borderRadius:6},
+        label:{color:'#cfd6e6',fontSize:11,formatter:'{b}\n{d}%'},
+        labelLine:{lineStyle:{color:'rgba(255,255,255,.3)'}},
+        data:segs.map(s=>({name:s[0],value:s[1]}))}]});
+  });
+}
+function initPlanExtras(plan){
+  /* BGM 列表 */
+  const box=document.getElementById('planBgmList');
+  const sel=localStorage.getItem('fmw_plan_bgm')||'douyin_hot';
+  const paint=q=>{
+    if(!box)return;
+    const list=(q?BGM_LIST.filter(b=>(b[1]+b[3]).toLowerCase().includes(q.toLowerCase())):BGM_LIST).slice(0,30);
+    box.innerHTML=list.map(b=>`<button type="button" class="bgm-item ${b[0]===(window.__planBgm||sel)?'on':''}" data-c="${b[0]}">${b[2]} ${b[1]}</button>`).join('');
+    box.querySelectorAll('.bgm-item').forEach(btn=>btn.onclick=()=>{
+      window.__planBgm=btn.dataset.c;localStorage.setItem('fmw_plan_bgm',btn.dataset.c);
+      box.querySelectorAll('.bgm-item').forEach(x=>x.classList.toggle('on',x===btn));
+      toast('已选用 BGM · '+BGM_NAME(btn.dataset.c)+' 🎵');
+    });
+  };
+  paint('');
+  const q=document.getElementById('planBgmQ');
+  if(q)q.oninput=()=>paint(q.value.trim());
+  /* 人流饼图 + 自动刷新 */
+  window.__planBgm=window.__planBgm||sel;
+  refreshCrowd();
+  if(__crowdTimer)clearInterval(__crowdTimer);
+  __crowdTimer=setInterval(()=>{if(document.getElementById('crowdPie'))refreshCrowd();else{clearInterval(__crowdTimer);__crowdTimer=null}},15000);
 }

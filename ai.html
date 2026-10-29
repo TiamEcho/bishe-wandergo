@@ -12,7 +12,6 @@
 <section class="sec page-hero"><div class="wrap">
   <div class="kick">AI TRAVEL PLANNER</div>
   <h2>AI 智能规划 · 模块化输出</h2>
-  <p>问题解析 → 爬虫抓取全网攻略 → 数据清洗分析 → 模块化生成：景点、<b>路线图</b>、出行方式（<b>可视化图表 + 平台比价跳转</b>）、价格规划、<b>行程备案</b>（雨天 / 累了）、<b>人群注意事项</b>、打卡视频与 Plog，每个模块都可点开详情。</p>
 </div></section>
 
 <section class="sec" style="padding-top:6px"><div class="wrap">
@@ -43,19 +42,24 @@
         <div class="step" data-s="3"><span class="ico">🧩</span>模块化方案生成</div>
       </div>
       <div class="pipe-bar"><i id="pipeBar"></i></div>
+      <div class="pipe-tip" id="pipeTip">AI 正在思考…</div>
     </div>
     <div class="plan-head" id="planHead"></div>
+    <aside class="mod-rail" id="modRail">
+      <button class="rail-toggle" id="railToggle" title="展开 / 收起模块导航">🧩<span>模块</span></button>
+      <div class="rail-list" id="railList"></div>
+    </aside>
     <div class="mod-grid" id="modGrid"></div>
   </div>
 </div></section>
 
-<script src="js/data.js?v=1115"></script>
-<script src="js/poi_route.js?v=1109"></script>
+<script src="js/data.js?v=1119"></script>
+<script src="js/poi_route.js?v=1119"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1115"></script>
-<script src="js/core.js?v=1113"></script>
-<script src="js/map.js?v=1109"></script>
-<script src="js/ai.js?v=1115"></script>
+<script src="js/api.js?v=1119"></script>
+<script src="js/core.js?v=1119"></script>
+<script src="js/map.js?v=1119"></script>
+<script src="js/ai.js?v=1119"></script>
 <script>
 /* 深度链接：ai.html?dest=大理 自动生成方案 */
 const _dest=WGO.q('dest');
@@ -63,3 +67,4 @@ if(_dest){$('#aiInput').value='我想去'+_dest+'玩，帮我做一份模块化�
 </script>
 </body>
 </html>
+

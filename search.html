@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>搜索 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css?v=1119">
+<link rel="stylesheet" href="css/pages.css">
+<link rel="stylesheet" href="css/community.css?v=1119">
+<link rel="stylesheet" href="css/search.css?v=1119">
+</head>
+<body>
+
+<section class="sr-hero"><div class="wrap">
+  <div class="tw-crumb"><a href="index.html">首页</a> / 搜索</div>
+  <div class="sr-bar">
+    <span class="ic">🔍</span>
+    <input id="srKw" placeholder="搜地点、视频、图文、词条：新疆 / 喀纳斯 / citywalk">
+    <button class="tw-btn gold" id="srGo">搜索</button>
+  </div>
+  <div class="sr-hots" id="srHots"></div>
+</div></section>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div class="sr-tabs" id="srTabs">
+    <button class="on" data-f="all">全部</button>
+    <button data-f="video">🎬 视频</button>
+    <button data-f="plog">📷 图文 / Plog</button>
+    <button data-f="guide">📝 攻略</button>
+    <button data-f="topics">🏷 词条</button>
+  </div>
+  <div class="sr-filters" id="srFilters">
+    <div class="sr-fitem"><label>平台</label><select id="fPlat">
+      <option value="">全部平台</option>
+      <option value="bilibili">📺 B站（真实爬虫）</option>
+      <option value="douyin">🎵 抖音</option>
+      <option value="xhs">📕 小红书</option>
+      <option value="kuaishou">⚡ 快手</option>
+      <option value="ins">📸 Instagram</option>
+      <option value="yt">▶️ YouTube</option>
+      <option value="go">🧭 站内发布</option>
+    </select></div>
+    <div class="sr-fitem"><label>地区</label><select id="fRg">
+      <option value="">国内 + 国外</option>
+      <option value="cn">🇨🇳 国内</option>
+      <option value="ab">🌍 国外</option>
+    </select></div>
+    <div class="sr-fitem"><label>时间</label><select id="fTime">
+      <option value="all">全部时间</option>
+      <option value="7">最近 7 天</option>
+      <option value="30">最近 30 天</option>
+      <option value="365">最近一年</option>
+    </select></div>
+    <div class="sr-fitem"><label>排序</label><select id="fSort">
+      <option value="new">🕒 最新发布</option>
+      <option value="hot">🔥 最热（赞 + 评论）</option>
+      <option value="like">👍 点赞最多</option>
+      <option value="cmt">💬 评论最多</option>
+    </select></div>
+    <button class="sr-reset" id="srReset">重置</button>
+    <span class="sr-count" id="srCount"></span>
+  </div>
+
+  <div class="sr-places" id="srPlaces"></div>
+  <div class="sr-topicrow" id="srTopicRow"></div>
+  <div class="sr-grid" id="srGrid"></div>
+  <div class="sr-more"><button class="tw-btn ghost" id="srLoadMore" style="display:none">加载更多</button></div>
+</div></section>
+
+<script src="js/data.js?v=1119"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1119"></script>
+<script src="js/core.js?v=1119"></script>
+<script>window.WGO_PAGE='search';</script>
+<script src="js/postdetail.js?v=1119"></script>
+<script src="js/search.js?v=1119"></script>
+</body>
+</html>
+

@@ -3,9 +3,17 @@
  * 打卡发布（攻略/视频合集/Plog）+ 纪念册 + 徽章奖励 + 排行榜
  * ========================================================= */
 let ckImgs=[],ckLock=false,ckType='post';
+/* 目的地解析：优先景点 id，其次城市地名（来自 DEST_LIST），返回统一结构的 spot 对象 */
+function ckResolveDest(v){
+  if(!v)return null;
+  const s=spotById(v);if(s)return s;
+  const d=DEST_LIST.find(x=>x[0]===v);if(!d)return null;
+  const ab=d[2]==='国外';
+  return {id:'d_'+d[0],n:d[0],city:d[0]+' · '+d[1],rg:ab?'ab':'cn'};
+}
 function initCk(){
   const sel=$('#ckDest');
-  sel.innerHTML='<optgroup label="🇨🇳 国内">'+SPOTS.filter(s=>s.rg==='cn').map(s=>`<option value="${s.id}">${s.n} · ${s.city}</option>`).join('')+'</optgroup><optgroup label="🌍 国外">'+SPOTS.filter(s=>s.rg==='ab').map(s=>`<option value="${s.id}">${s.n} · ${s.city}</option>`).join('')+'</optgroup>';
+  sel.innerHTML=destOptionsHtml();
   $('#ckDate').value=new Date().toISOString().slice(0,10);
   addCostRow();
   $('#addCost').onclick=addCostRow;
@@ -66,7 +74,7 @@ function submitCk(e){
   e.preventDefault();
   if(ckLock)return;ckLock=true;setTimeout(()=>ckLock=false,1500);
   if(!user){openAuth();toast('登录后即可打卡并同步纪念册 ✨');return}
-  const spot=spotById($('#ckDest').value);if(!spot)return toast('请选择目的地');
+  const spot=ckResolveDest($('#ckDest').value);if(!spot)return toast('请选择目的地');
   const text=$('#ckText').value.trim()||'这一站没有留下太多文字，但照片都记得。';
   const mood=$('#moods button.on')?$('#moods button.on').textContent:'😌 治愈放松';
   const bgm=$('#ckBgm').value;

@@ -11,9 +11,7 @@
 
 <section class="sec page-hero"><div class="wrap">
   <div class="kick">TRAVEL MEMORY FILMS</div>
-  <h2>🎬 旅行纪念视频 · 打卡视频精选</h2>
-  <p>每个打卡视频都带 AI 推荐 BGM（WebAudio 实时合成，无需音频文件）；点击卡片进入播放器，可随时切换 9 种配乐。</p>
-</div></section>
+  <h2>🎬 旅行纪念视频 · 打卡视频精选</h2></div></section>
 
 <section class="sec" style="padding-top:6px"><div class="wrap">
   <div class="mv-grid" id="mvGrid"></div>
@@ -22,10 +20,10 @@
   <div class="dbtns" style="margin-top:14px"><button class="btn gold" onclick="WGO.go('checkin.html')">📸 去打卡 · 生成新的纪念册</button></div>
 </div></section>
 
-<script src="js/data.js?v=1115"></script>
+<script src="js/data.js?v=1119"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1115"></script>
-<script src="js/core.js?v=1113"></script>
+<script src="js/api.js?v=1119"></script>
+<script src="js/core.js?v=1119"></script>
 <script>
 function renderMv(){
   const vids=POSTS.filter(p=>p.type==='video');
@@ -42,3 +40,4 @@ document.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
+

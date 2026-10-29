@@ -100,7 +100,6 @@
     <div class="sec-head">
       <div class="kick">FUNCTION MODULES</div>
       <h2>功能模块 · 每个方块都是独立页面</h2>
-      <p>点击任意模块进入对应页面；左侧导航图标与主题颜色全站通用，可随时收起侧栏。</p>
     </div>
     <div class="module-grid" id="moduleGrid"></div>
   </div>
@@ -108,28 +107,33 @@
 
 <footer><div class="wrap"><div class="fnote">基于 Vue + Spring Boot + 协同过滤的旅游打卡平台设计与实现 · 毕业设计演示</div></div></footer>
 
-<script src="js/data.js?v=1115"></script>
+<script src="js/data.js?v=1119"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1115"></script>
-<script src="js/core.js?v=1113"></script>
+<script src="js/api.js?v=1119"></script>
+<script src="js/core.js?v=1119"></script>
 <script>
 const MODULES=[
  ['map.html','🌍','环球地图 · 3D 实景','五层 3D 地图 + 白色省份名 + 滚轮缩放 + 点击飞行；打卡过的地方点亮金色图标，可查看详情。',''],
- ['ai.html','🤖','AI 旅行规划','模块化输出：景点 / 交通比价 / 预算 / 视频与 Plog；含雨天备案、休息点与老人小孩注意事项。',''],
- ['recommend.html','🎯','猜你喜欢 · 协同过滤','基于评分矩阵的 UserCF + ItemCF 推荐，热门兜底冷启动；4K 卡片标注灵感来源平台。','NEW'],
- ['checkin.html','📍','我的打卡 · 奖励','发布打卡攻略 / 视频合集 / Plog；自动生成纪念册，打卡攒徽章，同城 / 全国排行赢小奖励。',''],
- ['community.html','💬','旅行社区','多平台真实攻略聚合（抖音 / 小红书 / 快手 / Instagram / YouTube），话题热度榜 + 人群适配图表。',''],
- ['memories.html','🎬','旅行纪念视频','打卡视频精选播放器，9 种 WebAudio 合成 BGM 任你配，纪念册随时回看。',''],
- ['wheel.html','🎡','旅行大转盘','不知道去哪？让转盘替你决定：国内 / 国外两组候选，转出目的地一键跳转 AI 规划。','NEW'],
- ['novel.html','📖','跟着小说去旅行','每一部小说都藏着一座城：悲惨世界·巴黎、古都·京都、风之影·巴塞罗那、盖茨比·纽约。',''],
- ['prince.html','👑','跟着小王子去旅行','沿 B612 航线：伊亚 44 次落日、乌布玫瑰花园、冰岛极光夜与飞行员的起点巴黎。',''],
- ['workbench.html','🧳','旅行工作台','手账工坊 / 协同计划（机酒识别·记账分摊·投票）/ 小众文创素材库。',''],
- ['me.html','🧭','个人中心','我的足迹统计、打卡记录、评分管理、徽章墙与后端同步状态。','']
+ ['ai.html','🤖','AI 旅行规划','模块化输出：景点 / 交通比价 / 预算 / 视频与 Plog；含雨天备案、休息点与老人小孩注意事项。','',['路线图','交通比价','预算','美食','人流饼图','住宿对比','BGM 自选']],
+ ['recommend.html','🎯','猜你喜欢 · 协同过滤','基于评分矩阵的 UserCF + ItemCF 推荐，热门兜底冷启动；4K 卡片标注灵感来源平台。','NEW',['UserCF','ItemCF','热门兜底','来源标注']],
+ ['checkin.html','📍','我的打卡 · 奖励','发布打卡攻略 / 视频合集 / Plog；自动生成纪念册，打卡攒徽章，同城 / 全国排行赢小奖励。','',['攻略成册','视频合集','Plog','纪念册','徽章榜']],
+ ['community.html','💬','旅行社区','多平台真实攻略聚合（B站 / 抖音 / 小红书 / 快手 / Instagram / YouTube），帖子挂词条、可评论。','',['搜索','最新/最热','词条','评论','想去收藏']],
+ ['search.html','🔍','全站搜索','一个关键词搜遍视频 / 图文 / 攻略 / 词条；平台、地区、时间、排序多维筛选。','NEW',['多维筛选','平台筛选','时间筛选','词条联动']],
+ ['topic.html','🏷','词条广场','每个词条都是一条旅行线索：点进去全是带该词条的帖子，可发布评论与讨论。','NEW',['词条卡片','热度','帖子流','讨论']],
+ ['memories.html','🎬','旅行纪念视频','打卡视频精选播放器，30 种 WebAudio 合成 BGM 任你配，纪念册随时回看。','',['视频播放器','BGM 曲库','纪念册']],
+ ['wheel.html','🎡','旅行大转盘','不知道去哪？让转盘替你决定：国内 / 国外两组候选，转出目的地一键跳转 AI 规划。','NEW',['国内/国外','随机转盘','一键规划']],
+ ['novel.html','📖','跟着小说去旅行','每一部小说都藏着一座城：悲惨世界·巴黎、古都·京都、风之影·巴塞罗那、盖茨比·纽约。','',['文学地图','名场面','路线']],
+ ['prince.html','👑','跟着小王子去旅行','沿 B612 航线：伊亚 44 次落日、乌布玫瑰花园、冰岛极光夜与飞行员的起点巴黎。','',['B612 航线','落日','极光']],
+ ['workbench.html','🧳','旅行工作台','手账工坊 / 协同计划（机酒识别·记账分摊·投票）/ 小众文创素材库。','',['手账','记账分摊','文创库']],
+ ['me.html','🧭','个人中心','我的足迹统计、打卡记录、评分管理、徽章墙与后端同步状态。','',['足迹统计','评分管理','同步状态']]
 ];
 document.getElementById('moduleGrid').innerHTML=MODULES.map((m,i)=>`
  <a class="mod-card ${m[4]?'new':''}" href="${m[0]}" style="animation-delay:${i*.06}s">
-   <span class="mi2">${m[1]}</span><h4>${m[2]}</h4><p>${m[3]}</p><span class="go2">进入模块 →</span>
+   <span class="mi2">${m[1]}</span><h4>${m[2]}</h4><p>${m[3]}</p>
+   <div class="mod-feats">${(m[5]||[]).map(f=>`<span>${f}</span>`).join('')}</div>
+   <span class="go2">进入模块 →</span>
  </a>`).join('');
 </script>
 </body>
 </html>
+

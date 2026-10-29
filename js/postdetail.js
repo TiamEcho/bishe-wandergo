@@ -72,7 +72,7 @@ let __twLocal = null;
 async function twLocalData() {
   if (__twLocal) return __twLocal;
   try {
-    const r = await fetch('js/posts_crawl.json?v=1114');
+    const r = await fetch('js/posts_crawl.json?v=1119');
     __twLocal = await r.json();
   } catch (e) { __twLocal = { topics: [], posts: [], comments: {} }; }
   return __twLocal;
@@ -242,3 +242,4 @@ async function twSendComment(postId) {
   }
   toast(r && r.ok ? '评论已发布 ✈️' : '评论已发布（离线模式，保存在本地）💬');
 }
+
