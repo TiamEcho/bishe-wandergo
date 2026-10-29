@@ -23,7 +23,7 @@ const { extractEntities } = require('../src/dots');
 const MC_PATH = String(process.env.MEDIACRAWLER_PATH || '').trim();
 const PY_BIN = String(process.env.MEDIACRAWLER_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')).trim();
 const PLATFORM = String(process.env.MEDIACRAWLER_PLATFORM || 'xhs').trim();
-const TIMEOUT = Number(process.env.MEDIACRAWLER_TIMEOUT || 300000);            // 默认 5 分钟
+const TIMEOUT = Number(process.env.MEDIACRAWLER_TIMEOUT || 150000);            // 默认 150 秒，与前端等待上限一致
 const MC_MAX = Number(process.env.MEDIACRAWLER_MAX_ITEMS || 20);                // 单次最多入库条数
 const AI_MAX = Number(process.env.AI_MAX_PER_REQUEST || 5);                     // 单次最多调用几次 AI
 /* 默认启动参数：小红书 + 扫码登录 + 关键词搜索模式 */
