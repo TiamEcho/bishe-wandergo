@@ -284,3 +284,31 @@
 .cmt-form input:focus{border-color:var(--line-gold)}
 .cmt-form .btn{height:auto;padding:0 18px}
 
+
+/* ---- AI 大模型接入面板 ---- */
+.llm-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+.llm-link{font-size:12px;font-weight:800;color:var(--gold);padding:6px 14px;border-radius:999px;
+  border:1px dashed var(--line-gold);background:transparent;cursor:pointer;transition:.2s}
+.llm-link:hover{background:var(--glass)}
+.llm-state{font-size:11px;color:var(--muted)}
+.llm-state.ok{color:var(--gold)}
+.llm-panel{display:none;margin-top:10px;padding:16px;border-radius:16px;background:var(--panel-2);
+  border:1px solid var(--line-gold)}
+.llm-panel.show{display:block;animation:aiIn .3s both}
+.llm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.llm-grid label{font-size:11px;font-weight:800;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+.llm-grid input{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);
+  color:var(--ink);font-size:12.5px;outline:none}
+.llm-grid input:focus{border-color:var(--line-gold)}
+.llm-acts{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.llm-save{padding:9px 18px;border-radius:999px;background:var(--gold-grad);color:var(--accent-ink);
+  font-size:12px;font-weight:800;cursor:pointer}
+.llm-test,.llm-clear{padding:9px 16px;border-radius:999px;border:1px solid var(--line-gold);
+  color:var(--gold);background:transparent;font-size:12px;font-weight:800;cursor:pointer}
+.llm-clear{color:var(--muted);border-color:var(--line)}
+.llm-msg{font-size:11.5px;color:var(--muted)}
+.llm-msg.ok{color:#6cc47a}.llm-msg.err{color:#e58fb1}
+.llm-note{margin:10px 0 0;font-size:11px;color:var(--muted);line-height:1.7}
+.llm-body{font-size:13px;line-height:1.95;color:var(--ink-2);white-space:pre-wrap}
+.llm-body b{color:var(--ink)}
+@media(max-width:760px){.llm-grid{grid-template-columns:1fr}}

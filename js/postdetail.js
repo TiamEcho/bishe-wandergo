@@ -72,7 +72,7 @@ let __twLocal = null;
 async function twLocalData() {
   if (__twLocal) return __twLocal;
   try {
-    const r = await fetch('js/posts_crawl.json?v=1119');
+    const r = await fetch('js/posts_crawl.json?v=1120');
     __twLocal = await r.json();
   } catch (e) { __twLocal = { topics: [], posts: [], comments: {} }; }
   return __twLocal;

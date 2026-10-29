@@ -142,6 +142,79 @@ function matchPlan(q){
   if(g)return genPlan(g);
   return null;
 }
+/* ---- 可选：接入真实 AI 大模型（OpenAI 兼容协议） ----
+ * 配置存 localStorage('wgo_llm')：{url,model,key}
+ * 已配置时 runAI 并行调用大模型生成「旅行文案」模块；失败/超时静默回退本地模板引擎 */
+function llmCfg(){try{return JSON.parse(localStorage.getItem('wgo_llm')||'{}')}catch(e){return{}}}
+function llmUrlOf(u){
+  u=(u||'').trim().replace(/\/+$/,'');
+  if(!u)return '';
+  return /\/chat\/completions$/.test(u)?u:u+'/v1/chat/completions';
+}
+async function llmAsk(q){
+  const c=llmCfg();const url=llmUrlOf(c.url);
+  if(!url||!c.key)return '';
+  const body={
+    model:c.model||'deepseek-chat',temperature:.7,max_tokens:900,
+    messages:[
+      {role:'system',content:'你是 WANDERGO 的旅行规划师「小往」。用温暖、具体、口语化的中文写旅行攻略，像一个真正去过那里的朋友。'},
+      {role:'user',content:'用户需求：'+q+'\n请输出三段：▍行程安排（按天写）▍必吃美食 ▍贴心提示。总共 300-450 字，每段一句主题句加具体内容，不要用代码块和表格。'}
+    ]};
+  const r=await axios.post(url,body,{headers:{Authorization:'Bearer '+c.key,'Content-Type':'application/json'},timeout:20000});
+  return (((r.data||{}).choices||[])[0]||{}).message?.content?.trim()||'';
+}
+function llmFmt(t){
+  return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n{2,}/g,'<br><br>').replace(/\n/g,'<br>');
+}
+/* 把大模型文案卡插到模块网格最上方；busy 时先放骨架卡 */
+function llmInject(){
+  const grid=$('#modGrid');if(!grid||!grid.classList.contains('show'))return;
+  const old=document.getElementById('llmCard');if(old)old.remove();
+  const t=window.__llmText,busy=window.__llmBusy,c=llmCfg();
+  if(!t&&!busy)return;
+  grid.insertAdjacentHTML('afterbegin',
+   `<div class="mod col-12" id="llmCard" style="animation-delay:.02s;border-color:var(--line-gold)">
+     <h4><span class="mi">🤖</span>AI 大模型 · 旅行文案<span class="go">${t?(c.model||'大模型')+' 实时生成':'大模型撰写中…'}</span></h4>
+     <div class="llm-body">${t?llmFmt(t):'<span style="color:var(--muted)">大模型正在逐字撰写这份攻略，本地模块已先行生成，文案稍后自动出现在这里 ✍️</span>'}</div>
+   </div>`);
+}
+/* 设置面板交互 */
+function llmUI(){
+  const btn=$('#llmBtn'),panel=$('#llmPanel'),state=$('#llmState'),msg=$('#llmMsg');
+  if(!btn||!panel)return;
+  const refresh=()=>{
+    const c=llmCfg();const on=!!(c.url&&c.key);
+    state.textContent=on?('● 已接入 '+(c.model||'默认模型')):'未配置 · 当前使用内置模板引擎';
+    state.classList.toggle('ok',on);
+    if(on){$('#llmUrl').value=c.url;$('#llmModel').value=c.model||'';$('#llmKey').value=c.key}
+  };
+  btn.onclick=()=>{panel.classList.toggle('show');refresh()};
+  $('#llmSave').onclick=()=>{
+    const url=$('#llmUrl').value.trim(),key=$('#llmKey').value.trim(),model=$('#llmModel').value.trim();
+    if(!url||!key){msg.textContent='接口地址和 Key 都要填';msg.className='llm-msg err';return}
+    localStorage.setItem('wgo_llm',JSON.stringify({url,model,key}));
+    msg.textContent='已保存，下次生成自动调用大模型 ✓';msg.className='llm-msg ok';refresh();
+  };
+  $('#llmClear').onclick=()=>{
+    localStorage.removeItem('wgo_llm');['llmUrl','llmModel','llmKey'].forEach(id=>$('#'+id).value='');
+    msg.textContent='已清除，回到内置模板引擎';msg.className='llm-msg';refresh();
+  };
+  $('#llmTest').onclick=async()=>{
+    const url=$('#llmUrl').value.trim(),key=$('#llmKey').value.trim(),model=$('#llmModel').value.trim();
+    if(!url||!key){msg.textContent='先填接口地址和 Key';msg.className='llm-msg err';return}
+    msg.textContent='正在连通测试…';msg.className='llm-msg';
+    try{
+      const r=await axios.post(llmUrlOf(url),{model:model||'deepseek-chat',max_tokens:8,messages:[{role:'user',content:'回复「在线」两个字'}]},
+        {headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},timeout:15000});
+      const txt=(((r.data||{}).choices||[])[0]||{}).message?.content||'';
+      msg.textContent='连通成功 ✓ 模型回复：'+txt.slice(0,20);msg.className='llm-msg ok';
+    }catch(e){
+      msg.textContent='连通失败：'+(((e.response||{}).data||{}).error||{}).message||e.message;msg.className='llm-msg err';
+    }
+  };
+  refresh();
+}
 /* ---- ECharts 引擎按需加载（AI 页首次用到时自动加载，加载完统一回调） ---- */
 let __ecQ=null;
 function ensureECharts(cb){
@@ -179,6 +252,13 @@ fixPOIRoute(window.POI_ROUTE);
 function planKeyOf(p){for(const k in PLANS)if(PLANS[k]===p)return k;return ''}
 function runAI(q){
   q=(q||'').trim();if(!q)return toast('先告诉 AI 你想去哪儿吧 ✍️');
+  /* 已配置大模型：与本地引擎并行生成，互不阻塞 */
+  window.__llmText='';window.__llmBusy=false;
+  const __c=llmCfg();
+  if(__c.url&&__c.key){
+    window.__llmBusy=true;
+    llmAsk(q).then(t=>{window.__llmText=t||''}).catch(()=>{}).finally(()=>{window.__llmBusy=false;llmInject()});
+  }
   window.scrollTo({top:$('.ai-hero-box').getBoundingClientRect().top+window.scrollY-90,behavior:'smooth'});
   const pipe=$('#pipeline');pipe.classList.add('show');
   const steps=$$('.step');steps.forEach(s=>s.classList.remove('doing','done'));
@@ -198,12 +278,13 @@ function runAI(q){
   const t1=setInterval(()=>{
     if(si>0&&steps[si-1]){steps[si-1].classList.remove('doing');steps[si-1].classList.add('done')}
     if(si<4){steps[si].classList.add('doing');p=Math.min(97,(si+1)/4*96);$('#pipeBar').style.width=p+'%';si++}
-    else{clearInterval(t1);clearInterval(t2);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(q))},420)}
+    else{clearInterval(t1);clearInterval(t2);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(q));llmInject()},420)}
   },seg);
 }
 $('#aiGo').onclick=()=>runAI($('#aiInput').value);
 $('#aiInput').addEventListener('keydown',e=>{if(e.key==='Enter')runAI(e.target.value)});
 $$('#aiChips button').forEach(b=>b.onclick=()=>{$('#aiInput').value=b.textContent;runAI(b.textContent)});
+llmUI();
 function planRoute(plan){
   /* 由 routeDays 生成路线数据（每日不同颜色，首点打旗标） */
   const segs=(plan.routeDays||[plan.spots.slice(0,1)]).map((ids,di)=>({

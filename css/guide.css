@@ -1,8 +1,9 @@
 /* =========================================================
  * WANDERGO · 模块导览 guide.css
- * 真实界面预览（iframe 缩略）+ 操作步骤说明
+ * 模块菜单栏 + 子功能菜单栏 + 图文介绍面板 + 预览模态框
+ * 全部跟随主题变量，深浅基底/皮肤自适应
  * ========================================================= */
-.gd-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 18px}
+.gd-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 14px}
 .gd-bar input{flex:1;min-width:220px;padding:12px 18px;border-radius:999px;border:1px solid var(--line-gold);
   background:var(--panel);color:var(--ink);font-size:13.5px;outline:none}
 .gd-bar input:focus{box-shadow:0 0 0 3px var(--glass)}
@@ -10,27 +11,90 @@
 .gd-tabs button{padding:7px 15px;border-radius:999px;font-size:12px;font-weight:800;color:var(--muted);transition:.2s}
 .gd-tabs button.on{background:var(--gold-grad);color:var(--accent-ink)}
 
-.gd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:18px}
-.gd-card{border-radius:22px;overflow:hidden;background:var(--panel);border:1px solid var(--line);
-  transition:transform .22s,border-color .22s,box-shadow .22s;display:flex;flex-direction:column}
-.gd-card:hover{transform:translateY(-4px);border-color:var(--line-gold);box-shadow:0 26px 48px -28px rgba(0,0,0,.62)}
-.gd-prev{position:relative;height:184px;overflow:hidden;background:var(--panel-3);border-bottom:1px solid var(--line)}
-.gd-prev iframe{width:1440px;height:1000px;border:0;transform:scale(.235);transform-origin:top left;pointer-events:none;
-  filter:saturate(.98)}
-.gd-prev::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 46%,rgba(6,10,18,.68))}
-.gd-badge{position:absolute;left:11px;top:11px;z-index:2;font-size:11px;font-weight:800;padding:5px 11px;
+/* ---- 模块菜单栏（真实可点） ---- */
+.gd-nav{display:flex;gap:8px;flex-wrap:wrap;padding:12px;border-radius:20px;background:var(--panel);
+  border:1px solid var(--line);margin-bottom:18px;box-shadow:0 14px 30px -22px rgba(0,0,0,.5)}
+.gd-mitem{display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:14px;font-size:12.5px;
+  font-weight:800;color:var(--ink-2);border:1px solid transparent;transition:.22s;cursor:pointer;
+  animation:gdUp .5s both}
+.gd-mitem .mic{font-size:16px}
+.gd-mitem:hover{transform:translateY(-2px);color:var(--ink);border-color:var(--line-gold);background:var(--glass)}
+.gd-mitem.on{background:var(--gold-grad);color:var(--accent-ink);box-shadow:0 10px 20px -12px rgba(0,0,0,.55)}
+
+/* ---- 模块头 ---- */
+.gd-head{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:20px;background:var(--panel);
+  border:1px solid var(--line);margin-bottom:14px;animation:gdUp .45s both}
+.gd-hic{font-size:34px;width:60px;height:60px;border-radius:18px;background:var(--panel-2);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--line)}
+.gd-ht{flex:1;min-width:0}
+.gd-ht h3{font-size:19px;margin:0 0 4px;color:var(--ink)}
+.gd-ht p{font-size:12.5px;color:var(--muted);margin:0;line-height:1.6}
+.gd-hopen{flex-shrink:0;padding:10px 18px;border-radius:999px;background:var(--gold-grad);
+  color:var(--accent-ink);font-size:12.5px;font-weight:800;text-decoration:none;transition:.2s}
+.gd-hopen:hover{filter:brightness(1.06);transform:translateY(-2px)}
+
+/* ---- 子功能菜单栏（真实小菜单，不是卡片小字） ---- */
+.gd-subbar{display:flex;gap:6px;flex-wrap:wrap;padding:8px;border-radius:16px;background:var(--panel-2);
+  border:1px solid var(--line);margin-bottom:16px}
+.gd-sitem{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:11px;font-size:12px;
+  font-weight:800;color:var(--muted);transition:.2s;cursor:pointer;animation:gdUp .5s both}
+.gd-sitem .sic{font-size:14px}
+.gd-sitem:hover{color:var(--ink);background:var(--glass);transform:translateY(-1px)}
+.gd-sitem.on{background:var(--panel);color:var(--gold);border:1px solid var(--line-gold);
+  box-shadow:0 8px 16px -10px rgba(0,0,0,.5)}
+
+/* ---- 功能介绍面板（大卡：左图右文） ---- */
+.gd-panel{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:0;border-radius:22px;
+  overflow:hidden;background:var(--panel);border:1px solid var(--line);animation:gdUp .5s both;
+  transition:transform .25s,box-shadow .25s,border-color .25s}
+.gd-panel:hover{transform:translateY(-6px);border-color:var(--line-gold);
+  box-shadow:0 30px 56px -30px rgba(0,0,0,.6)}
+.gd-fig{position:relative;min-height:280px;background:linear-gradient(150deg,var(--panel-3),var(--panel-2));
+  display:flex;align-items:center;justify-content:center}
+.gd-figic{font-size:88px;opacity:.5;filter:drop-shadow(0 12px 24px rgba(0,0,0,.35))}
+.gd-fig img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.gd-figbd{position:absolute;left:12px;top:12px;font-size:11.5px;font-weight:800;padding:6px 12px;
   border-radius:999px;background:rgba(8,12,22,.66);color:#fff;backdrop-filter:blur(8px)}
-.gd-open{position:absolute;right:11px;bottom:11px;z-index:2;font-size:11.5px;font-weight:800;
-  padding:6px 13px;border-radius:999px;background:var(--gold-grad);color:var(--accent-ink);text-decoration:none}
-.gd-open:hover{filter:brightness(1.06)}
-.gd-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:10px;flex:1}
-.gd-desc{font-size:12.5px;color:var(--ink-2);line-height:1.75}
-.gd-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
-.gd-steps li{font-size:11.5px;color:var(--muted);line-height:1.65}
-.gd-steps li::marker{color:var(--gold);font-weight:800}
-.gd-feats{display:flex;flex-wrap:wrap;gap:5px;margin-top:auto;padding-top:4px}
-.gd-feats span{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
-  color:var(--gold);background:rgba(231,199,109,.12);border:1px solid var(--line-gold)}
-.gd-empty{grid-column:1/-1;text-align:center;padding:52px 18px;color:var(--muted);
+.gd-info{padding:22px 24px;display:flex;flex-direction:column;gap:13px}
+.gd-info h4{font-size:18px;margin:0;color:var(--ink)}
+.gd-block{background:var(--panel-2);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.gd-lb{display:inline-block;font-size:11px;font-weight:800;color:var(--gold);margin-bottom:5px;letter-spacing:.5px}
+.gd-block p{margin:0;font-size:12.8px;line-height:1.8;color:var(--ink-2)}
+.gd-actions{display:flex;gap:10px;align-items:center;margin-top:auto;padding-top:4px}
+.gd-prev-btn{padding:11px 22px;border-radius:999px;background:var(--gold-grad);color:var(--accent-ink);
+  font-size:13px;font-weight:800;cursor:pointer;transition:.22s;box-shadow:0 12px 24px -14px rgba(0,0,0,.55)}
+.gd-prev-btn:hover{filter:brightness(1.07);transform:translateY(-2px)}
+.gd-goto{font-size:12.5px;font-weight:800;color:var(--gold);text-decoration:none;padding:10px 4px}
+.gd-goto:hover{text-decoration:underline}
+
+/* ---- 预览模态框：Fade + Scale ---- */
+.gd-modal{position:fixed;inset:0;z-index:999;display:none;align-items:center;justify-content:center;
+  background:rgba(5,8,15,.72);backdrop-filter:blur(6px);padding:22px}
+.gd-modal.open{display:flex;animation:gdFade .25s both}
+.gd-dialog{width:min(980px,100%);max-height:88vh;display:flex;flex-direction:column;border-radius:20px;
+  overflow:hidden;background:var(--panel);border:1px solid var(--line-gold);
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.75);animation:gdScale .3s cubic-bezier(.2,.9,.3,1.2) both}
+.gd-mhead{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;
+  border-bottom:1px solid var(--line)}
+.gd-mhead b{font-size:14px;color:var(--ink)}
+.gd-mclose{width:32px;height:32px;border-radius:50%;background:var(--panel-2);color:var(--muted);
+  font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s}
+.gd-mclose:hover{background:var(--gold-grad);color:var(--accent-ink);transform:rotate(90deg)}
+.gd-mbody{padding:14px;overflow:auto}
+.gd-live{width:100%;height:min(66vh,640px);border:0;border-radius:12px;background:#fff}
+.gd-live-tip{font-size:11.5px;color:var(--muted);margin:0 0 8px;text-align:center}
+
+/* ---- 动画 ---- */
+@keyframes gdUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes gdFade{from{opacity:0}to{opacity:1}}
+@keyframes gdScale{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+
+.gd-empty{text-align:center;padding:52px 18px;color:var(--muted);
   border:1px dashed var(--line);border-radius:22px;font-size:13px}
-@media(max-width:680px){.gd-grid{grid-template-columns:1fr}.gd-prev{height:158px}.gd-prev iframe{transform:scale(.20)}}
+
+@media(max-width:860px){
+  .gd-panel{grid-template-columns:1fr}
+  .gd-fig{min-height:200px;position:relative;height:200px}
+  .gd-head{flex-wrap:wrap}
+  .gd-hopen{width:100%;text-align:center}
+}

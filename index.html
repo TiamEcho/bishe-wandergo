@@ -107,10 +107,10 @@
 
 <footer><div class="wrap"><div class="fnote">基于 Vue + Spring Boot + 协同过滤的旅游打卡平台设计与实现 · 毕业设计演示</div></div></footer>
 
-<script src="js/data.js?v=1119"></script>
+<script src="js/data.js?v=1120"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1119"></script>
-<script src="js/core.js?v=1119"></script>
+<script src="js/api.js?v=1120"></script>
+<script src="js/core.js?v=1120"></script>
 <script>
 const MODULES=[
  ['map.html','🌍','环球地图 · 3D 实景','五层 3D 地图 + 白色省份名 + 滚轮缩放 + 点击飞行；打卡过的地方点亮金色图标，可查看详情。',''],
@@ -128,10 +128,10 @@ const MODULES=[
  ['me.html','🧭','个人中心','我的足迹统计、打卡记录、评分管理、徽章墙与后端同步状态。','',['足迹统计','评分管理','同步状态']]
 ];
 document.getElementById('moduleGrid').innerHTML=MODULES.map((m,i)=>`
- <a class="mod-card ${m[4]?'new':''}" href="${m[0]}" style="animation-delay:${i*.06}s">
+ <a class="mod-card ${m[4]?'new':''}" href="guide.html#${m[0].replace('.html','')}" style="animation-delay:${i*.06}s">
    <span class="mi2">${m[1]}</span><h4>${m[2]}</h4><p>${m[3]}</p>
    <div class="mod-feats">${(m[5]||[]).map(f=>`<span>${f}</span>`).join('')}</div>
-   <span class="go2">进入模块 →</span>
+   <span class="go2">查看功能介绍 →</span>
  </a>`).join('');
 </script>
 </body>
