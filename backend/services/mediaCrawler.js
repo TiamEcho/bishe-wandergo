@@ -64,9 +64,9 @@ function patchKeywords(city) {
   }
   const kws = keywordsFor(city);
   const src = fs.readFileSync(cfg, 'utf8');
-  const line = `KEYWORDS = [${kws.map(k => JSON.stringify(k)).join(', ')}]`;
-  /* 匹配形如 KEYWORDS = ["a", "b"] 的赋值（跨行也覆盖） */
-  const re = /^KEYWORDS\s*=\s*\[[\s\S]*?\]/m;
+  /* MediaCrawler 官方的 KEYWORDS 是英文逗号分隔的字符串（KEYWORDS = "a,b"），不是数组 */
+  const line = `KEYWORDS = ${JSON.stringify(kws.join(','))}`;
+  const re = /^KEYWORDS\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\[[\s\S]*?\])/m;
   const next = re.test(src) ? src.replace(re, line) : `${src.replace(/\s*$/, '')}\n${line}\n`;
   fs.writeFileSync(cfg, next, 'utf8');
   return { config: cfg, keywords: kws, replaced: re.test(src) };
@@ -80,9 +80,14 @@ function runPython() {
     let err = '';
     let child;
     try {
+      /* pyexecjs（抖音签名）需要一个 JS 运行时：注入便携版 Node 的目录与 EXECJS_RUNTIME */
+      const nodeDir = process.env.WGO_NODE_DIR || '';
+      const env = { ...process.env, EXECJS_RUNTIME: 'Node' };
+      if (nodeDir) env.Path = `${nodeDir};${env.Path || ''}`;
       child = spawn(PY_BIN, ['main.py', ...ARGS.split(/\s+/).filter(Boolean)], {
         cwd: MC_PATH,
-        windowsHide: true
+        windowsHide: false,   // 让 Chromium 窗口可见（二维码/验证码需要人工操作）
+        env
       });
     } catch (e) {
       return resolve({ spawned: false, error: String(e.message || e), startedAt });
@@ -120,7 +125,7 @@ function walkJson(dir, depth, out) {
   for (const e of ents) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) { if (depth > 0) walkJson(p, depth - 1, out); }
-    else if (/\.json$/i.test(e.name)) { out.push(p); }
+    else if (/\.(json|jsonl)$/i.test(e.name)) { out.push(p); }
   }
 }
 
@@ -139,6 +144,15 @@ function readFreshItems(since) {
     try {
       const raw = fs.readFileSync(f, 'utf8').trim();
       if (!raw) continue;
+      if (/\.jsonl$/i.test(f)) {
+        /* MediaCrawler 默认输出 JSONL：每行一条完整 JSON 记录 */
+        for (const ln of raw.split(/\r?\n/)) {
+          const s = ln.trim();
+          if (!s) continue;
+          try { const o = JSON.parse(s); if (o && typeof o === 'object') items.push(o); } catch (e) { /* 跳过坏行 */ }
+        }
+        continue;
+      }
       const j = JSON.parse(raw);
       const arr = Array.isArray(j) ? j : (j.data || j.items || j.list || []);
       if (Array.isArray(arr)) items.push(...arr);
@@ -160,13 +174,27 @@ function tsToStr(v) {
   catch (e) { return dbx.now(); }
 }
 
+/* 小红书数量是字符串：「9.2万」「1142」，统一转整数 */
+function parseCount(v) {
+  if (v == null) return 0;
+  const s = String(v).trim();
+  if (!s) return 0;
+  const m = /^([\d.]+)\s*万$/.exec(s);
+  if (m) return Math.round(parseFloat(m[1]) * 10000);
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
 function normalize(raw, city) {
   const title = String(raw.title || raw.desc || raw.content || '').trim().slice(0, 120)
     || `${city}旅行笔记`;
   const content = String(raw.desc || raw.content || raw.title || '').trim();
   const url = String(raw.note_url || raw.share_url || raw.url || '');
-  const cover = (Array.isArray(raw.image_list) ? raw.image_list[0] : '')
-    || String(raw.cover || raw.video_url || raw.avatar || '');
+  /* image_list 在小红书里是逗号分隔的字符串，不是数组 */
+  let cover = '';
+  if (Array.isArray(raw.image_list)) cover = String(raw.image_list[0] || '');
+  else if (typeof raw.image_list === 'string') cover = raw.image_list.split(',')[0].trim();
+  if (!cover) cover = String(raw.cover || raw.video_url || raw.avatar || '');
   const extSrc = raw.note_id || raw.aweme_id || raw.id || md5(title + url);
   return {
     ext_id: `mc-${extSrc}`,
@@ -177,8 +205,8 @@ function normalize(raw, city) {
     source: 'mediacrawler',
     source_url: url,
     type: (raw.type === 'video' || raw.video_url) ? 'video' : 'guide',
-    like_count: Number(raw.liked_count || raw.digg_count || 0),
-    comment_count: Number(raw.comment_count || 0),
+    like_count: parseCount(raw.liked_count || raw.digg_count),
+    comment_count: parseCount(raw.comment_count),
     created_at: tsToStr(raw.time || raw.create_time || raw.last_modify_ts)
   };
 }
@@ -280,4 +308,4 @@ async function collectToDb(city) {
   };
 }
 
-module.exports = { status, keywordsFor, patchKeywords, collectToDb };
+module.exports = { status, keywordsFor, patchKeywords, collectToDb, readFreshItems, normalize };

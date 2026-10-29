@@ -3,3 +3,11 @@
 .screenshots/
 runs/
 site-deploy/
+
+# MediaCrawler 独立爬虫项目（体积大，且 browser_data 含登录态，不进仓库）
+tools/MediaCrawler/
+
+# 后端运行时产物
+backend/node_modules/
+backend/data/
+backend/.env

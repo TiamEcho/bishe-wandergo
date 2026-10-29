@@ -313,15 +313,16 @@ function showPlan(plan){
   },60);
 }
 /* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + Dots Studio 抽取） ---- */
-/* MediaCrawler 采集需要扫码登录，耗时可达 1~2 分钟，前端等待上限放宽到 150 秒；
+/* MediaCrawler 一次完整采集（3 关键词 × 15 条 + 评论）约需 15 分钟，
+   前端等待上限放宽到 900 秒，与后端 MEDIACRAWLER_TIMEOUT 保持一致；
    后端未配置 MediaCrawler 时走离线数据，通常 1 秒内返回。 */
-const AI_ENT_TIMEOUT = 150000;
+const AI_ENT_TIMEOUT = 900000;
 async function aiEntSync(plan){
   const dest=typeof plan==='string'?plan:plan.dest;
   const body=document.getElementById('aiEntBody');if(!body)return;
   const retry=document.getElementById('aiEntRetry');
   if(retry)retry.onclick=()=>aiEntSync(plan);
-  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div><div>若已启用 MediaCrawler 采集，首次需要扫码登录，最长约 2 分钟，请先别关页面。</div>';
+  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div><div>正在通过 MediaCrawler 实时采集最新攻略，首次需扫码登录，完整采集约 15 分钟，请耐心等待、别关页面。</div>';
   const base=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
   let d=null,errMsg='';
   try{
@@ -339,7 +340,7 @@ async function aiEntSync(plan){
   }catch(e){
     if(e&&e.name==='AbortError'){
       /* 采集太慢而不是后端挂了：保留模块，给出重试提示 */
-      body.innerHTML='<div>采集超时（已等 150 秒）。MediaCrawler 首次需扫码登录，可先手动跑一次让登录态生效，再点右上角「重新采集」。</div>';
+      body.innerHTML='<div>采集超时（已等 15 分钟）。数据可能仍在后台入库中，稍后可点右上角「重新采集」查看结果。</div>';
       return;
     }
     if(errMsg){
