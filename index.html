@@ -94,12 +94,13 @@
   </div>
 </section>
 
-<!-- ============ 功能模块导航 ============ -->
+<!-- ============ 功能模块导航（小方块 + 卡内垂直菜单 + 弹窗） ============ -->
 <section class="sec sec-alt" id="modules">
   <div class="wrap">
     <div class="sec-head">
       <div class="kick">FUNCTION MODULES</div>
-      <h2>功能模块 · 每个方块都是独立页面</h2>
+      <h2>功能模块 · 点击小功能查看界面</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin-top:6px">每个方块是一个模块，方块内的垂直菜单列出具体小功能；点击任意小功能 → 弹窗左侧文字介绍、右侧按该功能在该模块页里的界面形态直观展示。</p>
     </div>
     <div class="module-grid" id="moduleGrid"></div>
   </div>
@@ -107,32 +108,316 @@
 
 <footer><div class="wrap"><div class="fnote">基于 Vue + Spring Boot + 协同过滤的旅游打卡平台设计与实现 · 毕业设计演示</div></div></footer>
 
-<script src="js/data.js?v=1120"></script>
+<script src="js/data.js?v=1119"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1120"></script>
-<script src="js/core.js?v=1120"></script>
+<script src="js/api.js?v=1119"></script>
+<script src="js/core.js?v=1119"></script>
 <script>
+/* ================ 功能模块数据：每个方块含 5 个具体小功能 ================ */
 const MODULES=[
- ['map.html','🌍','环球地图 · 3D 实景','五层 3D 地图 + 白色省份名 + 滚轮缩放 + 点击飞行；打卡过的地方点亮金色图标，可查看详情。',''],
- ['ai.html','🤖','AI 旅行规划','模块化输出：景点 / 交通比价 / 预算 / 视频与 Plog；含雨天备案、休息点与老人小孩注意事项。','',['路线图','交通比价','预算','美食','人流饼图','住宿对比','BGM 自选']],
- ['recommend.html','🎯','猜你喜欢 · 协同过滤','基于评分矩阵的 UserCF + ItemCF 推荐，热门兜底冷启动；4K 卡片标注灵感来源平台。','NEW',['UserCF','ItemCF','热门兜底','来源标注']],
- ['checkin.html','📍','我的打卡 · 奖励','发布打卡攻略 / 视频合集 / Plog；自动生成纪念册，打卡攒徽章，同城 / 全国排行赢小奖励。','',['攻略成册','视频合集','Plog','纪念册','徽章榜']],
- ['community.html','💬','旅行社区','多平台真实攻略聚合（B站 / 抖音 / 小红书 / 快手 / Instagram / YouTube），帖子挂词条、可评论。','',['搜索','最新/最热','词条','评论','想去收藏']],
- ['search.html','🔍','全站搜索','一个关键词搜遍视频 / 图文 / 攻略 / 词条；平台、地区、时间、排序多维筛选。','NEW',['多维筛选','平台筛选','时间筛选','词条联动']],
- ['topic.html','🏷','词条广场','每个词条都是一条旅行线索：点进去全是带该词条的帖子，可发布评论与讨论。','NEW',['词条卡片','热度','帖子流','讨论']],
- ['memories.html','🎬','旅行纪念视频','打卡视频精选播放器，30 种 WebAudio 合成 BGM 任你配，纪念册随时回看。','',['视频播放器','BGM 曲库','纪念册']],
- ['wheel.html','🎡','旅行大转盘','不知道去哪？让转盘替你决定：国内 / 国外两组候选，转出目的地一键跳转 AI 规划。','NEW',['国内/国外','随机转盘','一键规划']],
- ['novel.html','📖','跟着小说去旅行','每一部小说都藏着一座城：悲惨世界·巴黎、古都·京都、风之影·巴塞罗那、盖茨比·纽约。','',['文学地图','名场面','路线']],
- ['prince.html','👑','跟着小王子去旅行','沿 B612 航线：伊亚 44 次落日、乌布玫瑰花园、冰岛极光夜与飞行员的起点巴黎。','',['B612 航线','落日','极光']],
- ['workbench.html','🧳','旅行工作台','手账工坊 / 协同计划（机酒识别·记账分摊·投票）/ 小众文创素材库。','',['手账','记账分摊','文创库']],
- ['me.html','🧭','个人中心','我的足迹统计、打卡记录、评分管理、徽章墙与后端同步状态。','',['足迹统计','评分管理','同步状态']]
+  {id:'map',ico:'🌍',url:'map.html',title:'环球地图 · 3D 实景',sub:'五层 3D 挤出地图 + 白色省份名 + 滚轮缩放 + 点击飞行',feats:[
+    ['五层地图','中国 / 世界地图五层 3D 挤出，白色省份名浮在最上层，行政区一眼看清。'],
+    ['点击飞行','点击省份或国家名，镜头自动飞入对应视角，无需手动拖拽。'],
+    ['点亮打卡','打卡过的地方变成金色图标，未打卡的热门地保持红点。'],
+    ['航线动画','用浅色曲线把行程连成飞行航线，可一键关闭或打开。'],
+    ['实景详情','点击地图标点弹出景点大图、坐标与真实攻略入口。']]},
+  {id:'ai',ico:'🤖',url:'ai.html',title:'AI 旅行规划',sub:'模块化输出：景点 / 交通比价 / 预算 / 备案提醒',feats:[
+    ['模块化输出','景点、交通、预算、备案各自成卡，逐块生成不混杂。'],
+    ['交通比价','聚合携程、去哪儿、12306 报价，直接标注最低价方案。'],
+    ['预算拆解','按日均与总计双栏展示，附隐藏花费与省钱提醒。'],
+    ['雨天备案','备案卡给出室内替代点与休息位，老人小孩单独标注。'],
+    ['视频与 Plog','每个景点挂社区真实 Vlog 与图文，边看边定行程。']]},
+  {id:'recommend',ico:'🎯',url:'recommend.html',title:'猜你喜欢 · 协同过滤',sub:'UserCF + ItemCF + 热门兜底冷启动',isNew:1,feats:[
+    ['UserCF','找与你评分口味相近的用户，把他喜欢的景点推给你。'],
+    ['ItemCF','按"看过这个的人也看过"计算物品相似度做推荐。'],
+    ['热门兜底','新用户零评分时用热门榜 + 标签匹配补位，避免空结果。'],
+    ['来源标注','每张推荐卡标出灵感来自 B站 / 小红书 / 抖音等平台。'],
+    ['一键规划','点击推荐卡直接继承偏好，生成对应 AI 行程。']]},
+  {id:'checkin',ico:'📍',url:'checkin.html',title:'我的打卡 · 奖励',sub:'发布攻略 / 视频合集 / Plog → 自动成册',feats:[
+    ['攻略成册','照片、视频、花费、心情一键写进打卡记录，自动分类。'],
+    ['视频合集','同一次旅行的多条短视频自动归集成一个合集。'],
+    ['Plog 模板','选模板后自动排版图文，不用手动拼图调字号。'],
+    ['纪念册导出','封面 + 正文 + 足迹地图合成 PDF，长期保存可打印。'],
+    ['徽章与榜单','打卡攒徽章，同城 / 全国双榜每周刷新。']]},
+  {id:'community',ico:'💬',url:'community.html',title:'旅行社区',sub:'多平台真实攻略聚合 · 挂词条 · 评论',feats:[
+    ['多平台聚合','B站公开 Vlog 由爬虫抓取，其余平台由站内创作者同步。'],
+    ['搜索筛选','关键词 + 国内/国外 + 平台 + 最新/最热 四维过滤。'],
+    ['词条挂载','帖子可挂多个词条，自动归入对应话题广场。'],
+    ['评论讨论','楼中楼评论，支持 @ 好友与图片回复。'],
+    ['想去 / 打卡','双向标记：想去的内容进入推荐池，打卡的形成足迹。']]},
+  {id:'search',ico:'🔍',url:'search.html',title:'全站搜索',sub:'关键词搜遍视频 / 图文 / 攻略 / 词条',isNew:1,feats:[
+    ['四路并行','一个关键词同时搜视频、图文、攻略、词条四类结果。'],
+    ['多维筛选','平台、地区、时间、排序四组筛选器自由组合。'],
+    ['词条联动','命中的词条高亮显示，点击直达词条详情页。'],
+    ['搜索即规划','搜完一键"用它生成 AI 规划"，关键词直接喂给 AI。'],
+    ['结果预览','卡片直接给出封面、时长、来源平台与正文摘要。']]},
+  {id:'topic',ico:'🏷',url:'topic.html',title:'词条广场',sub:'每个词条都是一条旅行线索',isNew:1,feats:[
+    ['词条卡片','展示热度、帖子数、最新一帖预览，一眼判断值不值得点。'],
+    ['词条详情','全部带该词条的帖子流，可按时间或热度排序。'],
+    ['发帖挂词条','发布时可选多个词条，一次进入多个话题。'],
+    ['热度统计','后端 MySQL 每日统计词条热度并更新榜单。'],
+    ['讨论区','词条下独立讨论，问题与答案长期沉淀。']]},
+  {id:'memories',ico:'🎬',url:'memories.html',title:'旅行纪念视频',sub:'打卡视频精选播放器 · 30 种 BGM 合成',feats:[
+    ['视频播放器','打卡视频支持倍速、片段循环与滤镜。'],
+    ['BGM 曲库','WebAudio 合成 30 种情绪配乐，治愈 / 燃 / 奇幻任选。'],
+    ['纪念册回看','视频、图片、文字混排，随时翻看整段旅程。'],
+    ['导出 MP4','一键合成 H.264 视频，方便分享到社交平台。'],
+    ['精选合辑','按目的地 / 年份自动聚合为精选合辑。']]},
+  {id:'wheel',ico:'🎡',url:'wheel.html',title:'旅行大转盘',sub:'不知道去哪？让转盘替你决定',isNew:1,feats:[
+    ['国内 / 国外','两组候选池独立，先定范围再开转。'],
+    ['随机转盘','2.8 秒转盘动画，结果金色高亮停留 3 秒。'],
+    ['再转一次','不满意可立即重转，不消耗次数。'],
+    ['一键规划','转出目的地直接带入 AI 规划，省去输入。'],
+    ['候选管理','可把想去清单里的地点加入候选池。']]},
+  {id:'novel',ico:'📖',url:'novel.html',title:'跟着小说去旅行',sub:'每一部小说都藏着一座城',feats:[
+    ['文学地图','四部小说对应四座城，地图上标出书中名场面。'],
+    ['名场面打卡','每个点附原文摘录与现实坐标，读完即可打卡。'],
+    ['路线生成','名场面自动串成半日 / 一日路线。'],
+    ['楼层切换','小说世界与现实街道双视图切换对照。'],
+    ['加入行程','一键把文学路线并入 AI 规划当子路线。']]},
+  {id:'prince',ico:'👑',url:'prince.html',title:'跟着小王子去旅行',sub:'沿 B612 航线：落日、花园、极光',feats:[
+    ['B612 航线','串起伊亚、乌布、冰岛、巴黎，在地图上飞行动画。'],
+    ['落日计划','伊亚 44 次落日，按日期推荐最佳观景位。'],
+    ['玫瑰花园','乌布玫瑰园对照原文"独一无二的花"。'],
+    ['极光夜','冰岛极光预报 + 拍摄参数建议。'],
+    ['原文对照','每个点配原文段落，边读边打卡。']]},
+  {id:'workbench',ico:'🧳',url:'workbench.html',title:'旅行工作台',sub:'手账工坊 · 协同计划 · 文创素材库',feats:[
+    ['手账工坊','拖拽照片进模板，自动排版成一页手账。'],
+    ['机酒识别','上传订单截图自动识别航班、酒店与时间。'],
+    ['记账分摊','多人出行自动平摊，支持多币种结算。'],
+    ['投票决定','同行人投票选出下一个目的地。'],
+    ['文创素材库','邮票 / 车票 / 门票扫描件可下载复用。']]},
+  {id:'me',ico:'🧭',url:'me.html',title:'个人中心',sub:'我的足迹 · 评分 · 徽章墙 · 后端同步',feats:[
+    ['足迹统计','打卡数、里程、省市地图一次看清。'],
+    ['评分管理','你对景点与帖子的评分历史可随时回溯。'],
+    ['徽章墙','已解锁徽章陈列，下一个徽章显示进度条。'],
+    ['同步状态','红 / 黄 / 绿灯显示与后端数据是否最新。'],
+    ['资料设置','昵称、头像、偏好标签随时修改。']]}
 ];
+
+/* 模块配图：复用 images 目录下的 hero + t1~t4 */
+const PHOTO=['hero','t1','t2','t3','t4'];
+const photo=(id,i)=>`images/${id}-${PHOTO[(i+5)%5]}.jpg`;
+
+/* 每个小功能对应的"界面示意"类型（直观呈现该功能在模块页里的界面形态） */
+const UI_TYPES={
+  map:['map','map','map','map','detail'],
+  ai:['feed','chart','donut','steps','album'],
+  recommend:['feed','donut','chart','feed','form'],
+  checkin:['form','album','album','detail','badges'],
+  community:['feed','form','feed','feed','feed'],
+  search:['feed','form','feed','form','feed'],
+  topic:['feed','feed','form','chart','feed'],
+  memories:['player','feed','album','detail','album'],
+  wheel:['form','wheel','wheel','form','feed'],
+  novel:['map','detail','steps','map','form'],
+  prince:['map','chart','detail','detail','detail'],
+  workbench:['album','form','chart','chart','album'],
+  me:['chart','feed','badges','steps','form']
+};
+
+/* 界面示意渲染器：返回与站点深色+金色风格一致的迷你界面 */
+function uiMock(type,label,mtitle,id,fi){
+  const stage=body=>`<div class="ui-stage"><div class="ui-title"><i></i>${mtitle} · ${label}</div><div class="ui-body">${body}</div></div>`;
+
+  if(type==='map'){
+    let grid='';
+    for(let x=40;x<=480;x+=55) grid+=`<line x1="${x}" y1="0" x2="${x}" y2="290"/>`;
+    for(let y=30;y<=270;y+=55) grid+=`<line x1="0" y1="${y}" x2="520" y2="${y}"/>`;
+    return stage(`<svg viewBox="0 0 520 290" preserveAspectRatio="xMidYMid slice">
+      <defs><linearGradient id="uig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a4a6d"/><stop offset="1" stop-color="#16293f"/></linearGradient></defs>
+      <rect width="520" height="290" fill="#0b1220"/>
+      <g stroke="#1d2b40" stroke-width="1">${grid}</g>
+      <path d="M64 92 L124 56 L200 70 L252 46 L322 68 L392 96 L432 142 L398 190 L322 218 L240 230 L160 212 L92 166 Z" fill="url(#uig)" stroke="#7ea6d9" stroke-width="1.2" opacity=".95"/>
+      <path d="M210 128 L300 156 L356 112" fill="none" stroke="#ffd76a" stroke-width="1.4" stroke-dasharray="5 6" opacity=".85"/>
+      <circle cx="210" cy="128" r="6" fill="#ffd76a"/><circle cx="210" cy="128" r="11" fill="none" stroke="#ffd76a" stroke-width="1.4" opacity=".5"/>
+      <text x="222" y="122" fill="#e8eef7" font-size="11">北京</text>
+      <circle cx="300" cy="156" r="5" fill="#ff6b57"/><text x="310" y="150" fill="#cbd6e4" font-size="11">洱海</text>
+      <circle cx="356" cy="112" r="5" fill="#ff6b57"/><text x="366" y="106" fill="#cbd6e4" font-size="11">京都</text>
+      <circle cx="124" cy="70" r="4" fill="#7ea6d9" opacity=".85"/>
+    </svg><div style="position:absolute;left:9px;bottom:7px;font-size:9.5px;color:#8fa2b8;background:rgba(11,18,32,.72);padding:2px 7px;border-radius:6px">滚轮缩放 · 点击飞行 · 金色 = 已点亮</div>
+    <div class="ui-spotcard"><img src="${photo(id,0)}" alt=""><div><b>洱海 · 已点亮</b><span>点击查看实景详情</span></div></div>`);
+  }
+
+  if(type==='feed'){
+    const items=[['洱海生态廊道 · B站 03:12',0],['故宫的六百年 · 小红书',1],['伏见稻荷的清晨 · 抖音',2]];
+    return stage(`<div class="ui-list">${items.map(([t,k])=>`
+      <div class="ui-row"><div class="ui-th"><img src="${photo(id,k)}" alt=""></div>
+        <div class="ui-lines"><div class="ui-l1" style="width:58%"></div><div class="ui-l2" style="width:90%"></div>
+          <div class="ui-tagrow"><span>${t}</span></div></div></div>`).join('')}</div>`);
+  }
+
+  if(type==='chart'){
+    const bars=[[112,'1200'],[82,'860'],[156,'1680'],[64,'640'],[132,'1420']];
+    const names=['门票','交通','住宿','餐饮','其他'];
+    return stage(`<div style="height:100%;display:flex;flex-direction:column">
+      <div class="ui-chart" style="flex:1;height:auto;align-items:flex-end;padding-bottom:4px">${bars.map(([h,v])=>`<div class="ui-bar" style="height:${h}px"><span>￥${v}</span></div>`).join('')}</div>
+      <div style="display:flex;justify-content:space-around;font-size:9.5px;color:#8fa2b8;padding-bottom:10px">${names.map(n=>`<span>${n}</span>`).join('')}</div>
+    </div>`);
+  }
+
+  if(type==='donut'){
+    return stage(`<div style="height:100%;display:flex;align-items:center;gap:16px;padding:14px 16px">
+      <div style="width:104px;height:104px;flex:none;border-radius:50%;position:relative;background:conic-gradient(#ffd76a 0 42%,#7ea6d9 42% 66%,#b23a2e 66% 84%,#3f7d5b 84% 100%)">
+        <div style="position:absolute;inset:21px;border-radius:50%;background:#0e1729;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+          <span style="font-size:8.5px;color:#8fa2b8">预算合计</span><b style="font-size:14px;color:#ffd76a">￥3,860</b>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        ${[['#ffd76a','门票','￥1,200'],['#7ea6d9','交通','￥860'],['#b23a2e','住宿','￥1,180'],['#3f7d5b','餐饮','￥620']].map(([c,k,v])=>`
+        <div style="display:flex;align-items:center;gap:6px;font-size:9.5px;color:#cbd6e4">
+          <i style="width:8px;height:8px;border-radius:50%;background:${c};display:inline-block"></i>${k}
+          <span style="margin-left:auto;color:#8fa2b8">${v}</span></div>`).join('')}
+      </div></div>`);
+  }
+
+  if(type==='form'){
+    return stage(`<div class="ui-form">
+      <div class="ui-input">✍ 告诉我想去哪、玩几天…</div>
+      <div class="ui-chips"><span>3 天</span><span>预算 ￥3000</span><span>亲子</span><span>${label}</span></div>
+      <span class="ui-btn">生成规划 ✨</span>
+      <div class="ui-cards">
+        <div class="ui-mini"><img src="${photo(id,0)}" alt=""><div class="ui-l2" style="width:72%"></div><div class="ui-l2" style="width:44%"></div></div>
+        <div class="ui-mini"><img src="${photo(id,1)}" alt=""><div class="ui-l2" style="width:64%"></div><div class="ui-l2" style="width:52%"></div></div>
+      </div></div>`);
+  }
+
+  if(type==='detail'){
+    return stage(`<div class="ui-detail">
+      <div class="ui-hero"><img src="${photo(id,fi)}" alt=""></div>
+      <div class="ui-l1" style="width:52%"></div>
+      <div class="ui-meta"><span>📍 坐标已校准</span><span>🕐 建议停留 2h</span><span>⭐ 4.8 分</span></div>
+      <div style="display:flex;gap:7px;margin-top:2px">
+        <span class="ui-btn">📸 打卡</span>
+        <span class="ui-btn" style="background:rgba(255,255,255,.10);color:#cbd6e4">♡ 收藏</span>
+      </div></div>`);
+  }
+
+  if(type==='steps'){
+    const st=[['选择目的地与天数','先定范围与节奏'],['AI 拆分模块化攻略','景点 · 交通 · 预算 · 备案'],['生成比价与预算','聚合平台取最低价'],['一键加入行程','同步地图与日历']];
+    return stage(`<div class="ui-steps">${st.map(([a,b],i)=>`
+      <div class="ui-step"><b>${i+1}</b><div class="ui-lines">
+        <div style="font-size:10.5px;color:#e8eef7;line-height:1.3">${a}</div>
+        <div class="ui-l2" style="width:${70-i*8}%"></div></div></div>`).join('')}</div>`);
+  }
+
+  if(type==='badges'){
+    const bg=[['🏅','首打卡'],['🌅','日出猎人'],['🗺','3 省足迹'],['✈','首次出境'],['🏔','登山者'],['📸','摄影达人']];
+    return stage(`<div class="ui-badges">${bg.map(([e,t])=>`<div class="ui-badge"><i>${e}</i>${t}</div>`).join('')}</div>`);
+  }
+
+  if(type==='player'){
+    return stage(`<div class="ui-player">
+      <div class="ui-screen"><img src="${photo(id,3)}" alt=""><div class="ui-play">▶</div>
+        <span style="position:absolute;z-index:2;bottom:6px;right:8px;font-size:9px;color:#cbd6e4;background:rgba(0,0,0,.5);padding:1px 5px;border-radius:6px">01:24 / 03:12</span></div>
+      <div class="ui-prog"><i></i></div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:#8fa2b8"><span>🎵 BGM 治愈</span><span>1.0×</span><span>导出 MP4</span></div>
+    </div>`);
+  }
+
+  if(type==='wheel'){
+    return stage(`<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;position:relative">
+      <div style="position:relative;display:flex;align-items:center;justify-content:center">
+        <div class="ui-disc"></div>
+        <div class="ui-pin" style="top:-6px;left:50%;transform:translateX(-50%)"></div>
+      </div>
+      <div style="font-size:11px;color:#ffd76a">🎉 结果：大理 · 洱海</div>
+    </div>`);
+  }
+
+  /* album */
+  return stage(`<div class="ui-album">${[0,1,2,3,4,0].map((k,i)=>`<div class="ui-ph"><img src="${photo(id,k)}" alt="">${i===5?'<b class="ui-more">+12</b>':''}</div>`).join('')}</div>`);
+}
+
+/* 渲染小方块（卡内含垂直小功能菜单） */
 document.getElementById('moduleGrid').innerHTML=MODULES.map((m,i)=>`
- <a class="mod-card ${m[4]?'new':''}" href="guide.html#${m[0].replace('.html','')}" style="animation-delay:${i*.06}s">
-   <span class="mi2">${m[1]}</span><h4>${m[2]}</h4><p>${m[3]}</p>
-   <div class="mod-feats">${(m[5]||[]).map(f=>`<span>${f}</span>`).join('')}</div>
-   <span class="go2">查看功能介绍 →</span>
- </a>`).join('');
+  <div class="mod-card ${m.isNew?'new':''}" data-id="${m.id}" style="animation-delay:${i*.06}s">
+    <span class="mi2">${m.ico}</span>
+    <h4>${m.title}</h4>
+    <p>${m.sub}</p>
+    <div class="mod-menu">
+      ${m.feats.map((f,j)=>`<button type="button" class="mod-sub" data-m="${m.id}" data-f="${j}"><i></i>${f[0]}<span class="ar">›</span></button>`).join('')}
+    </div>
+    <span class="go2">点击小功能查看案例 →</span>
+  </div>`).join('');
+
+/* ================ 弹窗：左文字介绍 / 右案例图片 ================ */
+let curModal=null;
+
+function closeModal(){
+  if(!curModal) return;
+  const el=curModal; curModal=null;
+  el.classList.remove('show');
+  setTimeout(()=>{ if(el.parentNode) el.remove(); },320);
+  document.body.style.overflow='';
+}
+
+function createModal(){
+  const el=document.createElement('div');
+  el.className='ovl show';
+  el.innerHTML=`
+    <div class="modal wide feat-modal" role="dialog" aria-modal="true">
+      <button class="mx" aria-label="关闭">✕</button>
+      <div class="feat-layout">
+        <div class="feat-desc" id="fdLeft"></div>
+        <div class="feat-showcase">
+          <div class="feat-scene" id="fdRight"></div>
+          <div class="feat-strip" id="fdStrip"></div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  document.body.style.overflow='hidden';
+  el.querySelector('.mx').onclick=closeModal;
+  el.addEventListener('click',e=>{ if(e.target===el) closeModal(); });
+  curModal=el;
+}
+
+function renderModal(m,fi){
+  const f=m.feats[fi];
+  const uiType=(UI_TYPES[m.id]||[])[fi]||'feed';
+
+  /* 左：文字介绍 + 小功能切换列表 */
+  const left=curModal.querySelector('#fdLeft');
+  left.innerHTML=`
+    <div class="fd-emoji">${m.ico}</div>
+    <h3>${f[0]}</h3>
+    <div class="fd-sub">${m.title} · 小功能 ${fi+1}/${m.feats.length}</div>
+    <p class="fd-p">${f[1]}</p>
+    <div class="fd-list-title">本模块小功能 · 点击切换</div>
+    <ul class="fd-list">${m.feats.map((x,j)=>`<li class="fi-item ${j===fi?'on':''}" data-f="${j}">${x[0]}</li>`).join('')}</ul>
+    <div class="fd-cta">
+      <button class="btn ghost" id="fdClose">关闭</button>
+      <button class="btn gold" id="fdGo">进入该模块 →</button>
+    </div>`;
+  left.querySelectorAll('.fi-item').forEach(li=>{
+    li.onclick=()=>{ const j=+li.dataset.f; renderModal(m,j); };
+  });
+  left.querySelector('#fdClose').onclick=closeModal;
+  left.querySelector('#fdGo').onclick=()=>WGO.go(m.url);
+
+  /* 右：该功能对应的界面示意 */
+  const right=curModal.querySelector('#fdRight');
+  right.innerHTML=uiMock(uiType,f[0],m.title,m.id,fi)
+    +`<div class="fsc-legend">界面示意：${m.title} · ${f[0]}（点击"进入该模块"可查看真实页面）</div>`;
+
+  curModal.querySelector('#fdStrip').innerHTML=m.feats.map(x=>`<span>${x[0]}</span>`).join('');
+}
+
+function openFeature(mid,fi){
+  const m=MODULES.find(x=>x.id===mid); if(!m) return;
+  if(!curModal) createModal();
+  renderModal(m,fi);
+}
+
+/* 点击事件：小功能 → 对应弹窗；点方块其它区域 → 该模块第一个小功能 */
+document.getElementById('moduleGrid').addEventListener('click',e=>{
+  const sub=e.target.closest('.mod-sub');
+  if(sub){ openFeature(sub.dataset.m,+sub.dataset.f); return; }
+  const card=e.target.closest('.mod-card');
+  if(card) openFeature(card.dataset.id,0);
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && curModal) closeModal(); });
 </script>
 </body>
 </html>

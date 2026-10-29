@@ -34,24 +34,6 @@
       <button>长沙 3 天美食之旅</button>
       <button>青岛 3 天看海</button>
     </div>
-    <div class="llm-row">
-      <button class="llm-link" id="llmBtn">⚙️ 接入 AI 大模型</button>
-      <span class="llm-state" id="llmState"></span>
-    </div>
-    <div class="llm-panel" id="llmPanel">
-      <div class="llm-grid">
-        <label>接口地址（OpenAI 兼容）<input id="llmUrl" placeholder="https://api.deepseek.com/v1/chat/completions"></label>
-        <label>模型名<input id="llmModel" placeholder="deepseek-chat / moonshot-v1-8k / gpt-4o-mini"></label>
-        <label>API Key<input id="llmKey" type="password" placeholder="sk-...（只存本地浏览器）"></label>
-      </div>
-      <div class="llm-acts">
-        <button class="llm-save" id="llmSave">保存并启用</button>
-        <button class="llm-test" id="llmTest">测试连通</button>
-        <button class="llm-clear" id="llmClear">清除配置</button>
-        <span class="llm-msg" id="llmMsg"></span>
-      </div>
-      <p class="llm-note">支持任意 OpenAI 兼容接口（DeepSeek / Kimi / 通义千问 / OpenAI 等）。Key 只保存在你自己的浏览器本地，不会上传任何服务器。不配置时自动使用内置模板引擎，功能同样完整。</p>
-    </div>
     <div class="pipeline" id="pipeline">
       <div class="steps">
         <div class="step" data-s="0"><span class="ico">🔍</span>理解你的问题</div>
