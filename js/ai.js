@@ -313,28 +313,40 @@ function showPlan(plan){
   },60);
 }
 /* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + Dots Studio 抽取） ---- */
+/* MediaCrawler 采集需要扫码登录，耗时可达 1~2 分钟，前端等待上限放宽到 150 秒；
+   后端未配置 MediaCrawler 时走离线数据，通常 1 秒内返回。 */
+const AI_ENT_TIMEOUT = 150000;
 async function aiEntSync(plan){
   const dest=typeof plan==='string'?plan:plan.dest;
   const body=document.getElementById('aiEntBody');if(!body)return;
   const retry=document.getElementById('aiEntRetry');
   if(retry)retry.onclick=()=>aiEntSync(plan);
-  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
+  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div><div>若已启用 MediaCrawler 采集，首次需要扫码登录，最长约 2 分钟，请先别关页面。</div>';
   const base=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
-  let d=null;
+  let d=null,errMsg='';
   try{
-    const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),20000);
+    const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),AI_ENT_TIMEOUT);
     const r=await fetch(base+'/api/collect-guide',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({keyword:dest}),signal:ctl.signal
     });
     clearTimeout(timer);
-    if(!r.ok)throw new Error('http '+r.status);
-    d=await r.json();
-    if(!d||!d.ok)throw new Error((d&&d.message)||'no data');
+    let j=null;
+    try{ j=await r.json(); }catch(_){}
+    if(!r.ok){ errMsg=(j&&j.message)||('HTTP '+r.status); throw new Error(errMsg); }
+    d=j;
+    if(!d||!d.ok){ errMsg=(d&&d.message)||'no data'; throw new Error(errMsg); }
   }catch(e){
-    d=null;
-  }
-  if(!d){
+    if(e&&e.name==='AbortError'){
+      /* 采集太慢而不是后端挂了：保留模块，给出重试提示 */
+      body.innerHTML='<div>采集超时（已等 150 秒）。MediaCrawler 首次需扫码登录，可先手动跑一次让登录态生效，再点右上角「重新采集」。</div>';
+      return;
+    }
+    if(errMsg){
+      /* 后端在线但采集失败（未配置路径 / 没有产出 / 超时）：保留模块并给出原因 */
+      body.innerHTML=`<div>采集未完成：${escHtml(errMsg)}</div>`;
+      return;
+    }
     /* 后端未启动：整块隐藏，页面与原来完全一致 */
     const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return;
   }
