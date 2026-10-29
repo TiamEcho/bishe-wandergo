@@ -6,6 +6,30 @@
 let srState={kw:'',form:'all',plat:'',rg:'',time:'all',sort:'new'};
 let srPool=[],srBundle=null,srPage=1,SR_PAGE=18;
 
+/* ---------- 后端接入（backend/ 里的 Express + SQLite） ----------
+ * 只做增量：接口可用则用后端数据，不可用则完全沿用原有离线数据，页面结构不变。
+ */
+const SR_API=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
+let srAi=null;      // 最近一次 /api/search 返回的实体（地名/美食/商圈）与统计
+
+/* 调用 GET /api/search，成功则用返回结果替换卡片池 */
+async function srSearchApi(kw){
+  try{
+    const ctl=new AbortController();
+    const timer=setTimeout(()=>ctl.abort(),5000);
+    const r=await fetch(`${SR_API}/api/search?q=${encodeURIComponent(kw||'')}&limit=80`,{signal:ctl.signal});
+    clearTimeout(timer);
+    if(!r.ok)return null;
+    const d=await r.json();
+    if(!d||!Array.isArray(d.items)||!d.items.length)return null;
+    srAi={city:d.city,entities:d.entities||[],stats:d.stats||{},engine:d.engine||'',ai:d.ai||null};
+    const local=srPool.filter(p=>p._local);           // 保留本地发布内容
+    srPool=[...d.items.map(srNormalizeApi),...local];
+    srPage=1;srPaint();
+    return d;
+  }catch(e){return null}
+}
+
 function srQ(){try{return WGO.q('kw')||''}catch(e){return''}}
 function srHash(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return h}
 function srRegion(p){
@@ -83,7 +107,8 @@ function srNormalizeApi(p){
     cover:p.cover||'',videoUrl:p.videoUrl||'',sourceUrl:p.sourceUrl||'',
     nick:p.nick||p.u||'',location:p.location||p.loc||'',topics:p.topics||'',
     likeCount:+p.likeCount||+p.likes||0,commentCount:+p.commentCount||+p.cmts||0,
-    createdAt:p.createdAt||'',source:p.source||'go',type:p.type||'post',bgm:p.bgm||''
+    createdAt:p.createdAt||'',source:p.source||'go',type:p.type||'post',bgm:p.bgm||'',
+    srcId:p.srcId||''
   };
 }
 async function srLoad(){
@@ -104,7 +129,7 @@ async function srLoad(){
     JSON.parse(localStorage.getItem('fmw_posts')||'[]').forEach(p=>out.push({
       id:p.id,title:p.txt||'',content:p.txt||'',txt:p.txt||'',cover:'',nick:p.u,
       location:p.loc||'',topics:'',likeCount:p.likes||0,commentCount:p.cmts||0,
-      createdAt:'',source:'go',type:p.type==='video'?'video':p.type==='plog'?'plog':'post',_ts:Date.now()-1000,bgm:p.bgm
+      createdAt:'',source:'go',type:p.type==='video'?'video':p.type==='plog'?'plog':'post',_ts:Date.now()-1000,bgm:p.bgm,_local:true
     }));
   }catch(e){}
   return out;
@@ -185,12 +210,21 @@ function srRenderPlaces(){
   const box=document.getElementById('srPlaces');if(!box)return;
   const q=srState.kw.trim().toLowerCase();
   const {spots,dests}=srPlaceHits(q);
-  if(!q||(!spots.length&&!dests.length)){box.innerHTML='';return}
+  /* 后端 AI 抽取的实体（地名 / 美食 / 商圈），仅在有关键词时展示，避免堆满 */
+  const ai=(q&&srAi&&srAi.entities)?srAi.entities.slice(0,9):[];
+  const aiHtml=ai.map(e=>{
+    const ico=e.type==='food'?'🍜':e.type==='district'?'🏙':'📍';
+    const tp=e.type==='food'?'美食':e.type==='district'?'商圈':'地点';
+    return `<a class="sr-pchip" href="search.html?kw=${encodeURIComponent(e.name)}">
+      <i>${ico}</i><b>${srEsc(e.name)}</b><em>${tp} · AI 抽取 ×${e.mention||1}</em></a>`;
+  }).join('');
+  if((!q||(!spots.length&&!dests.length))&&!ai.length){box.innerHTML='';return}
   const spotHtml=spots.map(s=>`<a class="sr-pchip" href="map.html?spot=${encodeURIComponent(s.id)}">
       <i>${(typeof ICO!=='undefined'&&ICO[s.id])||'📍'}</i><b>${srEsc(s.n)}</b><em>${srEsc(s.city)} · ${srEsc(s.tag||'')}</em></a>`).join('');
   const destHtml=dests.map(d=>`<a class="sr-pchip" href="ai.html?dest=${encodeURIComponent(d[0])}">
       <i>🧭</i><b>${srEsc(d[0])}</b><em>${srEsc(d[1])} · AI 规划</em></a>`).join('');
-  box.innerHTML=`<span class="lb">📍 地点收录 <i>${spots.length+dests.length}</i></span>${spotHtml}${destHtml}`;
+  const total=spots.length+dests.length+ai.length;
+  box.innerHTML=`<span class="lb">📍 地点收录 <i>${total}</i>${ai.length?' · AI 实体':''}</span>${spotHtml}${destHtml}${aiHtml}`;
 }
 function srPaint(){
   const grid=document.getElementById('srGrid');
@@ -218,14 +252,30 @@ function srPaint(){
   if(more)more.style.display=rows.length>show.length?'inline-flex':'none';
 }
 function srOpen(id){
-  if(typeof openDbPost==='function'){openDbPost(id);return}
   const p=srPool.find(x=>String(x.id)===String(id));
+  /* 后端返回的攻略：还原成原帖 id，复用已有详情弹窗 */
+  const pid=(p&&p.srcId)?p.srcId:(/^\d+$/.test(String(id))?String(id):'');
+  if(pid&&typeof openDbPost==='function'){openDbPost(pid);return}
+  if(p&&p.sourceUrl){window.open(p.sourceUrl,'_blank');return}
+  if(p&&typeof openModal==='function'){srDetailModal(p);return}
   if(p&&p.sourceUrl)window.open(p.sourceUrl,'_blank');
 }
+/* 打卡记录的轻量详情（复用站内弹窗样式，不新增 CSS） */
+function srDetailModal(p){
+  const isCheckin=p.type==='checkin';
+  openModal(`<button class="mx" onclick="closeModal()">✕</button>
+    <div class="tw-detail-body" style="padding:22px 20px">
+      <span class="tw-chip">${isCheckin?'📍 打卡记录':'📝 攻略'}</span>
+      <h3 style="margin:8px 0 6px">${srEsc(p.title||'旅行记录')}</h3>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">📍 ${srEsc(p.location||'—')} · ${srFmtTime(p)} · ${srEsc(p.nick||'旅行者')}</div>
+      <p style="font-size:13px;line-height:1.85;color:var(--ink-2)">${srEsc(p.content||'暂无更多内容')}</p>
+    </div>`);
+}
 function srSearch(kw){
-  srState.kw=kw||'';srPage=1;
+  srState.kw=kw||'';srPage=1;srAi=null;
   history.replaceState(null,'',location.pathname+'?kw='+encodeURIComponent(srState.kw));
   srRenderTopics();srPaint();
+  srSearchApi(srState.kw);      // 有后端就用后端数据（打卡记录 + 攻略 + AI 实体）
 }
 function srBind(){
   const inp=document.getElementById('srKw');
@@ -256,4 +306,5 @@ document.addEventListener('DOMContentLoaded',async()=>{
   srRenderHots();srBind();
   srPool=await srLoad();
   srRenderTopics();srPaint();
+  srSearchApi(srState.kw);      // 首屏若带 ?kw= 也走一次后端搜索
 });

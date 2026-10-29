@@ -47,6 +47,16 @@
       </div>
     </div>
 
+    <!-- 本地 Node + SQLite 后端实时统计（GET /api/health） -->
+    <div class="adm-be" v-if="backend.ok">
+      <span class="be-t">🧩 本地后端 · Node + Express + SQLite</span>
+      <span>攻略 <b>{{backend.guides}}</b></span>
+      <span>打卡 <b>{{backend.checkins}}</b></span>
+      <span>实体 <b>{{backend.entities}}</b></span>
+      <span>城市 <b>{{backend.cities}}</b></span>
+      <span class="be-ai">{{backend.ai}}</span>
+    </div>
+
     <el-tabs v-model="tab" class="adm-tabs" @tab-change="onTab">
       <!-- 景点维护 -->
       <el-tab-pane label="🏞 景点维护" name="spot">

@@ -40,6 +40,8 @@ createApp({
       /* 社区数据 tab：统计 + 帖子表 + 抓取条数 */
       community: { posts: '-', userPosts: '-', crawlPosts: '-', comments: '-', crawlComments: '-', topics: '-', lastCrawl: '' },
       communityList: [], communityLimit: 10, communityCrawling: false,
+      /* 本地 Node + SQLite 后端（backend/）的真实统计，来自 GET /api/health */
+      backend: { ok: false, guides: '-', checkins: '-', entities: '-', cities: '-', ai: '' },
       dlg: false, editing: {}
     };
   },
@@ -53,9 +55,26 @@ createApp({
     }
   },
   mounted() {
+    this.loadBackendStats();
     if (this.token) this.loadAll();
   },
   methods: {
+    /* 本地 Node 后端统计：不依赖登录，直接用 /api/health 的真实计数 */
+    async loadBackendStats() {
+      const r = await WGOAPI.backendHealth();
+      if (r && r.ok && r.stats) {
+        this.backend = {
+          ok: true,
+          guides: r.stats.guides,
+          checkins: r.stats.checkins,
+          entities: r.stats.entities,
+          cities: r.stats.cities,
+          ai: (r.ai && r.ai.configured) ? 'Dots Studio 已配置' : 'Dots Studio 未配置 · 本地规则抽取'
+        };
+      } else {
+        this.backend.ok = false;
+      }
+    },
     async doLogin() {
       if (!this.form.username || !this.form.password) { this.setTip('请输入账号与密码', true); return; }
       this.loading = true;
@@ -78,6 +97,7 @@ createApp({
       this.token = 'demo';
       this.nick = 'admin（演示）';
       this.loadDemo();
+      this.loadBackendStats();
       ElMessage.success('已进入离线演示模式（数据来自爬虫抓取结果 spots_crawl.json）');
     },
     logout() {

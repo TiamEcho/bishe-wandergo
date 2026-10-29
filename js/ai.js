@@ -279,8 +279,13 @@ function showPlan(plan){
     <h4><span class="mi">📷</span>Plog 推荐<span class="go">查看详情 →</span></h4>
     <div class="vcards">${plan.plogs.map(v=>`<div class="vcard" onclick="event.stopPropagation();openPlog('${v.t}','${plan.dest}','${v.img}','${encodeURIComponent(v.txt)}')"><img src="${IMG(P[v.img])}" loading="lazy"><div class="vfoot"><h6>${v.t}</h6><p>📍 ${plan.dest}</p></div></div>`).join('')}</div>
   </div>
-  <div class="mod col-12" style="animation-delay:.6s;border-style:dashed"><h4><span class="mi">💡</span>AI 省钱贴士</h4><p style="font-size:12.5px;color:var(--ink-2)">${plan.tips}</p></div>`;
+  <div class="mod col-12" style="animation-delay:.6s;border-style:dashed"><h4><span class="mi">💡</span>AI 省钱贴士</h4><p style="font-size:12.5px;color:var(--ink-2)">${plan.tips}</p></div>
+  <div class="mod col-12" id="aiEntMod" style="animation-delay:.65s">
+    <h4><span class="mi">🤖</span>AI 实体抽取 · ${plan.dest}<span class="go" id="aiEntRetry">重新采集 →</span></h4>
+    <div class="mod-blist" id="aiEntBody"><div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div></div>
+  </div>`;
   grid.classList.add('show');
+  aiEntSync(plan);
   /* 侧边模块导航：可展开/收起，点击定位到对应模块 */
   buildRail(plan);
   /* 新模块：BGM 列表 + 人流饼图（等 DOM 就绪） */
@@ -306,6 +311,68 @@ function showPlan(plan){
       renderRtModes();renderRtStats();renderFoodChips(eats);renderCmts(key||plan.dest);
     });
   },60);
+}
+/* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + Dots Studio 抽取） ---- */
+async function aiEntSync(plan){
+  const dest=typeof plan==='string'?plan:plan.dest;
+  const body=document.getElementById('aiEntBody');if(!body)return;
+  const retry=document.getElementById('aiEntRetry');
+  if(retry)retry.onclick=()=>aiEntSync(plan);
+  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
+  const base=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
+  let d=null;
+  try{
+    const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),20000);
+    const r=await fetch(base+'/api/collect-guide',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({keyword:dest}),signal:ctl.signal
+    });
+    clearTimeout(timer);
+    if(!r.ok)throw new Error('http '+r.status);
+    d=await r.json();
+    if(!d||!d.ok)throw new Error((d&&d.message)||'no data');
+  }catch(e){
+    d=null;
+  }
+  if(!d){
+    /* 后端未启动：整块隐藏，页面与原来完全一致 */
+    const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return;
+  }
+  const added=(typeof plan==='object')?aiEntApply(plan,d):0;
+  renderAiEnt(body,d,added);
+}
+/* 实体驱动行程：把抽取到的真实地名补进景点列表（最多 2 个，标注 🧠 AI 抽取） */
+function aiEntApply(plan,d){
+  if(!plan||!d||!d.entities)return 0;
+  const list=document.querySelector('#modGrid .spot-mini-list');if(!list)return 0;
+  const known=plan.spots.map(id=>{const s=spotById(id);return s?s.n:''});
+  const anchor=spotById(plan.spots[0])||{lng:104.07,lat:30.67,rg:'cn'};
+  let added=0;
+  (d.entities.places||[]).filter(p=>p&&p.name&&!known.includes(p.name)).slice(0,2).forEach(p=>{
+    const s=geoSpot(p.name,plan.dest,plan.prov,anchor.lng,anchor.lat,anchor.rg||'cn');
+    if(plan.spots.includes(s.id))return;
+    plan.spots.push(s.id);
+    plan.__aiSpots=(plan.__aiSpots||[]).concat(s.id);
+    if(plan.routeDays&&plan.routeDays.length)plan.routeDays[plan.routeDays.length-1].push(s.id);
+    const el=document.createElement('div');
+    el.className='spot-mini';
+    el.innerHTML=`<img src="${IMG(P[s.id])}" loading="lazy"><div><h5>${s.n}</h5><div class="city">${s.city} · ${s.tag}</div><div class="icon-chips"><span class="hl">🧠 AI 抽取</span><span>⭐${s.rating}</span><span>💰${s.price}</span><span>⏱${s.hrs}</span></div></div>`;
+    el.onclick=e=>{e.stopPropagation();if(typeof openSpot==='function')openSpot(s.id)};
+    list.appendChild(el);
+    added++;
+  });
+  return added;
+}
+function renderAiEnt(body,d,added){
+  const row=(ico,label,arr)=>arr&&arr.length
+    ?`<div><b>${ico} ${label}</b>${arr.slice(0,8).map(x=>escHtml(x.name)).join(' · ')}</div>`:'';
+  const p=row('📍','地名',d.entities.places);
+  const f=row('🍜','美食',d.entities.foods);
+  const s=row('🏙','商圈',d.entities.districts);
+  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'Dots Studio 大模型':'本地规则（未配置 API Key）'}${added?` · 已补进行程 ${added} 个点位`:''}</div>`;
+  body.innerHTML=(p||f||s)
+    ?(p+f+s+meta)
+    :`<div>暂未从「${escHtml(d.keyword)}」相关攻略里抽取到实体，换个目的地或稍后重试。</div>${meta}`;
 }
 /* ---- 路线模块：出行方式切换 / 里程时间统计 ---- */
 let rtMode=localStorage.getItem('fmw_rt_mode')||'drive';

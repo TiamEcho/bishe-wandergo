@@ -102,6 +102,8 @@ const WGOAPI=(()=>{
     /* 社区爬虫：B 站公开接口抓 Vlog 与评论，写库；同样需要放大超时 */
     adminCommunityStats(){return req('/api/admin/community/stats')},
     adminCommunityList(limit){return req('/api/admin/community/list?limit='+(limit||40))},
-    adminCommunityCrawl(limit){return req('/api/admin/community/crawl?limit='+encodeURIComponent(limit||10),{method:'POST'},420000)}
+    adminCommunityCrawl(limit){return req('/api/admin/community/crawl?limit='+encodeURIComponent(limit||10),{method:'POST'},420000)},
+    /* 本地 Node 后端健康检查：管理端用它展示 SQLite 真实统计（攻略 / 打卡 / 实体 / 城市） */
+    backendHealth(){return req('/api/health',{},3000)}
   };
 })();

@@ -1,0 +1,16 @@
+{
+  "name": "wandergo-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WanderGo 后端：Express + SQLite + Dots Studio AI 实体抽取",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}
