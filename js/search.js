@@ -95,7 +95,7 @@ async function srLoad(){
   }catch(e){}
   if(!out.length&&!srBundle){
     try{
-      const r=await fetch('js/posts_crawl.json?v=1118');srBundle=await r.json();
+      const r=await fetch('js/posts_crawl.json?v=1120');srBundle=await r.json();
       (srBundle.posts||[]).forEach(p=>out.push(srNormalizeApi(p)));
     }catch(e){}
   }
