@@ -156,33 +156,36 @@ function initTheme(){
   if(_st==='custom'){try{const c=JSON.parse(localStorage.getItem('fmw_custom')||'{}');if(c.h!=null){cusH=c.h;cusS=c.s;cusL=c.l;cusMode=c.m||'mono';cusBase=c.b||'dark'}}catch(e){}syncWheel();
     $$('#baseRow [data-b]').forEach(x=>x.classList.toggle('on',x.dataset.b===cusBase));applyCustom(true)}
 }
-/* ================= 侧栏 ================= */
-function initSidebar(){
-  if(localStorage.getItem('fmw_sb')==='min')document.body.classList.add('sb-min');
-  const tg=$('#sbToggle');
-  if(tg)tg.onclick=()=>{const min=document.body.classList.toggle('sb-min');localStorage.setItem('fmw_sb',min?'min':'max');setTimeout(WGO._fireResize,360)};
-  /* 当前页高亮 */
-  const page=(location.pathname.split('/').pop()||'index.html').split('?')[0];
-  $$('#navLinks a').forEach(a=>{
-    const href=a.getAttribute('href')||'';
-    if(href===page||(page==='index.html'&&href==='index.html'))a.classList.add('on');
-    else a.classList.remove('on');
-  });
-}
+/* ================= 侧栏（已废弃，改用顶部导航） ================= */
 /* ================= 登录 / 注册（后端优先，离线兜底） ================= */
 let user=JSON.parse(localStorage.getItem('fmw_user')||'null');
 function saveUser(u){user=u;localStorage.setItem('fmw_user',JSON.stringify(u));refreshUser()}
 function refreshUser(){
-  if(user){$('#navLoginBtn').style.display='none';$('#avatarChip').classList.add('show');$('#avatarTxt').textContent=user.nick[0];$('#avatarName').textContent=user.nick;}
-  else{$('#navLoginBtn').style.display='';$('#avatarChip').classList.remove('show');}
+  if(user){$('#navLoginBtn').style.display='none';$('#tnUser').classList.add('show');$('#avatarTxt').textContent=user.nick[0];$('#avatarName').textContent=user.nick;}
+  else{$('#navLoginBtn').style.display='';$('#tnUser').classList.remove('show');}
   if(window.onUserRefresh)window.onUserRefresh();
 }
 function openAuth(tab){
-  openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div style="padding:26px">
-    <div class="auth-tabs"><button id="atL" class="on">登录</button><button id="atR">注册</button></div>
-    <div id="authBody"></div>
-  </div>`,false);
+  /* 全屏覆盖登录/注册弹窗：左品牌区 + 右表单区，登录注册 Tab 切换 */
+  const box=$('#modalBox');box.className='modal fs';
+  box.innerHTML=`<button class="mx" onclick="closeModal()">✕</button>
+  <div class="auth-fs">
+    <div class="auth-side">
+      <span class="tile">${LOGO_SVG}</span>
+      <h2>WANDERGO</h2>
+      <p>Fly Me to the World · 你的故事旅行宇宙</p>
+      <ul>
+        <li>🤖 AI 模块化攻略 · 一键生成行程</li>
+        <li>🗺 五层 3D 地图 · 打卡点亮足迹</li>
+        <li>💬 真实社区攻略 · 协同过滤推荐</li>
+      </ul>
+    </div>
+    <div class="auth-main">
+      <div class="auth-tabs"><button id="atL" class="on">登录</button><button id="atR">注册</button></div>
+      <div id="authBody"></div>
+    </div>
+  </div>`;
+  $('#ovl').classList.add('show');
   let mode=tab||'login';
   function render(){
     $('#atL').classList.toggle('on',mode==='login');$('#atR').classList.toggle('on',mode==='register');
@@ -210,11 +213,137 @@ function openAuth(tab){
   $('#atL').onclick=()=>{mode='login';render()};$('#atR').onclick=()=>{mode='register';render()};
   render();
 }
+function doLogout(){user=null;localStorage.removeItem('fmw_user');refreshUser();toast('已退出登录，期待下一站再见 👋')}
 function initUser(){
   $('#navLoginBtn').onclick=()=>openAuth();
-  const _lb=$('#logoutBtn2');if(_lb)_lb.onclick=()=>{ if(!user){openAuth();return} user=null;localStorage.removeItem('fmw_user');refreshUser();toast('已退出登录，期待下一站再见 👋'); };
-  $('#avatarChip').onclick=()=>WGO.go('me.html');
+  const _lb=$('#logoutBtn2');if(_lb)_lb.onclick=()=>{ if(!user){openAuth();return} doLogout(); };
   refreshUser();
+}
+/* ---- 城市 → 省份（用于"已点亮省份数"统计） ---- */
+const CITY_PROV={北京:'北京',上海:'上海',天津:'天津',重庆:'重庆',大理:'云南',昆明:'云南',丽江:'云南',香格里拉:'云南',西安:'陕西',成都:'四川',九寨沟:'四川',杭州:'浙江',苏州:'江苏',南京:'江苏',桂林:'广西',厦门:'福建',青岛:'山东',济南:'山东',哈尔滨:'黑龙江',三亚:'海南',长沙:'湖南',武汉:'湖北',广州:'广东',深圳:'广东',珠海:'广东',香港:'香港',澳门:'澳门',台北:'台湾',拉萨:'西藏',乌鲁木齐:'新疆',喀什:'新疆',敦煌:'甘肃',兰州:'甘肃',洛阳:'河南',郑州:'河南',贵阳:'贵州',凤凰:'湖南',张家界:'湖南'};
+const provOf=c=>CITY_PROV[c]||c||'未知';
+/* ================= 个人中心弹窗（用户端 / 管理端切换） ================= */
+function openUserCenter(){
+  if(!user){openAuth();return}
+  const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
+  const lit=litSet();
+  const spots=[...lit].map(spotById).filter(Boolean);
+  const provs=new Set(spots.filter(s=>s.rg==='cn').map(s=>provOf(s.city))).size;
+  const abroad=spots.some(s=>s.rg==='ab');
+  const badges=[
+    ['🏅','首打卡',lit.size>=1],['🗺','三省足迹',provs>=3],['✈','首次出境',abroad],
+    ['🔥','五连打卡',lit.size>=5],['📸','摄影达人',albums.some(a=>(a.imgs||[]).length>=3)],['🌍','环球行者',lit.size>=10]
+  ];
+  const got=badges.filter(b=>b[2]).length;
+  openModal(`<button class="mx" onclick="closeModal()">✕</button>
+  <div class="uc">
+    <div class="uc-tabs" id="ucTabs">
+      <button class="on" data-v="user">用户端</button><button data-v="admin">管理端</button>
+    </div>
+    <div id="ucBody"></div>
+  </div>`,true);
+  let view='user';
+  function render(){
+    $$('#ucTabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
+    if(view==='user'){
+      $('#ucBody').innerHTML=`
+      <div class="uc-head">
+        <span class="uc-av">${user.nick[0]}</span>
+        <div><h3>${user.nick}</h3><p>${user.from==='api'?'✅ 已同步 Spring Boot 后端':'📱 本地演示账号'}</p></div>
+      </div>
+      <div class="uc-stats">
+        <div><b>${provs}</b><span>已点亮省份</span></div>
+        <div><b>${lit.size}</b><span>打卡景点</span></div>
+        <div><b>${got}<i>/${badges.length}</i></b><span>成就徽章</span></div>
+        <div><b>${lit.size*20+got*50+albums.length*10}</b><span>总积分</span></div>
+      </div>
+      <div class="uc-badges">${badges.map(b=>`<div class="uc-badge ${b[2]?'':'lock'}"><i>${b[2]?b[0]:'🔒'}</i>${b[1]}</div>`).join('')}</div>
+      <div class="uc-foot">
+        <button class="btn line" id="ucLogout">退出登录</button>
+        <button class="btn gold" onclick="closeModal();WGO.go('me.html')">进入个人中心 →</button>
+      </div>`;
+      $('#ucLogout').onclick=()=>{doLogout();closeModal()};
+    }else{
+      $('#ucBody').innerHTML=`
+      <div class="uc-head">
+        <span class="uc-av admin">管</span>
+        <div><h3>管理端 · 站点概览</h3><p>演示数据 · 待接入后端管理接口</p></div>
+      </div>
+      <div class="uc-stats">
+        <div><b>1,284</b><span>注册用户</span></div>
+        <div><b>356</b><span>攻略帖</span></div>
+        <div><b>89</b><span>今日打卡</span></div>
+      </div>
+      <div class="uc-admin-row">📹 待审核视频<b>7 条</b></div>
+      <div class="uc-admin-row">🏷 待维护词条<b>3 个</b></div>
+      <div class="uc-admin-row">⚠ 待处理举报<b>1 件</b></div>
+      <div class="uc-foot" style="margin-top:14px">
+        <button class="btn line" id="ucBack">← 返回用户端</button>
+        <button class="btn gold" onclick="toast('管理后台演示页开发中 🚧')">进入管理后台 →</button>
+      </div>`;
+      $('#ucBack').onclick=()=>{view='user';render()};
+    }
+  }
+  $$('#ucTabs button').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
+  render();
+}
+/* ================= 顶部导航下拉 ================= */
+function initTopnav(){
+  const closeAll=()=>$$('.tn-item.open,.tn-user.open').forEach(x=>x.classList.remove('open'));
+  $$('.tn-item').forEach(it=>{
+    it.querySelector('.tn-link').onclick=e=>{
+      e.stopPropagation();
+      const was=it.classList.contains('open');
+      closeAll();if(!was)it.classList.add('open');
+    };
+  });
+  const chip=$('#avatarChip');
+  if(chip)chip.onclick=e=>{e.stopPropagation();closeAll();openUserCenter()};
+  document.addEventListener('click',e=>{if(!e.target.closest('.tn-item,.tn-user'))closeAll()});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll()});
+  /* 当前页所属分组 / 顶级项高亮 */
+  const page=(location.pathname.split('/').pop()||'index.html').split(/[?#]/)[0];
+  $$('.tn-item').forEach(it=>{
+    if([...it.querySelectorAll('.tn-drop a')].some(a=>{
+      const h=a.getAttribute('href')||'';
+      return !h.includes('#')&&h.split(/[?#]/)[0]===page;
+    }))it.classList.add('cur');
+  });
+
+  /* 首页下拉：已在首页则平滑滚动到锚点，否则带 hash 跳转 */
+  $$('.tn-drop a[href^="index.html#"]').forEach(a=>{
+    a.addEventListener('click',e=>{
+      if(page==='index.html'){
+        e.preventDefault();
+        const t=document.querySelector(a.getAttribute('href').slice(10));
+        if(t)t.scrollIntoView({behavior:'smooth',block:'start'});
+        closeAll();
+      }
+    });
+  });
+  /* Logo：在首页点击平滑回到页面顶部 */
+  const lg=document.querySelector('.tn-logo');
+  if(lg)lg.addEventListener('click',e=>{
+    if(page==='index.html'){e.preventDefault();window.scrollTo({top:0,behavior:'smooth'})}
+  });
+  /* 回到顶部按钮：滚动超过 300px 显示 */
+  const tt=$('#toTop');
+  if(tt){
+    tt.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
+    const onScroll=()=>tt.classList.toggle('show',window.scrollY>300);
+    addEventListener('scroll',onScroll,{passive:true});
+    onScroll();
+  }
+}
+/* 轻量图表加载（仅 ECharts 核心，不带地图数据，用于数据大屏类页面） */
+function loadCharts(cb){
+  if(window.echarts){cb(true);return}
+  const urls=['https://cdn.jsdelivr.net/npm/echarts@4.9.0/dist/echarts.min.js','https://unpkg.com/echarts@4.9.0/dist/echarts.min.js','https://registry.npmmirror.com/echarts/4.9.0/files/dist/echarts.min.js'];
+  let j=0;
+  (function tryOne(){
+    if(j>=urls.length){cb(false);return}
+    const s=document.createElement('script');s.src=urls[j++];s.onload=()=>cb(true);s.onerror=tryOne;document.head.appendChild(s);
+  })();
 }
 /* ================= 弹窗 ================= */
 function openModal(html,wide){$('#modalBox').className='modal'+(wide?' wide':'');$('#modalBox').innerHTML=html;$('#ovl').classList.add('show')}
@@ -407,6 +536,153 @@ function initSearch(){
     else if(e.key==='Escape'){closeSearch()}
   });
 }
+/* ================= AI 智能体悬浮球 ================= */
+function initAIChat(){
+  const fab=$('#aiFab'), ball=$('#aiBall'), panel=$('#aiPanel');
+  if(!fab||!ball||!panel) return;
+  const msgs=$('#aiMsgs'), input=$('#aiInput'), sendBtn=$('#aiSend');
+  const closeBtn=$('#aiClose'), vidBtn=$('#aiPickVideo');
+  const vidModal=$('#aiVidModal'), vidList=$('#aiVidList'), vidClose=$('#aiVidClose');
+  const WELCOME='你好！我可以帮你分析旅游攻略视频，也可以直接帮你规划行程~ ✨';
+  let history=[]; let busy=false;
+
+  /* ---- 消息渲染 ---- */
+  function addMsg(role,text,extraHtml){
+    const d=document.createElement('div');
+    d.className='ai-msg '+(role==='user'?'user':'ai');
+    d.innerHTML=(role==='user'?'<span class="ai-av u">我</span>':'<span class="ai-av a">🤖</span>')
+      +'<div class="ai-bubble">'+(text||'').replace(/\n/g,'<br>')+(extraHtml||'')+'</div>';
+    msgs.appendChild(d);
+    msgs.scrollTop=msgs.scrollHeight;
+  }
+  function welcome(){ msgs.innerHTML=''; history=[]; addMsg('ai',WELCOME); }
+
+  /* ---- 打开 / 关闭面板 ---- */
+  function openPanel(){
+    panel.classList.add('on');
+    ball.classList.add('on');
+    if(!msgs.children.length) welcome();
+    setTimeout(()=>input.focus(),100);
+  }
+  function closePanel(){ panel.classList.remove('on'); ball.classList.remove('on'); }
+  ball.addEventListener('click',e=>{
+    if(ball.dataset.dragged==='1'){ ball.dataset.dragged='0'; return; }
+    panel.classList.contains('on')?closePanel():openPanel();
+  });
+  closeBtn.onclick=closePanel;
+
+  /* ---- 点击面板外部关闭 ---- */
+  document.addEventListener('click',e=>{
+    if(!panel.classList.contains('on')) return;
+    if(!fab.contains(e.target)&&!vidModal.contains(e.target)) closePanel();
+  });
+
+  /* ---- 拖拽小球 ---- */
+  let drag=false, sx=0, sy=0, ox=0, oy=0, moved=false;
+  ball.addEventListener('pointerdown',e=>{
+    drag=true; moved=false;
+    const r=fab.getBoundingClientRect();
+    sx=e.clientX; sy=e.clientY; ox=r.left; oy=r.top;
+    fab.style.right='auto'; fab.style.bottom='auto';
+    ball.setPointerCapture(e.pointerId);
+  });
+  ball.addEventListener('pointermove',e=>{
+    if(!drag) return;
+    const dx=e.clientX-sx, dy=e.clientY-sy;
+    if(Math.abs(dx)+Math.abs(dy)>5) moved=true;
+    const nx=Math.max(8,Math.min(window.innerWidth-64,ox+dx));
+    const ny=Math.max(8,Math.min(window.innerHeight-64,oy+dy));
+    fab.style.left=nx+'px'; fab.style.top=ny+'px';
+  });
+  ball.addEventListener('pointerup',e=>{
+    if(!drag) return; drag=false;
+    ball.dataset.dragged=moved?'1':'0';
+    try{ ball.releasePointerCapture(e.pointerId); }catch{}
+  });
+
+  /* ---- 发送对话 ---- */
+  async function send(){
+    const txt=input.value.trim();
+    if(!txt||busy) return;
+    input.value=''; busy=true;
+    addMsg('user',txt);
+    history.push({role:'user',content:txt});
+    addMsg('ai','<span class="ai-typing">正在思考…</span>');
+    const last=msgs.lastElementChild;
+    let reply='抱歉，AI 暂时不可用，请稍后再试。';
+    try{
+      const r=await WGOAPI.chat(txt,history);
+      if(r&&r.ok&&r.reply){ reply=r.reply; history.push({role:'assistant',content:r.reply}); }
+      else if(r&&r.reply){ reply=r.reply; }
+    }catch(e){ console.warn(e); }
+    last.querySelector('.ai-bubble').innerHTML=reply.replace(/\n/g,'<br>');
+    msgs.scrollTop=msgs.scrollHeight;
+    busy=false;
+  }
+  sendBtn.onclick=send;
+  input.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } };
+
+  /* ---- 视频选择弹窗 ---- */
+  vidBtn.onclick=async()=>{
+    vidModal.classList.add('on');
+    vidList.innerHTML='<div class="ai-vid-empty">加载视频列表中…</div>';
+    let list=[];
+    try{ const r=await WGOAPI.videoList(40); if(r&&r.ok) list=r.list||[]; }catch(e){}
+    /* 后端离线时兜底：取社区 POSTS 里的视频 */
+    if(!list.length&&typeof POSTS!=='undefined'){
+      list=POSTS.filter(p=>p.type==='video').map(p=>({
+        id:p.id, title:p.txt||p.u, city:(p.loc||'').split('·')[0].trim(),
+        cover:(p.imgs&&p.imgs[0])||'', source:p.plat||'community', content:p.txt||''
+      }));
+    }
+    if(!list.length){ vidList.innerHTML='<div class="ai-vid-empty">暂无视频数据</div>'; return; }
+    vidList.innerHTML=list.map(v=>`
+      <button class="ai-vid-item" data-id="${v.id}" type="button">
+        <span class="ai-vid-cover" style="${v.cover?`background-image:url(${typeof IMG==='function'&&P?IMG(P[v.cover],'square'):v.cover})`:'background:var(--panel-2)'}">▶</span>
+        <span class="ai-vid-info">
+          <b>${(v.title||'').slice(0,28)}</b>
+          <i>${v.city||'未知城市'} · ${v.source||''}</i>
+        </span>
+      </button>`).join('');
+    vidList.querySelectorAll('.ai-vid-item').forEach(b=>b.onclick=()=>pickVideo(b.dataset.id));
+  };
+  vidClose.onclick=()=>vidModal.classList.remove('on');
+  vidModal.addEventListener('click',e=>{ if(e.target===vidModal) vidModal.classList.remove('on'); });
+
+  /* ---- 选中视频 → 分析 ---- */
+  async function pickVideo(id){
+    vidModal.classList.remove('on');
+    addMsg('user','🎬 分析视频：'+id);
+    addMsg('ai','<span class="ai-typing">正在分析视频内容，请稍候…</span>');
+    const last=msgs.lastElementChild;
+    let data=null;
+    try{ data=await WGOAPI.analyzeVideo(id); }catch(e){ console.warn(e); }
+    if(!data||!data.ok){
+      last.querySelector('.ai-bubble').innerHTML='视频分析失败，请稍后重试。';
+      return;
+    }
+    const spots=(data.spots||[]).slice(0,6);
+    const foods=(data.foods||[]).slice(0,6);
+    const hotels=(data.hotels||[]).slice(0,3);
+    const card=`
+      <div class="ai-ana-card">
+        <div class="ai-ana-title">📹 ${(data.title||'').slice(0,30)}</div>
+        <div class="ai-ana-summary">${data.summary||''}</div>
+        ${spots.length?`<div class="ai-ana-row"><b>📍 关键景点</b><span>${spots.join('、')}</span></div>`:''}
+        ${data.route?`<div class="ai-ana-row"><b>🗺 推荐路线</b><span>${data.route}</span></div>`:''}
+        ${foods.length?`<div class="ai-ana-row"><b>🍜 美食建议</b><span>${foods.join('、')}</span></div>`:''}
+        ${hotels.length?`<div class="ai-ana-row"><b>🏨 住宿建议</b><span>${hotels.join('；')}</span></div>`:''}
+        <button class="ai-ana-go" type="button" data-city="${encodeURIComponent(data.city||'')}" data-spots="${encodeURIComponent((spots||[]).join(','))}">🚀 一键生成行程</button>
+      </div>`;
+    last.querySelector('.ai-bubble').innerHTML=card;
+    msgs.scrollTop=msgs.scrollHeight;
+    last.querySelector('.ai-ana-go').onclick=function(){
+      const city=decodeURIComponent(this.dataset.city||'');
+      const spots=decodeURIComponent(this.dataset.spots||'');
+      WGO.go('ai.html',{from:'ai-analysis',dest:city||'大理',spots});
+    };
+  }
+}
 /* ================= 共享页面骨架（侧栏/主题工坊/搜索/页脚/弹窗） ================= */
 const NAVS=[
  ['index.html','🏠','旅行首页'],['novel.html','📖','跟着小说去旅行'],['prince.html','👑','跟着小王子去旅行'],
@@ -415,26 +691,77 @@ const NAVS=[
  ['recommend.html','🎯','猜你喜欢 · 推荐'],['wheel.html','🎡','旅行大转盘']
 ];
 const LOGO_SVG='<svg viewBox="0 0 24 24"><path d="M21.5 5.6c-.5-1-1.8-1.4-2.8-.9l-4.3 2.3-8.1-3.4c-.5-.2-1.1-.1-1.5.2l-.9.8c-.5.4-.4 1.2.2 1.5l6.5 3.3-3.7 2-2.9-.6c-.4-.1-.8 0-1.1.3l-.7.6c-.4.4-.3 1 .2 1.2l3.3 1.9 1.9 3.3c.3.5 1 .6 1.3.2l.6-.7c.3-.3.4-.7.3-1.1l-.6-2.9 3.7-2 3.3 6.5c.3.5 1.1.6 1.5.2l.8-.9c.3-.4.4-1 .2-1.5l-3.4-8.1 2.3-4.3c.5-.9.3-2.1-.6-2.6z" transform="scale(.9) translate(1.3,1.3)"/></svg>';
+/* 顶部导航栏：AI规划 / 地图打卡 / 社区攻略 三个下拉 + 登录/用户端 */
+const TOPNAV=[
+ {t:'AI规划',ico:'🤖',items:[
+   ['ai.html','AI行程规划','出发日期 + 返程日期 + 城市 + 一键生成'],
+   ['recommend.html','路线推荐','多条路线对比'],
+   ['ai.html?mode=budget','时间预算','开始时间 + 结束时间 + 费用预估']]},
+ {t:'地图打卡',ico:'🗺',items:[
+   ['map.html','点亮地图','中国 / 世界切换'],
+   ['checkin.html','景点打卡','小游戏 + 成就徽章'],
+   ['memories.html','旅程故事','旅行记录时间线']]},
+ {t:'社区攻略',ico:'💬',items:[
+   ['community.html','攻略视频列表','B站旅游攻略视频'],
+   ['index.html','平台数据概览','覆盖城市数 / 累计攻略 / 活跃用户 / 点亮省份'],
+   ['dest.html','热门目的地推荐','重庆 / 成都 / 西安 / 杭州 等热门城市'],
+   ['analysis.html','景点分析','ECharts 可视化大屏']]}
+];
 function initChrome(){
-  if(!document.querySelector('aside.sidebar')){
+  if(!document.querySelector('header.topnav')){
     document.body.insertAdjacentHTML('afterbegin',`
-    <aside class="sidebar">
-      <button class="sb-toggle" id="sbToggle" title="收起 / 展开导航">«</button>
-      <a class="logo" href="index.html">
+    <header class="topnav">
+      <a class="tn-logo" href="index.html">
         <span class="tile">${LOGO_SVG}</span>
-        <span><b>WANDERGO</b><i>你的故事旅行宇宙</i></span>
+        <span class="tn-brand"><b>WANDERGO</b><i>Fly Me to the World</i></span>
       </a>
-      <button class="sb-search" id="searchOpen">🔍<span>搜索景点 / 视频 / 笔记…</span><kbd>Ctrl K</kbd></button>
-      <div class="side-links" id="navLinks">
-        ${NAVS.map(n=>`<a href="${n[0]}"><span class="ni">${n[1]}</span>${n[2]}</a>`).join('')}
+      <nav class="tn-menu">
+        ${TOPNAV.map(g=>`
+        <div class="tn-item">
+          <button class="tn-link" type="button"><span class="tn-ico">${g.ico}</span>${g.t}<i class="tn-caret">▾</i></button>
+          <div class="tn-drop">
+            ${g.items.map(x=>`<a href="${x[0]}"><b>${x[1]}</b><span>${x[2]}</span></a>`).join('')}
+          </div>
+        </div>`).join('')}
+      </nav>
+      <button class="tn-search" id="searchOpen" title="全站搜索（Ctrl K）">🔍</button>
+      <button class="btn gold tn-login" id="navLoginBtn">登录 / 注册</button>
+      <div class="tn-user" id="tnUser">
+        <button class="tn-userbtn" id="avatarChip" type="button" title="用户端 / 管理端"><span class="av" id="avatarTxt">旅</span><span id="avatarName">旅行者</span><i class="tn-caret">▾</i></button>
       </div>
-      <div class="side-foot">
-        <div class="nav-tools">
-          <span class="avatar-chip" id="avatarChip"><span class="av" id="avatarTxt">旅</span><span id="avatarName">旅行者</span></span>
-          <button class="btn gold" id="navLoginBtn">登录 / 注册</button>
+    </header>`);
+    document.body.insertAdjacentHTML('beforeend','<button class="to-top" id="toTop" type="button" title="回到顶部" aria-label="回到顶部">↑</button>');
+  }
+  /* AI 智能体悬浮球 + 对话面板 + 视频选择弹窗（全局唯一） */
+  if(!document.getElementById('aiFab')){
+    document.body.insertAdjacentHTML('beforeend',`
+    <div class="ai-fab" id="aiFab">
+      <button class="ai-ball" id="aiBall" type="button" title="WanderGo AI 助手" aria-label="WanderGo AI 助手">
+        <span class="ai-ball-ico">🤖</span>
+        <span class="ai-ball-pulse"></span>
+      </button>
+      <div class="ai-panel" id="aiPanel" role="dialog" aria-label="WanderGo AI 助手">
+        <div class="ai-panel-head">
+          <span class="ai-panel-title">✨ WanderGo AI 助手</span>
+          <button class="ai-close" id="aiClose" type="button" aria-label="关闭">✕</button>
+        </div>
+        <button class="ai-vidbtn" id="aiPickVideo" type="button">🎬 选择视频分析</button>
+        <div class="ai-msgs" id="aiMsgs"></div>
+        <div class="ai-input-row">
+          <input id="aiInput" type="text" placeholder="输入旅行问题，回车发送…" autocomplete="off">
+          <button id="aiSend" type="button">发送</button>
         </div>
       </div>
-    </aside>`);
+    </div>
+    <div class="ai-vidmodal" id="aiVidModal">
+      <div class="ai-vidmodal-box">
+        <div class="ai-vidmodal-head">
+          <span>🎬 选择要分析的攻略视频</span>
+          <button id="aiVidClose" type="button" aria-label="关闭">✕</button>
+        </div>
+        <div class="ai-vidmodal-list" id="aiVidList"><div class="ai-vid-empty">加载中…</div></div>
+      </div>
+    </div>`);
   }
   if(!document.getElementById('themeFab')){
     document.body.insertAdjacentHTML('beforeend',`
@@ -513,6 +840,6 @@ function initChrome(){
 /* ================= 公共初始化 ================= */
 document.addEventListener('DOMContentLoaded',()=>{
   initChrome();
-  initTheme();initSidebar();initUser();initSearch();
+  initTheme();initTopnav();initUser();initSearch();initAIChat();
   $$('[data-img]').forEach(el=>el.src=IMG(P[el.dataset.img],el.dataset.size||'landscape_4_3'));
 });

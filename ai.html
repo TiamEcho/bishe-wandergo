@@ -16,24 +16,70 @@
 
 <section class="sec" style="padding-top:6px"><div class="wrap">
   <div class="ai-hero-box">
-    <div class="ai-title"><span class="spark">✦</span>AI 旅行规划师 · Fly Me Intelligence</div>
-    <p class="ai-sub">示例：「我想去大理玩 3 天，预算 3000，喜欢湖景和慢生活」</p>
-    <div class="ai-input">
-      <input id="aiInput" placeholder="告诉我你的目的地、天数和预算，AI 为你生成模块化攻略…">
-      <button class="btn gold" id="aiGo" style="height:46px;padding:0 26px">✨ 生成规划</button>
+    <div class="ai-form" id="aiForm">
+      <div class="ai-form-title"><span class="spark">✦</span>AI 旅行规划师 · Fly Me Intelligence</div>
+      <p class="ai-sub">填写以下信息，AI 将为你量身定制一份模块化旅行攻略</p>
+
+      <div class="ai-block">
+        <div class="ai-block-head"><span class="ai-num">01</span>目的地与日期</div>
+        <div class="ai-row">
+          <div class="ai-field grow">
+            <label>* 目的地城市</label>
+            <input id="fDest" placeholder="输入城市名称，例如：中国·杭州">
+          </div>
+          <div class="ai-field">
+            <label>* 出发日期</label>
+            <input id="fStart" type="date">
+          </div>
+          <div class="ai-field">
+            <label>* 返程日期</label>
+            <input id="fEnd" type="date">
+          </div>
+          <div class="ai-field">
+            <label>旅行天数</label>
+            <div class="ai-days" id="fDays">1 天</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ai-block">
+        <div class="ai-block-head"><span class="ai-num">02</span>偏好设置</div>
+        <div class="ai-row">
+          <div class="ai-field grow">
+            <label>交通方式</label>
+            <select id="fTransport">
+              <option>公共交通</option><option>自驾</option><option>飞机</option><option>高铁</option><option>飞机+高铁</option>
+            </select>
+          </div>
+          <div class="ai-field grow">
+            <label>住宿风格</label>
+            <select id="fStay">
+              <option>经济实惠</option><option>舒适型</option><option>豪华型</option><option>特色民宿</option><option>青旅</option>
+            </select>
+          </div>
+        </div>
+        <div class="ai-field" style="margin-top:14px">
+          <label>旅行兴趣</label>
+          <div class="ai-interests" id="fInterests">
+            <button type="button">历史文化</button>
+            <button type="button">自然风光</button>
+            <button type="button">美食</button>
+            <button type="button">购物</button>
+            <button type="button">艺术</button>
+            <button type="button">休闲</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ai-block">
+        <div class="ai-block-head"><span class="ai-num">03</span>特殊需求</div>
+        <textarea id="fSpecial" rows="4" placeholder="告诉我你的特殊需求，比如：带老人出行、想看日出、对花粉过敏……"></textarea>
+      </div>
+
+      <button class="ai-submit" id="aiGo" type="button">开始规划旅程</button>
     </div>
-    <div class="ai-chips" id="aiChips">
-      <button>我想去大理玩 3 天，预算 3000</button>
-      <button>成都九寨沟 4 日亲子游</button>
-      <button>新疆喀纳斯 6 天环线</button>
-      <button>西藏拉萨 5 天朝圣之旅</button>
-      <button>内蒙古呼伦贝尔草原 5 天</button>
-      <button>常州恐龙园 2 天亲子游</button>
-      <button>日本红叶季 6 天怎么玩</button>
-      <button>冰岛极光环岛自驾</button>
-      <button>长沙 3 天美食之旅</button>
-      <button>青岛 3 天看海</button>
-    </div>
+
+    <!-- 生成进度条 -->
     <div class="pipeline" id="pipeline">
       <div class="steps">
         <div class="step" data-s="0"><span class="ico">🔍</span>理解你的问题</div>
@@ -44,7 +90,9 @@
       <div class="pipe-bar"><i id="pipeBar"></i></div>
       <div class="pipe-tip" id="pipeTip">AI 正在思考…</div>
     </div>
+
     <div class="plan-head" id="planHead"></div>
+    <div class="itinerary-3col" id="itin3col"></div>
     <aside class="mod-rail" id="modRail">
       <button class="rail-toggle" id="railToggle" title="展开 / 收起模块导航">🧩<span>模块</span></button>
       <div class="rail-list" id="railList"></div>
@@ -55,15 +103,31 @@
 
 <script src="js/data.js?v=1120"></script>
 <script src="js/poi_route.js?v=1120"></script>
+<script src="utils/coordTransform.js?v=1120"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1120"></script>
 <script src="js/core.js?v=1120"></script>
 <script src="js/map.js?v=1120"></script>
 <script src="js/ai.js?v=1120"></script>
 <script>
-/* 深度链接：ai.html?dest=大理 自动生成方案 */
+/* 深度链接：ai.html?dest=大理&days=3 自动填充并生成方案 */
 const _dest=WGO.q('dest');
-if(_dest){$('#aiInput').value='我想去'+_dest+'玩，帮我做一份模块化攻略';setTimeout(()=>runAI($('#aiInput').value),700)}
+if(_dest){
+  const fDest=document.getElementById('fDest');
+  const _days=parseInt(WGO.q('days')||'0',10);
+  if(fDest){
+    fDest.value=_dest;
+    if(_days>0){
+      const today=new Date();
+      const end=new Date(today.getTime()+(_days-1)*86400000);
+      const fmt=d=>d.toISOString().slice(0,10);
+      document.getElementById('fStart').value=fmt(today);
+      document.getElementById('fEnd').value=fmt(end);
+      calcDays();
+    }
+    setTimeout(()=>runAI(),700);
+  }
+}
 </script>
 </body>
 </html>

@@ -104,6 +104,10 @@ const WGOAPI=(()=>{
     adminCommunityList(limit){return req('/api/admin/community/list?limit='+(limit||40))},
     adminCommunityCrawl(limit){return req('/api/admin/community/crawl?limit='+encodeURIComponent(limit||10),{method:'POST'},420000)},
     /* 本地 Node 后端健康检查：管理端用它展示 SQLite 真实统计（攻略 / 打卡 / 实体 / 城市） */
-    backendHealth(){return req('/api/health',{},3000)}
+    backendHealth(){return req('/api/health',{},3000)},
+    /* ---------- AI 智能体悬浮球 ---------- */
+    chat(message,history){return req('/api/chat',{method:'POST',body:{message,history:history||[]}},15000)},
+    videoList(limit){return req('/api/videos?limit='+(limit||40),{},6000)},
+    analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)}
   };
 })();

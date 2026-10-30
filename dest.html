@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>热门目的地推荐 · WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">TOP DESTINATIONS</div>
+  <h2>热门目的地推荐</h2>
+  <p style="font-size:12.5px;color:var(--muted);margin-top:6px">按全站评分精选的热门城市与景点，点击卡片直接交给 AI 规划。</p>
+</div></section>
+
+<section class="sec" style="padding-top:10px"><div class="wrap">
+  <div class="dest-grid" id="destGrid"></div>
+</div></section>
+
+<script src="js/data.js?v=1120"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1120"></script>
+<script src="js/core.js?v=1120"></script>
+<script>
+(function(){
+  const GRADS=[['#2b4a6f','#7ea6d9'],['#5a4a2c','#c8a15a'],['#1b3f5c','#5f9bc0'],['#24422e','#5f9a6b'],['#211d3c','#5a4a8c'],['#4a2430','#a8546a']];
+  const TAGE=s=>/湖|海|岛|江|河/.test(s)?'🌊':/山|峰|雪|藏/.test(s)?'🏔':/宫|古|史|陵|俑|城/.test(s)?'🏯':/寺|庙|神社|佛/.test(s)?'⛩':/夜|都市|街/.test(s)?'🌃':/园|林|花|樱/.test(s)?'🌸':/原|草/.test(s)?'🌿':'📍';
+  const top=[...SPOTS].sort((a,b)=>b.rating-a.rating).slice(0,8);
+  document.getElementById('destGrid').innerHTML=top.map((s,i)=>{
+    const g=GRADS[i%GRADS.length];
+    return `<div class="dest-card" onclick="WGO.go('ai.html?city='+encodeURIComponent('${s.n}'))">
+      <div class="dest-thumb" style="background:linear-gradient(135deg,${g[0]},${g[1]})"><span class="rk">TOP ${i+1}</span>${TAGE(s.tag+s.n)}</div>
+      <div class="dest-body">
+        <h4>${s.n}</h4>
+        <div class="dc-sub">📍 ${s.city} · <span class="star">★ ${s.rating}</span> · ${s.price}</div>
+        <div class="dest-tags">${s.tag.split('·').map(t=>`<span>${t.trim()}</span>`).join('')}</div>
+        <div class="dest-cta">🤖 一键生成 AI 行程 →</div>
+      </div>
+    </div>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>

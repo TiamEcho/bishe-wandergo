@@ -212,10 +212,10 @@ function resetView(chart){if(!chart)return;const d=chart.__wgo.default;flyTo(cha
  * 节点：景点（起/序号/终 蓝钉，按 Day 顺序串联）+ 住宿（🏨 橙）+ 美食（🍜 绿）
  * 出行方式可切换：自驾 / 公交 / 骑行 / 步行（线型与时间估算随之变化）
  * ========================================================= */
-const RT_BLUE='#3a7bfd';
+const RT_BLUE='#2196F3';
 const RT_MODES={
- drive:{label:'🚗 自驾/打车',speed:42,line:{color:'#3a7bfd',width:4.5,type:'solid',opacity:.95}},
- transit:{label:'🚌 公交/地铁',speed:22,line:{color:'#00a870',width:4,type:'dashed',opacity:.95}},
+ drive:{label:'🚗 自驾/打车',speed:42,line:{color:'#2196F3',width:4,type:'solid',opacity:.95,shadowBlur:10,shadowColor:'rgba(33,150,243,.5)',shadowOffsetY:2}},
+ transit:{label:'🚌 公交/地铁',speed:22,line:{color:'#00a870',width:4,type:'dashed',opacity:.95,shadowBlur:8,shadowColor:'rgba(0,168,112,.4)'}},
  bike:{label:'🚴 骑行',speed:14,line:{color:'#7c5cff',width:3.5,type:'dashed',opacity:.95}},
  walk:{label:'🚶 步行',speed:4.6,line:{color:'#f59e0b',width:3.5,type:'dotted',opacity:.95}}
 };
@@ -234,19 +234,29 @@ function rtStats(segs,modeKey){
   const timeTxt=h<=0?'0 分钟':h<1?Math.max(5,Math.round(h*60))+' 分钟':h<10?(Math.round(h*10)/10)+' 小时':Math.round(h)+' 小时';
   return {km:Math.round(km*10)/10,timeTxt,stops};
 }
-/* 区域聚焦：由全部点位 bbox 反推 center + zoom，让行程区域充满视野 */
-function rtFitView(pts,mode){
+/* 按实际容器像素拟合 geo 倍率，不使用瓦片地图的 zoom 级别。 */
+function rtFitView(pts,chart){
   const lngs=pts.map(p=>p.lng),lats=pts.map(p=>p.lat);
-  const c=[(Math.min.apply(null,lngs)+Math.max.apply(null,lngs))/2,(Math.min.apply(null,lats)+Math.max.apply(null,lats))/2];
-  const spanLng=Math.max.apply(null,lngs)-Math.min.apply(null,lngs);
-  const spanLat=Math.max.apply(null,lats)-Math.min.apply(null,lats);
-  const span=Math.max(spanLat,spanLng*.45,.5);   /* 容器宽扁，lat 方向通常先受限 */
-  const base=mode==='china'?30:120;
-  const zoom=Math.min(22,Math.max(1.25,base/(span*2.4)));
-  return {center:c,zoom};
+  const center=[(Math.min(...lngs)+Math.max(...lngs))/2,(Math.min(...lats)+Math.max(...lats))/2];
+  const width=chart.getWidth(),height=chart.getHeight();
+  const padding=Math.min(48,width*.18,height*.18);
+  let zoom=1;
+  chart.setOption({geo:{center,zoom}});
+  const probes=pts.concat([{lng:center[0]-.015,lat:center[1]-.015},{lng:center[0]+.015,lat:center[1]+.015}]);
+  const pixels=probes.map(p=>chart.convertToPixel({geoIndex:0},[p.lng,p.lat]));
+  const dx=Math.max(...pixels.map(p=>Math.abs(p[0]-width/2))),dy=Math.max(...pixels.map(p=>Math.abs(p[1]-height/2)));
+  zoom=Math.min((width/2-padding)/Math.max(dx,.001),(height/2-padding)/Math.max(dy,.001))*.96;
+  chart.setOption({geo:{center,zoom}});
+  // 用实际路线点再次校验，确保数字标记留在内边距之内。
+  for(let i=0;i<12;i++){
+    const inside=pts.every(p=>{const xy=chart.convertToPixel({geoIndex:0},[p.lng,p.lat]);return xy&&Number.isFinite(xy[0])&&Number.isFinite(xy[1])&&xy[0]>=padding&&xy[0]<=width-padding&&xy[1]>=padding&&xy[1]<=height-padding});
+    if(inside)break;
+    zoom*=.8;chart.setOption({geo:{center,zoom}});
+  }
+  return {center,zoom};
 }
 function liteGeo(map){
-  return {map:map,roam:true,scaleLimit:{min:.8,max:60},zoom:1.2,center:[104.5,36.5],
+  return {map:map,roam:true,zoom:1,center:map==='china'?[104.5,36.5]:[0,20],
     layoutCenter:['50%','50%'],layoutSize:'88%',
     label:{show:true,color:'#9aa7ba',fontSize:9},
     itemStyle:{areaColor:'#eff3f9',borderColor:'#ffffff',borderWidth:1.2},
@@ -255,8 +265,8 @@ function liteGeo(map){
 /**
  * 创建浅色路线图
  * opts: {segs:[{day,points:[{id,lng,lat,n}]}], stays:[{n,lng,lat,price}], eats:[{n,lng,lat,kind2}],
- *        mode:'drive', onSpot(id)}
- * 返回 {chart,setMode,setEatFilter,segs}
+ *        mode:'drive', onSpot(id), onSelect(index,id)}
+ * 返回 {chart,setMode,setEatFilter,segs,select,focusRoute,resize,dispose}
  */
 function createLiteRouteMap(elId,mode,opts){
   opts=opts||{};
@@ -264,24 +274,26 @@ function createLiteRouteMap(elId,mode,opts){
   const c=echarts.init(el);
   const segs=(opts.segs||[]).slice().sort((a,b)=>a.day-b.day);
   const stays=opts.stays||[],eats=opts.eats||[];
-  let curMode=opts.mode||'drive',eatFilter='';
+  let curMode=opts.mode||'drive',eatFilter='',selectedIndex=-1;
   function orderedPts(){const arr=[];segs.forEach(sg=>sg.points.forEach(p=>arr.push({...p,day:sg.day})));return arr}
   function seriesOf(){
-    const series=[],m=RT_MODES[curMode]||RT_MODES.drive;
+    const series=[];
     const all=orderedPts();
     if(all.length>=2){
-      series.push({type:'lines',coordinateSystem:'geo',zlevel:3,
-        effect:{show:true,period:4.5,trailLength:.35,symbol:'arrow',symbolSize:7,color:m.line.color},
-        lineStyle:m.line,silent:true,
+      series.push({type:'lines',coordinateSystem:'geo',zlevel:3,polyline:true,
+        effect:{show:true,period:4.5,trailLength:0,symbol:'arrow',symbolSize:8,color:RT_BLUE},
+        lineStyle:{color:RT_BLUE,width:4,opacity:.95},silent:true,
         data:[{coords:all.map(p=>[p.lng,p.lat])}]});
     }
     if(all.length){
-      series.push({type:'scatter',coordinateSystem:'geo',zlevel:6,symbolSize:27,cursor:'pointer',
+      series.push({id:'route-stops',type:'scatter',coordinateSystem:'geo',zlevel:6,cursor:'pointer',
         symbol:'circle',
-        itemStyle:{color:RT_BLUE,borderColor:'#fff',borderWidth:2,shadowBlur:8,shadowColor:'rgba(58,123,253,.45)'},
-        label:{show:true,position:'inside',color:'#fff',fontSize:11,fontWeight:800,
-          formatter:p=>all.length===1?'🚩':(p.dataIndex===0?'起':p.dataIndex===all.length-1?'终':String(p.dataIndex))},
-        data:all.map(p=>({name:p.n,value:[p.lng,p.lat],id:p.id,__rt:{kind:'spot',day:p.day}}))});
+        symbolSize:(value,params)=>params.dataIndex===selectedIndex?36:30,
+        itemStyle:{color:RT_BLUE,borderColor:'#fff',borderWidth:2},
+        emphasis:{itemStyle:{color:'#1D4ED8',borderWidth:3}},
+        label:{show:true,position:'inside',color:'#fff',fontSize:12,fontWeight:800,
+          formatter:p=>String(p.dataIndex+1)},
+        data:all.map((p,i)=>({name:p.n,value:[p.lng,p.lat],id:p.id,__rt:{kind:'spot',day:p.day,index:i}}))});
       series.push({type:'scatter',coordinateSystem:'geo',zlevel:5,symbolSize:1,silent:true,
         label:{show:true,position:'right',distance:6,color:'#33415c',fontSize:11,fontWeight:600,
           formatter:p=>p.name,backgroundColor:'rgba(255,255,255,.85)',padding:[2,5],borderRadius:4},
@@ -313,7 +325,6 @@ function createLiteRouteMap(elId,mode,opts){
   function render(){
     const all=orderedPts().concat(stays).concat(eats);
     const gOpt=liteGeo(mode);
-    if(all.length){const fit=rtFitView(all,mode);Object.assign(gOpt,{center:fit.center,zoom:fit.zoom})}
     c.setOption({backgroundColor:'#ffffff',
       tooltip:{trigger:'item',backgroundColor:'rgba(255,255,255,.97)',borderColor:'#d5deea',
         textStyle:{color:'#33415c',fontSize:12},extraCssText:'box-shadow:0 6px 20px rgba(30,50,90,.18);border-radius:8px;',
@@ -325,14 +336,30 @@ function createLiteRouteMap(elId,mode,opts){
           return p.name||'';
         }},
       geo:gOpt,series:seriesOf()},true);
+    if(all.length)rtFitView(all,c);
+  }
+  function select(index){
+    selectedIndex=index;
+    c.setOption({series:[{id:'route-stops',symbolSize:(value,params)=>params.dataIndex===selectedIndex?36:30}]});
+    c.dispatchAction({type:'downplay',seriesId:'route-stops'});
+    c.dispatchAction({type:'highlight',seriesId:'route-stops',dataIndex:index});
   }
   c.on('click',p=>{
     const r=p.data&&p.data.__rt;
-    if(r&&r.kind==='spot'&&p.data.id&&opts.onSpot)opts.onSpot(p.data.id);
+    if(r&&r.kind==='spot'){
+      select(r.index);
+      if(opts.onSelect)opts.onSelect(r.index,p.data.id);
+      else if(p.data.id&&opts.onSpot)opts.onSpot(p.data.id);
+    }
   });
   render();
-  return {chart:c,segs:segs,
+  function resize(){if(c.isDisposed())return;c.resize();focusRoute()}
+  function focusRoute(){const all=orderedPts().concat(stays).concat(eats);if(all.length&&!c.isDisposed())rtFitView(all,c)}
+  const observer=window.ResizeObserver?new ResizeObserver(resize):null;
+  if(observer)observer.observe(el);else window.addEventListener('resize',resize);
+  return {chart:c,segs:segs,select,
     setMode(k){curMode=k;render()},
     setEatFilter(k){eatFilter=k;render()},
-    resize(){c.resize()}};
+    resize,focusRoute,
+    dispose(){if(observer)observer.disconnect();else window.removeEventListener('resize',resize);if(!c.isDisposed())c.dispose()}};
 }

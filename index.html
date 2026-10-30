@@ -9,31 +9,43 @@
 </head>
 <body>
 
+<!-- 左侧悬浮导航锚点（时间轴） -->
+<nav class="tl-rail" id="tlRail" aria-label="页面导航">
+  <span class="tl-line"></span>
+  <button class="tl-node on" data-target="home"><i></i>首页</button>
+  <button class="tl-node" data-target="concept"><i></i>理念</button>
+  <button class="tl-node" data-target="aiSec"><i></i>AI规划</button>
+  <button class="tl-node" data-target="mapSec"><i></i>地图</button>
+  <button class="tl-node" data-target="commSec"><i></i>社区</button>
+</nav>
+
 <!-- ============ Hero ============ -->
 <header class="hero" id="home">
   <div class="stars"></div><div class="stars2"></div><div class="moon"></div>
   <div class="wrap hero-grid">
-    <div>
-      <div class="hero-kicker">WANDERGO · FLY ME TO THE WORLD</div>
-      <h1>Fly Me to <em>the World</em></h1>
-      <p class="sub">基于 Vue + Spring Boot + 协同过滤的旅游打卡平台 —— AI 帮你规划 → 地图带你走 → 真实打卡 → 自动生成纪念册，再成为别人的真实攻略。</p>
-      <p class="loop"><b>AI</b> 模块化攻略 · <b>MAP</b> 3D 实景地图 · <b>CF</b> 协同过滤推荐 · <b>THEME</b> 主题随心换</p>
-      <div class="hero-cta">
-        <button class="btn gold" onclick="WGO.go('map.html')">🗺 进入 3D 地图</button>
-        <button class="btn ghost" onclick="document.getElementById('concept').scrollIntoView()">💡 看设计理念</button>
-      </div>
-      <div class="hero-stats">
-        <span>🌍 <b>32</b> 精选国内外景点</span><span>🤖 <b>9</b> 套模块化 AI 攻略</span><span>📸 <b>真实打卡</b> 社区共建</span><span>🎯 <b>协同过滤</b> 智能推荐</span>
-      </div>
-    </div>
-    <div class="globe-wrap">
-      <div class="globe-wrap" style="position:relative">
+    <!-- 左 60%：Three.js 3D 地球（自动旋转 + 金色标记 + 蓝色飞线 + 点击弹窗） -->
+    <div class="globe-stage" id="globeSec">
+      <canvas id="globeCv" aria-label="3D 地球 · 拖拽旋转，点击金色标记查看景点"></canvas>
+      <div class="globe-fallback" id="globeFallback">
         <div class="globe">
           <span class="dotmark" style="top:34%;left:58%"></span>
           <span class="dotmark" style="top:52%;left:34%;animation-delay:.8s"></span>
           <span class="dotmark" style="top:66%;left:70%;animation-delay:1.6s"></span>
         </div>
         <div class="orbit"><span class="sat"></span></div>
+      </div>
+      <div class="g-pop" id="gPop"></div>
+      <div class="g-badge">3D · THREE.JS</div>
+      <div class="g-hint" id="globeHint">🖱 拖拽旋转 · 滚轮缩放 · 点击金色标记看景点</div>
+    </div>
+    <!-- 右 40%：设计理念文案 + CTA -->
+    <div class="hero-copy">
+      <div class="hero-kicker">WANDERGO · FLY ME TO THE WORLD</div>
+      <h1>Fly Me to <em>the World</em></h1>
+      <p class="sub">AI 帮你规划 → 地图带你走 → 真实打卡 → 自动生成纪念册，再成为别人的真实攻略。</p>
+      <p class="loop"><b>AI</b> 模块化攻略 · <b>MAP</b> 3D 实景地图 · <b>CF</b> 协同过滤推荐 · <b>DATA</b> 数据可视化</p>
+      <div class="hero-stats">
+        <span>🌍 <b>32</b> 精选景点</span><span>🤖 <b>9</b> 套 AI 攻略</span><span>📸 <b>真实打卡</b></span><span>🎯 <b>协同过滤</b></span>
       </div>
     </div>
   </div>
@@ -64,44 +76,58 @@
   <svg class="hero-curve" viewBox="0 0 1440 90" preserveAspectRatio="none" style="display:block;width:100%;height:64px"><path fill="currentColor" d="M0,64 C240,10 480,6 720,34 C960,62 1200,66 1440,30 L1440,90 L0,90 Z"/></svg>
 </header>
 
-<!-- ============ 设计理念 ============ -->
+<!-- ============ 设计理念（四个理念卡片：图标 + 短语） ============ -->
 <section class="sec" id="concept">
   <div class="wrap">
-    <div class="sec-head">
-      <div class="kick">DESIGN PHILOSOPHY</div>
-      <h2>我们的设计理念</h2>
-      <p>WANDERGO 不只是攻略网站，而是一个「故事旅行宇宙」：让每一次出行都被 AI 妥善安排、被地图温柔指引、被打卡认真记录，最终沉淀成纪念册与社区里帮助他人的真实攻略。</p>
-    </div>
     <div class="concept-grid">
-      <div class="concept-card"><span class="cn">01</span><span class="ci">🤖</span><h4>AI 先行 · 模块化输出</h4><p>问题解析 → 爬虫抓取全网攻略 → 数据清洗 → 模块化生成。景点、交通、预算、备案每个模块独立成卡，点进去都有数据图表与可跳转的平台比价。</p></div>
-      <div class="concept-card"><span class="cn">02</span><span class="ci">🗺</span><h4>地图即世界</h4><p>五层 3D 挤出的中国/世界地图，白色省份名清晰可见；滚轮缩放、点击飞行，打卡过的地方会点亮成金色图标——你的足迹就是你的勋章。</p></div>
-      <div class="concept-card"><span class="cn">03</span><span class="ci">📸</span><h4>真实打卡 · 反哺社区</h4><p>照片、视频、花费、心情一键成册；同步到社区后，你的行程就成了别人的攻略。打卡攒徽章，同城与全国榜单给你小奖励。</p></div>
-      <div class="concept-card"><span class="cn">04</span><span class="ci">🎯</span><h4>协同过滤 · 越用越懂你</h4><p>基于评分行为矩阵的 UserCF / ItemCF 推荐，冷启动用热门兜底；每张 4K 推荐卡都标注灵感来源平台与创作者，尊重每一份原创。</p></div>
-    </div>
-    <div class="flow-strip">
-      <div class="flow-step"><span class="fi">🤖</span><b>AI 规划</b><span>模块化攻略</span></div>
-      <div class="flow-arrow">➜</div>
-      <div class="flow-step"><span class="fi">🗺</span><b>3D 地图</b><span>点亮足迹</span></div>
-      <div class="flow-arrow">➜</div>
-      <div class="flow-step"><span class="fi">📸</span><b>真实打卡</b><span>花费与感受</span></div>
-      <div class="flow-arrow">➜</div>
-      <div class="flow-step"><span class="fi">🪄</span><b>纪念册</b><span>自动排版</span></div>
-      <div class="flow-arrow">➜</div>
-      <div class="flow-step"><span class="fi">💬</span><b>社区共享</b><span>成为他人攻略</span></div>
-      <div class="flow-arrow">➜</div>
-      <div class="flow-step"><span class="fi">🎯</span><b>协同过滤</b><span>推荐下一站</span></div>
+      <div class="concept-card"><span class="cn">01</span><span class="ci">🤖</span><h4>AI驱动 · 智能规划</h4></div>
+      <div class="concept-card"><span class="cn">02</span><span class="ci">💬</span><h4>社区共创 · 真实分享</h4></div>
+      <div class="concept-card"><span class="cn">03</span><span class="ci">🏅</span><h4>游戏化打卡 · 成就激励</h4></div>
+      <div class="concept-card"><span class="cn">04</span><span class="ci">📊</span><h4>数据可视化 · 实时洞察</h4></div>
     </div>
   </div>
 </section>
 
-<!-- ============ 功能模块导航（小方块 + 卡内垂直菜单 + 弹窗） ============ -->
-<section class="sec sec-alt" id="modules">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="kick">FUNCTION MODULES</div>
-      <h2>功能模块 · 点击小功能查看界面</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin-top:6px">每个方块是一个模块，方块内的垂直菜单列出具体小功能；点击任意小功能 → 弹窗左侧文字介绍、右侧按该功能在该模块页里的界面形态直观展示。</p>
+<!-- ============ 功能区 1：AI 规划 ============ -->
+<section class="sec sec-alt fn-sec" id="aiSec">
+  <div class="wrap fn-grid">
+    <div class="fn-text">
+      <h2>AI 规划</h2>
+      <p>输入出发日期、返程日期与目的地城市，一键生成景点、交通比价、预算拆解与雨天备案的模块化行程。</p>
+      <a class="fn-link" href="ai.html">进入 AI 规划 →</a>
     </div>
+    <div class="shot-box"><span>界面预览图（待补充）</span></div>
+  </div>
+</section>
+
+<!-- ============ 功能区 2：地图打卡 ============ -->
+<section class="sec fn-sec" id="mapSec">
+  <div class="wrap fn-grid">
+    <div class="fn-text">
+      <h2>地图打卡</h2>
+      <p>五层 3D 地图点亮足迹：中国 / 世界切换、点击飞行、真实打卡攒徽章，行程自动沉淀成旅程故事。</p>
+      <a class="fn-link" href="map.html">进入地图 →</a>
+    </div>
+    <div class="shot-box"><span>界面预览图（待补充）</span></div>
+  </div>
+</section>
+
+<!-- ============ 功能区 3：社区攻略 ============ -->
+<section class="sec sec-alt fn-sec" id="commSec">
+  <div class="wrap fn-grid">
+    <div class="fn-text">
+      <h2>社区攻略</h2>
+      <p>B站与站内创作者的攻略视频聚合，搜索筛选、词条挂载；AI 分析视频一键生成同款行程。</p>
+      <a class="fn-link" href="community.html">进入社区 →</a>
+    </div>
+    <div class="shot-box"><span>界面预览图（待补充）</span></div>
+  </div>
+</section>
+
+<!-- ============ 功能模块导航（小方块 + 卡内垂直菜单 + 弹窗） ============ -->
+<section class="sec" id="modules">
+  <div class="wrap">
+    <div class="sec-head"><h2>功能模块</h2></div>
     <div class="module-grid" id="moduleGrid"></div>
   </div>
 </section>
@@ -112,6 +138,7 @@
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1119"></script>
 <script src="js/core.js?v=1119"></script>
+<script src="js/globe.js?v=1121"></script>
 <script>
 /* ================ 功能模块数据：每个方块含 5 个具体小功能 ================ */
 const MODULES=[
@@ -344,7 +371,7 @@ document.getElementById('moduleGrid').innerHTML=MODULES.map((m,i)=>`
 /* ================ 弹窗：左文字介绍 / 右案例图片 ================ */
 let curModal=null;
 
-function closeModal(){
+function closeFeatModal(){
   if(!curModal) return;
   const el=curModal; curModal=null;
   el.classList.remove('show');
@@ -368,8 +395,8 @@ function createModal(){
     </div>`;
   document.body.appendChild(el);
   document.body.style.overflow='hidden';
-  el.querySelector('.mx').onclick=closeModal;
-  el.addEventListener('click',e=>{ if(e.target===el) closeModal(); });
+  el.querySelector('.mx').onclick=closeFeatModal;
+  el.addEventListener('click',e=>{ if(e.target===el) closeFeatModal(); });
   curModal=el;
 }
 
@@ -393,7 +420,7 @@ function renderModal(m,fi){
   left.querySelectorAll('.fi-item').forEach(li=>{
     li.onclick=()=>{ const j=+li.dataset.f; renderModal(m,j); };
   });
-  left.querySelector('#fdClose').onclick=closeModal;
+  left.querySelector('#fdClose').onclick=closeFeatModal;
   left.querySelector('#fdGo').onclick=()=>WGO.go(m.url);
 
   /* 右：该功能对应的界面示意 */
@@ -417,7 +444,34 @@ document.getElementById('moduleGrid').addEventListener('click',e=>{
   const card=e.target.closest('.mod-card');
   if(card) openFeature(card.dataset.id,0);
 });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape' && curModal) closeModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && curModal) closeFeatModal(); });
+
+/* ================ 左侧时间轴锚点（5 节点 + 滚动高亮） ================ */
+(function(){
+  const rail=document.getElementById('tlRail'); if(!rail) return;
+  const nodes=[...rail.querySelectorAll('.tl-node')];
+  const stop=()=>document.querySelector('header.topnav')?.offsetHeight||60;
+  nodes.forEach(btn=>btn.onclick=()=>{
+    const t=document.getElementById(btn.dataset.target);
+    if(!t) return;
+    const y=t.getBoundingClientRect().top+window.scrollY-stop()+8;
+    window.scrollTo({top:Math.max(0,y),behavior:'smooth'});
+  });
+  /* 滚动高亮：取最后一个已越过导航栏下沿的锚点（阈值小一些，
+     否则点击上方节点后会立刻跳到下一个节点高亮） */
+  const tick=()=>{
+    const mark=window.scrollY+stop()+44;
+    let cur=nodes[0];
+    nodes.forEach(n=>{
+      const t=document.getElementById(n.dataset.target);
+      if(t&&t.offsetTop<=mark) cur=n;
+    });
+    nodes.forEach(n=>n.classList.toggle('on',n===cur));
+  };
+  addEventListener('scroll',tick,{passive:true});
+  addEventListener('resize',tick);
+  tick();
+})();
 </script>
 </body>
 </html>

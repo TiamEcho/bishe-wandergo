@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>景点分析 · 数据大屏 | WANDERGO</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">SPOT ANALYTICS</div>
+  <h2>景点分析 · 数据可视化大屏</h2>
+  <p style="font-size:12.5px;color:var(--muted);margin-top:6px">基于景点库与打卡行为的 ECharts 可视化：评分榜、地区分布、标签热度、花费画像。</p>
+</div></section>
+
+<section class="sec" style="padding-top:10px"><div class="wrap">
+  <div class="ana-grid">
+    <div class="stat-card wide2"><h4>🏆 全站评分 TOP 10</h4><div id="aTop" class="chartbox tall"></div></div>
+    <div class="stat-card"><h4>🗺 国内 / 国外占比</h4><div id="aRg" class="chartbox"></div></div>
+    <div class="stat-card"><h4>🏷 热门标签 TOP 10</h4><div id="aTag" class="chartbox"></div></div>
+    <div class="stat-card"><h4>💰 人均花费区间</h4><div id="aPrice" class="chartbox"></div></div>
+    <div class="stat-card"><h4>⭐ 评分 × 花费 散点</h4><div id="aScatter" class="chartbox"></div></div>
+  </div>
+  <p class="map-note" id="anaNote" style="display:none">图表资源加载失败，请检查网络后刷新。</p>
+</div></section>
+
+<script src="js/data.js?v=1120"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1120"></script>
+<script src="js/core.js?v=1120"></script>
+<script>
+(function(){
+  const priceNum=s=>{const m=/\d+/.exec(s.price||'');return m?+m[0]:0};
+  const txt={color:'#9fb0c6',fontSize:11};
+  const axY={axisLine:{lineStyle:{color:'rgba(160,178,205,.35)'}},axisLabel:txt,splitLine:{lineStyle:{color:'rgba(160,178,205,.12)'}}};
+  const axX={axisLine:{lineStyle:{color:'rgba(160,178,205,.35)'}},axisLabel:txt,splitLine:{show:false}};
+  const gold=i=>({type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#ffd76a'},{offset:1,color:'#b98a2f'}]});
+  loadCharts(ok=>{
+    if(!ok){document.getElementById('anaNote').style.display='block';return}
+    /* TOP10 横向榜 */
+    const top=[...SPOTS].sort((a,b)=>b.rating-a.rating).slice(0,10);
+    echarts.init(document.getElementById('aTop')).setOption({
+      grid:{left:10,right:44,top:8,bottom:0,containLabel:true},
+      xAxis:{type:'value',min:4,max:5,...axY},
+      yAxis:{type:'category',data:top.map(s=>s.n+' · '+s.city).reverse(),...axX},
+      series:[{type:'bar',data:top.map(s=>s.rating).reverse(),barWidth:13,
+        itemStyle:{borderRadius:[0,7,7,0],color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'#b98a2f'},{offset:1,color:'#ffd76a'}]}},
+        label:{show:true,position:'right',color:'#e8d9a8',fontSize:10.5}}]});
+    /* 国内/国外 */
+    const cn=SPOTS.filter(s=>s.rg==='cn').length,ab=SPOTS.length-cn;
+    echarts.init(document.getElementById('aRg')).setOption({
+      tooltip:{trigger:'item'},legend:{bottom:0,textStyle:txt},
+      series:[{type:'pie',radius:['40%','66%'],center:['50%','42%'],label:{color:'#e8eef7',fontSize:11},
+        data:[{name:'国内目的地',value:cn,itemStyle:{color:'#ffd76a'}},{name:'国外目的地',value:ab,itemStyle:{color:'#7ea6d9'}}]}]});
+    /* 标签热度 */
+    const tagCnt={};
+    SPOTS.forEach(s=>String(s.tag).split('·').forEach(t=>{t=t.trim();if(t)tagCnt[t]=(tagCnt[t]||0)+1}));
+    const tags=Object.entries(tagCnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    echarts.init(document.getElementById('aTag')).setOption({
+      grid:{left:10,right:30,top:8,bottom:0,containLabel:true},
+      xAxis:{type:'value',minInterval:1,...axY},
+      yAxis:{type:'category',data:tags.map(t=>t[0]).reverse(),...axX},
+      series:[{type:'bar',data:tags.map(t=>t[1]).reverse(),barWidth:12,
+        itemStyle:{borderRadius:[0,6,6,0],color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'#3a6fb0'},{offset:1,color:'#7ea6d9'}]}},
+        label:{show:true,position:'right',color:'#c9dcf2',fontSize:10}}]});
+    /* 花费区间 */
+    const buckets=[['免费',0,0],['¥1-60',1,60],['¥61-150',61,150],['¥151+',151,1e9]];
+    const counts=buckets.map(b=>SPOTS.filter(s=>{const p=priceNum(s);return p>=b[1]&&p<=b[2]}).length);
+    echarts.init(document.getElementById('aPrice')).setOption({
+      grid:{left:10,right:16,top:20,bottom:0,containLabel:true},
+      xAxis:{type:'category',data:buckets.map(b=>b[0]),...axX},
+      yAxis:{type:'value',minInterval:1,...axY},
+      series:[{type:'bar',data:counts,barWidth:34,itemStyle:{borderRadius:[7,7,0,0],color:gold()},
+        label:{show:true,position:'top',color:'#e8d9a8',fontSize:11}}]});
+    /* 评分 × 花费 散点 */
+    echarts.init(document.getElementById('aScatter')).setOption({
+      grid:{left:10,right:20,top:20,bottom:0,containLabel:true},
+      tooltip:{trigger:'item',formatter:p=>`${p.data[2]}<br>💰 ${p.data[3]} · ⭐ ${p.data[1]}`},
+      xAxis:{type:'value',name:'人均花费(¥)',nameTextStyle:txt,...axY},
+      yAxis:{type:'value',min:4.4,max:5,name:'评分',nameTextStyle:txt,...axY},
+      series:[{type:'scatter',symbolSize:13,
+        data:SPOTS.map(s=>[priceNum(s),s.rating,s.n,s.price]),
+        itemStyle:{color:'rgba(255,215,106,.75)',borderColor:'#b98a2f',borderWidth:1}}]});
+    addEventListener('resize',()=>document.querySelectorAll('.chartbox').forEach(el=>{const c=echarts.getInstanceByDom(el);if(c)c.resize()}));
+  });
+})();
+</script>
+</body>
+</html>

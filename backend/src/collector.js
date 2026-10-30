@@ -1,14 +1,12 @@
 /* =========================================================
  * 采集 + AI 分析：POST /api/collect-guide 的业务实现
  * 采集顺序（有则用，无则降级）：
- *   1) MediaCrawler（本机 Python 项目，需配置 MEDIACRAWLER_PATH）
- *   2) 离线爬虫包 js/posts_crawl.json
- *   3) 景点库自动拼装
+ *   1) 离线爬虫包 js/posts_crawl.json
+ *   2) 景点库自动拼装
  * 之后逐篇调用 Dots Studio 抽取地名/美食/商圈，写入 entity 表
  * ========================================================= */
 const dbx = require('./db');
 const { extractEntities } = require('./dots');
-const mcCrawler = require('../services/mediaCrawler');
 
 const AI_MAX = Number(process.env.AI_MAX_PER_REQUEST || 5);   // 单次请求最多调用几次 AI
 
@@ -58,62 +56,41 @@ async function collectGuide(keyword) {
   let collectedFrom = '';
   let engine = 'local';
   let aiDone = [];
-  let mc = null;
 
-  /* 1) MediaCrawler：只在配置了路径时启动子进程 */
-  if (mcCrawler.status().ready) {
-    try {
-      mc = await mcCrawler.collectToDb(city);
-    } catch (e) {
-      mc = { ok: false, code: 'EXCEPTION', message: String(e.message || e) };
-    }
-    if (mc && mc.ok && mc.guides && mc.guides.length) {
-      collectedFrom = 'mediacrawler';
-      collected = mc.items.length;
-      created = mc.created;
-      guides = mc.guides;          // 已入库并完成实体抽取
-      engine = mc.engine;
-      aiDone = mc.ai;
-    }
+  /* 1) 离线爬虫包 → 景点库兜底 */
+  let candidates = crawlFromJson(kw);
+  collectedFrom = 'crawl-json';
+  if (!candidates.length) {
+    candidates = buildFromSpots(kw);
+    collectedFrom = 'spot-library';
+  }
+  if (!candidates.length) {
+    return {
+      ok: false,
+      message: `没有采集到与「${kw}」相关的内容，换个关键词试试`,
+      collectedFrom
+    };
   }
 
-  /* 2) MediaCrawler 没产出 → 离线爬虫包 → 景点库兜底 */
-  if (!guides.length) {
-    let candidates = crawlFromJson(kw);
-    collectedFrom = 'crawl-json';
-    if (!candidates.length) {
-      candidates = buildFromSpots(kw);
-      collectedFrom = 'spot-library';
-    }
-    if (!candidates.length) {
-      return {
-        ok: false,
-        message: `没有采集到与「${kw}」相关的内容，换个关键词试试`,
-        collectedFrom,
-        mc: mc ? { ok: mc.ok, code: mc.code, message: mc.message || '', keywords: mc.keywords || [] } : null
-      };
-    }
+  for (const c of candidates) {
+    const r = dbx.addGuide(c);
+    if (r.row) guides.push({ ...r.row, created: r.created });
+  }
+  collected = candidates.length;
+  created = guides.filter(g => g.created).length;
 
-    for (const c of candidates) {
-      const r = dbx.addGuide(c);
-      if (r.row) guides.push({ ...r.row, created: r.created });
-    }
-    collected = candidates.length;
-    created = guides.filter(g => g.created).length;
-
-    /* 3) AI 抽取实体（限制次数，避免一次请求打爆模型） */
-    for (const g of guides.slice(0, AI_MAX)) {
-      const text = `${g.title} ${g.content || ''}`;
-      const r = await extractEntities(text, {
-        city: g.city, spotNames: dbx.SPOT_NAMES, cityNames: dbx.CITY_NAMES
-      });
-      engine = r.engine;
-      dbx.addEntities(g.id, g.city, r, r.engine);
-      aiDone.push({ guide_id: g.id, title: g.title, city: g.city, engine: r.engine, error: r.error || null });
-    }
+  /* 2) AI 抽取实体（限制次数，避免一次请求打爆模型） */
+  for (const g of guides.slice(0, AI_MAX)) {
+    const text = `${g.title} ${g.content || ''}`;
+    const r = await extractEntities(text, {
+      city: g.city, spotNames: dbx.SPOT_NAMES, cityNames: dbx.CITY_NAMES
+    });
+    engine = r.engine;
+    dbx.addEntities(g.id, g.city, r, r.engine);
+    aiDone.push({ guide_id: g.id, title: g.title, city: g.city, engine: r.engine, error: r.error || null });
   }
 
-  /* 4) 汇总该城市的实体（供前端展示） */
+  /* 3) 汇总该城市的实体（供前端展示） */
   let rows = dbx.searchEntities(kw, 24);
   if (!rows.length && city && city !== kw) rows = dbx.searchEntities(city, 24);
   const pick = t => rows.filter(x => x.type === t).map(x => ({ name: x.name, mention: x.mention || 1, city: x.city }));
@@ -131,11 +108,7 @@ async function collectGuide(keyword) {
       source_url: g.source_url, cover: g.cover, created: g.created
     })),
     entities: { places: pick('place'), foods: pick('food'), districts: pick('district') },
-    ai: aiDone,
-    mc: mc ? {
-      ok: mc.ok, code: mc.code, message: mc.message || '',
-      keywords: mc.keywords || [], files: mc.files || []
-    } : null
+    ai: aiDone
   };
 }
 

@@ -50,7 +50,5 @@ app.listen(PORT, () => {
   console.log(`  静态前端          http://localhost:${PORT}/index.html`);
   console.log(`  种子数据          ${seedInfo.seeded ? '已初始化' : '已存在，跳过'} | guides ${st.guides} / checkins ${st.checkins} / entities ${st.entities}`);
   console.log(`  Dots Studio       ${process.env.DOTS_API_KEY ? '已配置 Key' : '未配置 Key（实体抽取走本地规则）'}`);
-  const mc = require('../services/mediaCrawler').status();
-  console.log(`  MediaCrawler      ${mc.ready ? `就绪 | ${mc.platform} | ${mc.path}` : '未配置（MEDIACRAWLER_PATH 为空或路径不存在，采集走离线爬虫包）'}`);
   console.log('----------------------------------------------------');
 });
