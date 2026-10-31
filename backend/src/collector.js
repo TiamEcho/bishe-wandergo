@@ -10,12 +10,31 @@ const { extractEntities } = require('./dots');
 
 const AI_MAX = Number(process.env.AI_MAX_PER_REQUEST || 5);   // 单次请求最多调用几次 AI
 
+/* 组合目的地拆分："东京 · 京都"、"东京/京都"、"东京 京都" → ["东京","京都"] */
+function splitKeywords(kw) {
+  return String(kw || '')
+    .split(/[·•、,，/／\s]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 function buildFromSpots(keyword) {
-  const kw = String(keyword || '').trim();
-  const hits = dbx.SPOTS.filter(s =>
-    (s.city && s.city.includes(kw)) || (s.name && s.name.includes(kw)) ||
-    (s.tags && s.tags.includes(kw))
-  ).slice(0, 6);
+  const kws = splitKeywords(keyword);
+  const hits = [];
+  const seen = new Set();
+  for (const k of kws) {
+    for (const s of dbx.SPOTS) {
+      const key = s.spot_id || s.name;
+      if (seen.has(key)) continue;
+      if ((s.city && s.city.includes(k)) || (s.name && s.name.includes(k)) ||
+          (s.tags && s.tags.includes(k))) {
+        seen.add(key);
+        hits.push(s);
+        if (hits.length >= 6) break;
+      }
+    }
+    if (hits.length >= 6) break;
+  }
   return hits.map((s, i) => ({
     title: `${s.name}游玩攻略`,
     content: `${s.name}位于${s.city}，${s.desc || ''} 建议游玩 ${s.hours || '半天'}，门票：${s.price || '以景区公告为准'}。交通：${s.traffic || '详见当地交通'}。特色：${s.tags || '旅行打卡'}。周边可以顺路逛${s.city}的老街与本地小吃街。`,
@@ -57,18 +76,33 @@ async function collectGuide(keyword) {
   let engine = 'local';
   let aiDone = [];
 
-  /* 1) 离线爬虫包 → 景点库兜底 */
+  /* 1) 离线爬虫包 → 景点库兜底（组合目的地逐个拆分检索） */
   let candidates = crawlFromJson(kw);
   collectedFrom = 'crawl-json';
+  if (!candidates.length) {
+    for (const k of splitKeywords(kw)) {
+      candidates = crawlFromJson(k);
+      if (candidates.length) { collectedFrom = 'crawl-json'; break; }
+    }
+  }
   if (!candidates.length) {
     candidates = buildFromSpots(kw);
     collectedFrom = 'spot-library';
   }
   if (!candidates.length) {
     return {
-      ok: false,
-      message: `没有采集到与「${kw}」相关的内容，换个关键词试试`,
-      collectedFrom
+      ok: true,
+      keyword: kw,
+      city,
+      collectedFrom,
+      collected: 0,
+      created: 0,
+      engine: 'local',
+      guides: [],
+      entities: { places: [], foods: [], districts: [] },
+      ai: [],
+      empty: true,
+      message: `暂时没有「${kw}」的本地攻略数据。可尝试城市名、景点名或稍后重新采集。`
     };
   }
 

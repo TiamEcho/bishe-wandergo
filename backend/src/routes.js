@@ -118,8 +118,11 @@ router.post('/checkin/add', createCheckin);
 router.post('/collect-guide', async (req, res) => {
   try {
     const keyword = (req.body && (req.body.keyword || req.body.q || req.body.city)) || req.query.keyword;
+    if (!String(keyword || '').trim()) {
+      return res.status(400).json({ ok: false, message: 'keyword 不能为空' });
+    }
     const out = await collectGuide(keyword);
-    res.status(out.ok ? 200 : 400).json(out);
+    res.status(out.ok ? 200 : 500).json(out);
   } catch (e) {
     console.error('[collect-guide]', e);
     res.status(500).json({ ok: false, message: '采集失败', error: String(e.message || e) });
