@@ -573,6 +573,12 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 #itin3col .tl-body h5{font-size:15px;font-weight:600;color:#1E293B;margin-bottom:4px;overflow-wrap:anywhere;display:flex;align-items:center;flex-wrap:wrap}
 #itin3col .tl-body p{font-size:12.5px;color:#64748B;margin:2px 0;overflow-wrap:anywhere}
 #itin3col .tl-body p.tl-book{color:#B45309;background:#FFFBEB;border-radius:8px;padding:4px 8px;margin-top:5px}
+/* 景点周边的餐饮 / 住宿（同一条动线上的串联信息） */
+#itin3col .tl-near{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px}
+#itin3col .tl-near-l{font-size:11px;color:var(--ink-2);flex:none}
+#itin3col .tl-near-i{font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:2px 7px;overflow-wrap:anywhere}
+/* 扇形分区说明：当日方位角区间 + 单向推进里程 */
+#itin3col .journey-fan{font-size:11.5px;color:var(--ink-2);background:var(--panel-2);border:1px dashed var(--line);border-radius:9px;padding:5px 9px;margin:0 0 8px}
 #itin3col .tl-media{display:flex;align-items:center;gap:10px;margin-top:6px}
 #itin3col .tl-media img{width:96px;height:64px;object-fit:cover;border-radius:10px;flex:none}
 @media(max-width:760px){

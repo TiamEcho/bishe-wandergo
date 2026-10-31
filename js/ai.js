@@ -300,6 +300,7 @@ function genPlan(e,reqDays){
     if(s&&s.needBook)bookList.push({day:di+1,n:s.n,note:s.bookNote||'需提前预约，建议出发前 1-3 天确认余票'});
   }));
   return {__gen:true,dest:name,days:useDays+' 天',from:'你的城市',prov:e[1]||'',budget:budget,budgetItems:budgetItems,
+    __center:{lng,lat},__reqDays:useDays,
     spots:spots,routeDays,timelines,bookList,eats,
     transport:transport,dist:rg==='ab'?0:far?2600:900,
     planB:{rain:'如遇降雨，改走'+name+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而通透出片。',rest:'逛累了找一家当地咖啡馆 / 茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就砍掉最远的一个点位，核心景区慢游半天也是完整的一天。'},
@@ -308,6 +309,165 @@ function genPlan(e,reqDays){
     plogs:[{t:'在'+name+'的慢时光',img:spots[0],txt:name+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。更多真实打卡可去社区搜索「'+name+'」看看大家怎么玩。'}],
     tips:'该目的地由 AI 模板库即时生成规划：点位为代表性推荐，订票前请用上方平台比价核价；社区里有大量「'+name+'」相关真实打卡与评论可参考。'
   };
+}
+/* ================= 扇形分区（本地实现，与后端 planner.js 保持一致） =================
+ * 以城市中心为锚点，按方位角把 360° 均分成 N 份（N = 天数），每个扇形内的景点归同一天，
+ * 天内按距中心由近到远排序 → 路线从中心向外单向推进，不走回头路。
+ * 后端 /api/plan/route 不可用时由前端自己算，保证线上线下效果一致。 */
+const FAN_R=6371, FAN_RAD=Math.PI/180;
+function fanDist(a,b){
+  const dLa=(b.lat-a.lat)*FAN_RAD, dLo=(b.lng-a.lng)*FAN_RAD;
+  const s=Math.sin(dLa/2)**2+Math.cos(a.lat*FAN_RAD)*Math.cos(b.lat*FAN_RAD)*Math.sin(dLo/2)**2;
+  return 2*FAN_R*Math.asin(Math.sqrt(s));
+}
+function fanBearing(anchor,p){
+  let deg=Math.atan2(p.lat-anchor.lat,p.lng-anchor.lng)*180/Math.PI;
+  if(deg<0)deg+=360;
+  return deg;
+}
+/* 去重：同名景点只保留最早出现的那一天，空出的位置从 spare 里补 */
+function dedupeSpotDays(days,spare){
+  const seen=new Set(), pool=(spare||[]).slice(), removed=[], filled=[];
+  const want=days.map(d=>d.length);
+  const out=days.map(day=>{
+    const kept=[];
+    day.forEach(s=>{
+      const k=s.n||s.id;
+      if(seen.has(k)){removed.push(k);return}
+      seen.add(k);kept.push(s);
+    });
+    return kept;
+  });
+  out.forEach((day,i)=>{
+    while(day.length<want[i]&&pool.length){
+      let pick=-1,best=Infinity;
+      pool.forEach((c,ci)=>{
+        const sameCity=day.some(s=>s.city&&c.city&&s.city===c.city);
+        const ref=day[day.length-1];
+        const d=ref?fanDist(ref,c):9999;
+        const sc=d-(sameCity?30:0);
+        if(sc<best){best=sc;pick=ci}
+      });
+      if(pick<0)break;
+      const cand=pool.splice(pick,1)[0];
+      const k=cand.n||cand.id;
+      if(seen.has(k))continue;
+      seen.add(k);day.push(cand);filled.push(cand.n);
+    }
+  });
+  return {days:out,removed,filled};
+}
+/* 扇形分区：按方位角排序 → 均分 360° → 容量均衡 → 天内由近到远 */
+function fanCluster(spots,center,dayCount){
+  const n=Math.max(1,dayCount|0);
+  if(!center||!spots.length)return Array.from({length:n},()=>[]);
+  const list=spots.filter(s=>s&&s.lng!=null&&s.lat!=null)
+    .map(s=>({s,ang:fanBearing(center,s),d:fanDist(center,s)}))
+    .sort((a,b)=>a.ang-b.ang);
+  if(!list.length||n===1)return [list.slice().sort((a,b)=>a.d-b.d).map(x=>x.s)];
+  const step=360/n, buckets=Array.from({length:n},()=>[]);
+  list.forEach(it=>buckets[Math.min(n-1,Math.floor(it.ang/step))].push(it));
+  const cap=Math.ceil(list.length/n);
+  for(let r=0;r<n*2;r++){
+    const over=buckets.findIndex(b=>b.length>cap);
+    if(over<0)break;
+    const short=buckets.findIndex((b,i)=>b.length<cap&&i!==over);
+    if(short<0)break;
+    const b=buckets[over];
+    /* 从靠近缺额扇形的那一侧让点，保证方位角连续 */
+    buckets[short].push(short>over?b.pop():b.shift());
+    buckets[short].sort((x,y)=>x.ang-y.ang);
+  }
+  return buckets.map(b=>b.sort((x,y)=>x.d-y.d).map(x=>x.s));
+}
+/* 具体时刻表：每天从 9:00 起，每个景点 150 分钟 + 20 分钟赶路，三餐按时间就近插入 */
+function buildFanTimeline(spots,city){
+  const items=[]; let cur=9*60; const GAP=20, DUR=150;
+  const eats=eatCandidates(city);
+  const used=new Set();
+  spots.forEach((s,k)=>{
+    const it={type:'spot',id:s.id,n:s.n,start:cur,end:cur+DUR,dur:DUR,
+      openHrs:s.openHrs||'',needBook:!!s.needBook,bookNote:s.bookNote||'',
+      traf:s.traf||'',price:s.price||''};
+    items.push(it);
+    cur+=DUR;
+    if(k===0&&cur>=12*60){
+      const e=pickEat(eats,spots,used);
+      if(e){used.add(e.n);items.push({type:'eat',meal:'午餐',n:e.n,note:e.note,price:e.price,start:12*60+30,end:13*60+20});cur=13*60+20}
+    }
+    if(k===spots.length-1){
+      const e=pickEat(eats,spots,used);
+      if(e){used.add(e.n);items.push({type:'eat',meal:'晚餐',n:e.n,note:e.note,price:e.price,start:18*60+30,end:19*60+40});}
+    }
+    cur+=GAP;
+  });
+  return items.sort((a,b)=>a.start-b.start);
+}
+/* 本地扇形分区：把 matchPlan 选出的点位重排成「每天一个扇形 + 由近到远」 */
+function fanApply(plan){
+  const center=plan.__center;
+  if(!center||!plan.routeDays||plan.routeDays.length<1)return plan;
+  const ids=plan.spots.filter(id=>{const s=spotById(id);return s&&s.lng!=null});
+  if(ids.length<3)return plan;
+  const daily=fanCluster(ids.map(spotById),center,plan.routeDays.length);
+  plan.routeDays=daily.map(list=>list.map(s=>s.id));
+  plan.timelines=plan.routeDays.map(list=>buildFanTimeline(list,plan.prov||plan.dest));
+  plan.__fan=plan.routeDays.map(list=>{
+    const angs=list.map(s=>fanBearing(center,s)).sort((a,b)=>a-b);
+    return {bearing:[Math.round(angs[0]),Math.round(angs[angs.length-1])],
+      km:Math.round(list.slice(1).reduce((a,s,i)=>a+fanDist(list[i],s),0)*10)/10};
+  });
+  return plan;
+}
+/* 把后端 /api/plan/route 的结果落到前端 plan 结构上 */
+function applyRemotePlan(plan,remote){
+  if(!plan||!remote||!remote.ok||!Array.isArray(remote.plan)||!remote.plan.length)return false;
+  const routeDays=[],timelines=[],fan=[];
+  remote.plan.forEach(d=>{
+    const items=[]; const ids=[];
+    (d.spots||[]).forEach(it=>{
+      const s=geoSpot(it.name,it.city||plan.prov||plan.dest,plan.prov||plan.dest,it.lng,it.lat,
+        (spotById(it.id)||{}).rg||'cn');
+      if(it.lng!=null&&it.lat!=null){s.lng=it.lng;s.lat=it.lat}
+      if(it.address)s.addr=it.address;
+      if(!ids.includes(s.id))ids.push(s.id);
+      items.push({type:'spot',id:s.id,n:s.n,start:it.start,end:it.end,dur:it.dur||150,
+        openHrs:s.openHrs||'',needBook:!!s.needBook,bookNote:s.bookNote||'',traf:s.traf||'',price:it.price||s.price||'',
+        restaurants:it.restaurants||[],hotel:it.hotel||null,
+        distanceFromCenter:it.distanceFromCenter});
+    });
+    if(!ids.length)return;
+    routeDays.push(ids);timelines.push(items);
+    fan.push({bearing:d.bearingRange||[],km:d.routeKm||0,hotel:d.hotel||null});
+  });
+  if(!routeDays.length)return false;
+  plan.spots=routeDays.flat().filter((id,i,a)=>a.indexOf(id)===i);
+  plan.routeDays=routeDays;
+  plan.timelines=timelines;
+  plan.__fan=fan;
+  plan.__center=remote.center||plan.__center;
+  plan.__engine=remote.engine||null;
+  const dl=(plan.timelines||[]).flat().filter(i=>i.type==='spot');
+  plan.__poiCount=dl.filter(i=>(i.restaurants||[]).length&&!(i.restaurants||[])[0].local).length;
+  return true;
+}
+/* 唯一性校验：同一景点不得出现在两天 */
+function assertUniqueDays(plan){
+  const seen=new Set();
+  (plan.routeDays||[]).forEach((ids,i)=>{
+    plan.routeDays[i]=ids.filter(id=>{if(seen.has(id))return false;seen.add(id);return true});
+  });
+  const keep=new Set(plan.routeDays.flat());
+  plan.spots=(plan.spots||[]).filter(id=>keep.has(id));
+  return plan;
+}
+/* ---- 请求后端规划：不可用 / 超时返回 null，由本地算法兜底 ---- */
+async function fetchRemotePlan(city,days,want){
+  if(typeof WGOAPI==='undefined'||!WGOAPI.planRoute)return null;
+  try{
+    const r=await WGOAPI.planRoute(city,days,want);
+    return (r&&r.ok&&Array.isArray(r.plan)&&r.plan.length)?r:null;
+  }catch(_){return null}
 }
 /* 行程生成：城市定位 → 同城候选池打分 → 按天数取点位 → 三餐/预约 → 每天时刻表 */
 function matchPlan(q,reqDays,opt){
@@ -382,6 +542,7 @@ function matchPlan(q,reqDays,opt){
   return {
     __pool:true,dest:dest,prov:city,__ab:ab,from:meta.from||'你的城市',
     days:reqD+' 天',__reqDays:reqD,
+    __center:{lng:anchor[0],lat:anchor[1]},
     spots,routeDays,timelines,bookList,eats,
     budget:total,budgetItems,
     transport:ab?[
@@ -555,8 +716,30 @@ function runAI(){
   const t1=setInterval(()=>{
     if(si>0&&steps[si-1]){steps[si-1].classList.remove('doing');steps[si-1].classList.add('done')}
     if(si<4){steps[si].classList.add('doing');p=Math.min(97,(si+1)/4*96);$('#pipeBar').style.width=p+'%';si++}
-    else{clearInterval(t1);clearInterval(t2);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref}),f)},420)}
+    else{
+      clearInterval(t1);clearInterval(t2);
+      steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';
+      finishPlan(f,pipe,tip);
+    }
   },seg);
+}
+/* 收尾：先本地算出基础行程，再请求后端「去重 + 扇形分区 + 周边餐饮住宿」；
+ * 后端不可用（未部署 / 超时 / 无 Key）时用前端本地扇形分区兜底，结果结构一致 */
+async function finishPlan(f,pipe,tip){
+  let plan=matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref});
+  const reqD=Math.max(1,f.days||2);
+  if(plan){
+    if(tip)tip.textContent='正在按方位角分区 · 串联周边餐饮与住宿…';
+    const remote=plan.__pool?await fetchRemotePlan(plan.prov||plan.dest,reqD,0):null;
+    if(remote){
+      applyRemotePlan(plan,remote);
+    }else{
+      fanApply(plan);
+    }
+    assertUniqueDays(plan);
+  }
+  pipe.classList.remove('show');
+  showPlan(plan,f);
 }
 $('#aiGo').onclick=()=>runAI();
 /* 日期联动天数 */
@@ -640,10 +823,18 @@ function renderItinerary3col(plan){
         }
         const s=todaySpots.find(p=>p.id===it.id);
         const index=s?s.index:0;
-        return `<li class="tl-item" data-index="${index}"><span class="tl-time">${time}</span><div class="tl-body"><h5><span class="journey-number">${index+1}</span>${escHtml(it.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}<div class="tl-media"><img src="${IMG(P[it.id])}" alt="${escHtml(it.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${it.id}">查看景点详情</button></div></div></li>`;
+        /* 周边餐饮 + 当天住宿：后端有高德 Key 时是真实 POI，否则是本地美食库兜底 */
+        const rests=(it.restaurants||[]).slice(0,2);
+        const restHtml=rests.length?`<div class="tl-near"><span class="tl-near-l">🍽 附近餐饮</span>${rests.map(r=>`<span class="tl-near-i">${escHtml(r.name)}${r.rating?' ⭐'+r.rating:''}${r.price?' · '+escHtml(r.price):''}${r.distance?' · '+r.distance+'m':''}</span>`).join('')}</div>`:'';
+        const hotelHtml=it.hotel?`<div class="tl-near"><span class="tl-near-l">🏨 就近住宿</span><span class="tl-near-i">${escHtml(it.hotel.name)}${it.hotel.rating?' ⭐'+it.hotel.rating:''}${it.hotel.price?' · '+escHtml(String(it.hotel.price)):''}${it.hotel.distance?' · '+it.hotel.distance+'m':''}</span></div>`:'';
+        return `<li class="tl-item" data-index="${index}"><span class="tl-time">${time}</span><div class="tl-body"><h5><span class="journey-number">${index+1}</span>${escHtml(it.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}${hotelHtml}<div class="tl-media"><img src="${IMG(P[it.id])}" alt="${escHtml(it.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${it.id}">查看景点详情</button></div></div></li>`;
       }).join('');
       const noTl=todaySpots.map(p=>`<li class="tl-item" data-index="${p.index}"><span class="tl-time">-</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}</h5><div class="tl-media"><img src="${IMG(P[p.id])}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`).join('');
-      return `<section class="journey-day"><h3>Day ${sg.day} · ${escHtml(dayTheme(sg.points.map(p=>p.id)))}</h3><ul class="timeline">${rows||noTl}</ul></section>`;
+      /* 扇形分区说明：当天景点相对市中心的方位角区间 → 证明路线单向推进不绕回 */
+      const fan=(plan.__fan||[])[di]||{};
+      const ang=fan.bearing&&fan.bearing.length===2?fan.bearing:null;
+      const fanTip=ang?`<p class="journey-fan">🧭 本日路线位于市中心 ${ang[0]}°–${ang[1]}° 方位扇形内 · 由近及远单向推进${fan.km?' · 约 '+fan.km+' km':''}</p>`:'';
+      return `<section class="journey-day"><h3>Day ${sg.day} · ${escHtml(dayTheme(sg.points.map(p=>p.id)))}</h3>${fanTip}<ul class="timeline">${rows||noTl}</ul></section>`;
     }).join('');
     cards.innerHTML=tlHtml;
     box.querySelectorAll('[role="tab"]').forEach(b=>{const on=+b.dataset.day===idx;b.classList.toggle('on',on);b.setAttribute('aria-selected',String(on))});

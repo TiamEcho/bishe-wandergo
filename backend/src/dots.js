@@ -19,6 +19,38 @@ const SYSTEM = `你是旅游攻略信息抽取引擎。请从用户给出的攻�
 mention 表示该实体在文本中出现的次数（估算即可，最少 1）。不要编造文本中不存在的内容。`;
 
 /**
+ * 通用 JSON 对话：给定 system + user，返回解析后的对象；未配置 Key 或失败返回 null
+ * @param {string} system 系统提示词
+ * @param {string} user   用户内容
+ */
+async function chatJson(system, user, timeout) {
+  if (!KEY) return null;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeout || TIMEOUT);
+  try {
+    const res = await fetch(`${BASE}${CHAT_PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        temperature: 0.6
+      }),
+      signal: ctl.signal
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const txt = (((j.choices || [])[0] || {}).message || {}).content || '';
+    return parseJsonLoose(txt);
+  } catch (e) {
+    console.warn('[dots] chatJson', e.name === 'AbortError' ? 'timeout' : String(e.message || e));
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * 调用大模型抽取实体
  * @param {string} text 攻略正文
  * @param {object} ctx  { city, spotNames, cityNames }
@@ -146,4 +178,4 @@ async function chat(message, history = []) {
   return { engine: 'local', configured: false, reply: localReply(message) };
 }
 
-module.exports = { extractEntities, aiStatus, chat };
+module.exports = { extractEntities, aiStatus, chat, chatJson };

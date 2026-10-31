@@ -106,6 +106,8 @@ const WGOAPI=(()=>{
     /* ---------- AI 智能体悬浮球 ---------- */
     chat(message,history){return req('/api/chat',{method:'POST',body:{message,history:history||[]}},15000)},
     videoList(limit){return req('/api/videos?limit='+(limit||40),{},6000)},
-    analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)}
+    analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)},
+    /* 行程规划：AI 出景点 → 去重 → 扇形分区 → 周边餐饮住宿（失败返回 null，前端走本地算法） */
+    planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},25000)}
   };
 })();

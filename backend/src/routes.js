@@ -8,6 +8,7 @@ const dbx = require('./db');
 const { collectGuide } = require('./collector');
 const { aiStatus, extractEntities, chat } = require('./dots');
 const { localExtract } = require('./extract');
+const { planRoute } = require('./plan');
 
 const router = express.Router();
 
@@ -303,6 +304,22 @@ router.post('/analyze-video', async (req, res) => {
   } catch (e) {
     console.error('[analyze-video]', e);
     res.status(500).json({ ok: false, message: '视频分析失败', error: String(e.message || e) });
+  }
+});
+
+/* ⑦ POST /api/plan/route —— 景点去重 + 扇形分区 + 周边餐饮住宿
+ * body: { city:string, days:number, want?:number }
+ * 流程：AI 出 10-12 个景点 → 去重 → 按方位角扇形分天 → 每天搜周边餐厅 / 住宿 */
+router.post('/plan/route', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const city = String(b.city || req.query.city || '').trim();
+    if (!city) return res.status(400).json({ ok: false, message: 'city 不能为空' });
+    const out = await planRoute(city, b.days, b.want);
+    res.json(out);
+  } catch (e) {
+    console.error('[plan/route]', e);
+    res.status(500).json({ ok: false, message: '规划失败', error: String(e.message || e) });
   }
 });
 
