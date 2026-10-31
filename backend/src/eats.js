@@ -14,14 +14,35 @@ function load() {
   if (!fs.existsSync(file)) return cache;
   try {
     const src = fs.readFileSync(file, 'utf-8');
-    /* 整个 data.js 在沙箱里执行一次即可拿到常量；它只依赖少量全局，运行时不会报错 */
-    const sandbox = { console };
-    vm.createContext(sandbox);
-    try { vm.runInContext(src, sandbox, { timeout: 3000, filename: 'data.js' }); } catch (_) { /* 后续常量已赋值部分仍可取 */ }
+    /* data.js 里 EATS / EATS_BY_REG / CITY_REGION 都是 const，脚本作用域执行完不会挂到 sandbox 上，
+       所以用正则把这三段字面量抠出来单独求值 */
+    const grab = name => {
+      const m = new RegExp(`const\\s+${name}\\s*=\\s*([\\{\\[])`).exec(src);
+      if (!m) return null;
+      const start = m.index + m[0].length - 1;
+      const open = m[1];
+      const close = open === '{' ? '}' : ']';
+      let depth = 0, quote = '', esc = false;
+      for (let i = start; i < src.length; i++) {
+        const ch = src[i];
+        if (quote) {
+          if (esc) esc = false;
+          else if (ch === '\\') esc = true;
+          else if (ch === quote) quote = '';
+          continue;
+        }
+        if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+        if (ch === open) depth++;
+        else if (ch === close && --depth === 0) {
+          return vm.runInNewContext('(' + src.slice(start, i + 1) + ')', {}, { timeout: 2000 });
+        }
+      }
+      return null;
+    };
     Object.assign(cache, {
-      EATS: sandbox.EATS || {},
-      EATS_BY_REG: sandbox.EATS_BY_REG || {},
-      CITY_REGION: sandbox.CITY_REGION || {}
+      EATS: grab('EATS') || {},
+      EATS_BY_REG: grab('EATS_BY_REG') || {},
+      CITY_REGION: grab('CITY_REGION') || {}
     });
   } catch (e) {
     console.warn('[eats] 解析 data.js 失败，餐饮兜底走通用文案', e.message || e);

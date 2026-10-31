@@ -25,7 +25,7 @@ const GROUP_CATEGORY = ['景点', '购物', '文创', '美食', '休闲', '文�
 const PAGE_SIZE = 25;
 const MAX_PAGE = 3;
 const EXTRA_PAGE = 6;       // 首轮不足 100 时，最多再翻到第 6 页
-const CONCURRENCY = 6;      // 同时进行的请求数，避免触发高德 QPS 限制
+const CONCURRENCY = 6;      // 同时进行的请求数
 const TARGET_TOTAL = 100;   // 期望拿到的去重后 POI 数量
 
 /* ---- 高德返回值清洗：空字段可能是 [] ---- */
@@ -176,11 +176,14 @@ async function searchCitySpots(city, opts = {}) {
   const byCategory = {};
   out.forEach(p => { byCategory[p.category] = (byCategory[p.category] || 0) + 1; });
 
-  /* 5) 一条都没拿到时，把高德返回的错误码带出去，避免「静默空结果」无从排查 */
+  /* 5) 一条都没拿到时，把高德返回的错误码带出去，避免「静默空结果」无从排查。
+        有结果但不满 100 时也附一句 note，方便判断是高德配额还是关键词覆盖不够 */
   const err = amap.getLastError();
   const failed = out.length === 0 && err
     ? { reason: 'amap_error', info: err.info, infocode: err.infocode, hint: err.hint }
-    : {};
+    : (out.length < TARGET_TOTAL
+      ? { note: `仅取到 ${out.length} 个点位${err ? `（高德：${err.info}）` : ''}` }
+      : {});
 
   return {
     ok: true,

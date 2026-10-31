@@ -29,13 +29,16 @@ function poolOfCity(city, rg) {
     (!rg || !s.region || s.region === rg));
 }
 
-/* 站内库不足时，同省 / 同区域就近补（不跨大区，避免出现「拉萨」这种异地卡） */
+/* 站内库不足时的近邻补位：半径收紧到 60km 且要求同省，
+   否则「杭州」可能混进苏州的周庄、山塘街，单日里程直接飙到 150km */
 function nearPool(center, exclude, limit = 14) {
   const has = new Set(exclude.map(s => s.name));
+  const provs = new Set(exclude.map(s => s.province).filter(Boolean));
   return dbx.SPOTS
     .filter(s => s.name && s.lng != null && !has.has(s.name))
+    .filter(s => (s.province ? provs.has(s.province) : true))
     .map(s => ({ s, d: dist(center, s) }))
-    .filter(x => x.d < 160)
+    .filter(x => x.d < 60)
     .sort((a, b) => a.d - b.d)
     .slice(0, limit)
     .map(x => x.s);
@@ -134,7 +137,7 @@ async function collectSpots(city, want) {
     });
   }
 
-  /* 3) 站内库补足：同城优先，再 160km 内近邻 */
+  /* 3) 站内库补足：同城优先（扩充后单城已有 8-11 个），再 60km 内同省近邻 */
   const fillFrom = arr => {
     for (const s of arr) {
       if (chosen.length >= want) break;
@@ -142,7 +145,7 @@ async function collectSpots(city, want) {
     }
   };
   fillFrom(libPool.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0)));
-  if (chosen.length < want) fillFrom(nearPool(center, chosen, 30));
+  if (chosen.length < want) fillFrom(nearPool(center, libPool, 30));
 
   return {
     chosen: chosen.slice(0, want),
@@ -202,18 +205,21 @@ async function attachPoi(day, idx, lastIdx, city) {
  */
 async function planRoute(city, days, want) {
   const d = Math.max(1, Number(days) || 2);
-  const wantSpots = Math.min(12, Math.max(10, Number(want) || d * 4));
+  /* ④ 收集景点：AI 生成（20 个）→ 去重 → 按方位角排序预分组 → 扇形分区 →
+   *    某天景点偏少时从最多那天借一个 → 周边餐饮住宿 */
+  const wantSpots = Math.min(20, Math.max(12, d * 4));
   const { chosen, center, libraryHit, amapHit, scanned } = await collectSpots(city, wantSpots);
 
-  /* ② 去重：先按「平均摊到每天」预分组，再逐日去重，被删的位置从剩菜池补 */
-  const n = Math.min(d, Math.max(1, Math.ceil(chosen.length / 3)));
+  /* ② 去重：先按方位角排序再均摊到每天做预分组，随后逐日去重，被删的位置从剩菜池补 */
+  const ordered = chosen.slice().sort((a, b) => bearing(center, a) - bearing(center, b));
+  const n = Math.min(d, Math.max(1, Math.ceil(ordered.length / 3)));
   const pre = Array.from({ length: n }, () => []);
-  chosen.forEach((s, i) => pre[i % n].push(s));
+  ordered.forEach((s, i) => pre[i % n].push(s));
   const spare = [];
   const { days: deduped, removed, filled } = deduplicateSpots(pre, spare);
 
-  /* ③ 扇形分区：以城市中心为锚点，按方位角均分 */
-  const flat = (deduped.length ? deduped.flat() : chosen);
+  /* ③ 扇形分区：以城市中心为锚点，按方位角均分 360° */
+  const flat = (deduped.some(x => x.length) ? deduped.flat() : ordered);
   const fanDays = fanCluster(flat, center, n);
 
   /* ④ 每天按距中心由近到远 → 顺序推进；再加餐饮与住宿 */
@@ -249,7 +255,9 @@ async function planRoute(city, days, want) {
       bearingRange: (() => {
         const angs = sorted.map(s => bearing(center, s));
         return [Math.round(Math.min(...angs)), Math.round(Math.max(...angs))];
-      })()
+      })(),
+      /* 景点太分散时的提示：单日里程超过 80km 说明当天跨区，前端可提示调整天数 */
+      warn: km > 80 ? `当天跨度约 ${Math.round(km)}km，景点较分散，建议增加天数或包车` : ''
     });
   }
 

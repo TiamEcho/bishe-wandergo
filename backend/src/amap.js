@@ -8,7 +8,9 @@
  * ========================================================= */
 const KEY = process.env.AMAP_KEY || '';
 const HOST = 'https://restapi.amap.com';
-const TIMEOUT = Number(process.env.AMAP_TIMEOUT || 6000);
+/* 默认 15s：Render 免费实例在海外机房，到高德境内接口的链路抖动较大，
+ * 6s 在 18 个并发请求下几乎必然超时 */
+const TIMEOUT = Number(process.env.AMAP_TIMEOUT || 15000);
 
 const isOn = () => !!KEY;
 

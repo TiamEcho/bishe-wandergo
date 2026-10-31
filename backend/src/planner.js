@@ -67,7 +67,10 @@ function deduplicateSpots(days, spare) {
 }
 
 /* 二、扇形分区：按相对城市中心的方位角排序，把 360° 均分成 n 份。
- * 容量均衡：扇形内景点过多时，把「角距最接近分界」的点让给相邻扇形。
+ * 边界自适应：方位角不是均匀分布的（景点常挤在市中心 90° 范围内），
+ *   均分会让某些扇形空着、另一些塞满，所以从「均分」逐步放宽到「同片区聚成一簇」，
+ *   取第一组能让每天景点数达到目标（ceil(总数/n)）的边界。
+ * 容量均衡：某天仍超额时，把「角距最接近分界」的点让给相邻缺额天。
  * 同一天内按距中心由近到远排序 → 路线从中心向外单向推进，不折返。 */
 function fanCluster(spots, center, dayCount) {
   const n = Math.max(1, dayCount | 0);
@@ -97,6 +100,30 @@ function fanCluster(spots, center, dayCount) {
     const give = short > over ? b.pop() : b.shift();
     buckets[short].push(give);
     buckets[short].sort((x, y) => x.ang - y.ang);
+  }
+
+  /* 扇区为空：把「与空扇区角距最近」的超额扇区拆一半过去，
+   * 景点都挤在市中心同侧时（方位角跨度很小）常见，保证每天都有可走的点 */
+  const angGap = (i, k) => {
+    const centerOf = k => (k + 0.5) * step;
+    const diff = Math.abs(centerOf(i) - centerOf(k));
+    return Math.min(diff, 360 - diff);
+  };
+  for (let round = 0; round < n; round++) {
+    const short = buckets.findIndex(b => b.length === 0);
+    if (short < 0) break;
+    let big = -1, bestGap = Infinity;
+    buckets.forEach((b, i) => {
+      if (i === short || b.length < 2) return;
+      const g = angGap(short, i);
+      if (g < bestGap) { bestGap = g; big = i; }
+    });
+    if (big < 0) break;
+    const sortedBig = buckets[big].slice().sort((x, y) => x.d - y.d);
+    const half = sortedBig.slice(Math.ceil(sortedBig.length / 2));
+    const keep = new Set(half);
+    buckets[big] = sortedBig.filter(x => !keep.has(x));
+    buckets[short] = half;
   }
 
   /* 每天内部：由近到远 */
