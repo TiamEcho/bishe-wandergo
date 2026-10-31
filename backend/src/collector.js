@@ -107,7 +107,7 @@ async function collectGuide(keyword) {
   }
 
   for (const c of candidates) {
-    const r = dbx.addGuide(c);
+    const r = await dbx.addGuide(c);
     if (r.row) guides.push({ ...r.row, created: r.created });
   }
   collected = candidates.length;
@@ -120,13 +120,13 @@ async function collectGuide(keyword) {
       city: g.city, spotNames: dbx.SPOT_NAMES, cityNames: dbx.CITY_NAMES
     });
     engine = r.engine;
-    dbx.addEntities(g.id, g.city, r, r.engine);
+    await dbx.addEntities(g.id, g.city, r, r.engine);
     aiDone.push({ guide_id: g.id, title: g.title, city: g.city, engine: r.engine, error: r.error || null });
   }
 
   /* 3) 汇总该城市的实体（供前端展示） */
-  let rows = dbx.searchEntities(kw, 24);
-  if (!rows.length && city && city !== kw) rows = dbx.searchEntities(city, 24);
+  let rows = await dbx.searchEntities(kw, 24);
+  if (!rows.length && city && city !== kw) rows = await dbx.searchEntities(city, 24);
   const pick = t => rows.filter(x => x.type === t).map(x => ({ name: x.name, mention: x.mention || 1, city: x.city }));
 
   return {
