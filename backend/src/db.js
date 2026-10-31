@@ -407,10 +407,15 @@ async function searchGuides(q, limit = 60) {
   const cityWhere = terms.map(() => 'g.city LIKE ?').join(' OR ');
   const bodyWhere = terms.filter(t => t.length >= 2).map(() => 'g.title LIKE ? OR g.content LIKE ?').join(' OR ');
   const params = [...terms.map(t => `%${t}%`), ...terms.filter(t => t.length >= 2).flatMap(t => [`%${t}%`, `%${t}%`])];
+  /* ORDER BY 的 CASE 表达式必须出现在 SELECT 列表中（Postgres DISTINCT 限制），
+     因此拆成子查询再排序，兼容 SQLite 与 PostgreSQL */
   return impl.all(`
-    SELECT DISTINCT g.* FROM guide g
-    WHERE ${cityWhere} OR ${bodyWhere}
-    ORDER BY ((CASE WHEN ${cityWhere} THEN 1 ELSE 0 END)) DESC, g.created_at DESC
+    SELECT * FROM (
+      SELECT g.*, (CASE WHEN ${cityWhere} THEN 1 ELSE 0 END) AS _hit
+      FROM guide g
+      WHERE ${cityWhere} OR ${bodyWhere}
+    ) t
+    ORDER BY _hit DESC, created_at DESC
     LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
@@ -420,9 +425,12 @@ async function searchCheckins(q, limit = 40) {
   const cityWhere = terms.map(() => 'city LIKE ?').join(' OR ');
   const bodyWhere = terms.filter(t => t.length >= 2).map(() => 'spot LIKE ? OR text LIKE ?').join(' OR ');
   const params = [...terms.map(t => `%${t}%`), ...terms.filter(t => t.length >= 2).flatMap(t => [`%${t}%`, `%${t}%`])];
-  return impl.all(`SELECT * FROM checkin
-    WHERE ${cityWhere} OR ${bodyWhere}
-    ORDER BY ((CASE WHEN ${cityWhere} THEN 1 ELSE 0 END)) DESC, created_at DESC
+  return impl.all(`SELECT * FROM (
+      SELECT c.*, (CASE WHEN ${cityWhere} THEN 1 ELSE 0 END) AS _hit
+      FROM checkin c
+      WHERE ${cityWhere} OR ${bodyWhere}
+    ) t
+    ORDER BY _hit DESC, created_at DESC
     LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
@@ -435,10 +443,13 @@ async function searchEntities(q, limit = 30) {
   const cityWhere = terms.map(() => 'city LIKE ?').join(' OR ');
   const nameWhere = terms.map(() => 'name LIKE ?').join(' OR ');
   const params = [...terms.map(t => `%${t}%`), ...terms.map(t => `%${t}%`)];
-  return impl.all(`SELECT type,name,MAX(city) AS city,SUM(mention) AS mention FROM entity
-    WHERE ${cityWhere} OR ${nameWhere}
+  return impl.all(`SELECT type,name,MAX(city) AS city,SUM(mention) AS mention FROM (
+      SELECT e.*, (CASE WHEN ${cityWhere} THEN 1 ELSE 0 END) AS _hit
+      FROM entity e
+      WHERE ${cityWhere} OR ${nameWhere}
+    ) t
     GROUP BY type,name
-    ORDER BY ((CASE WHEN ${cityWhere} THEN 1 ELSE 0 END)) DESC, mention DESC
+    ORDER BY MAX(_hit) DESC, mention DESC
     LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
