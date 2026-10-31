@@ -400,7 +400,7 @@ function showPlan(plan){
   <div class="mod col-12" style="animation-delay:.6s;border-style:dashed"><h4><span class="mi">💡</span>AI 省钱贴士</h4><p style="font-size:12.5px;color:var(--ink-2)">${plan.tips}</p></div>
   <div class="mod col-12" id="aiEntMod" style="animation-delay:.65s">
     <h4><span class="mi">🤖</span>AI 实体抽取 · ${plan.dest}<span class="go" id="aiEntRetry">重新采集 →</span></h4>
-    <div class="mod-blist" id="aiEntBody"><div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div></div>
+    <div class="mod-blist" id="aiEntBody"><div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div></div>
   </div>`;
   grid.classList.add('show');
   aiEntSync(plan);
@@ -410,7 +410,7 @@ function showPlan(plan){
   setTimeout(()=>initPlanExtras(plan),40);
   renderCmts(planKeyOf(plan)||plan.dest);
 }
-/* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + Dots Studio 抽取） ---- */
+/* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + AI 抽取） ---- */
 /* 采集走离线爬虫包 / 景点库，通常 1 秒内返回；20 秒超时足够兜底 */
 const AI_ENT_TIMEOUT = 20000;
 async function aiEntSync(plan){
@@ -418,7 +418,7 @@ async function aiEntSync(plan){
   const body=document.getElementById('aiEntBody');if(!body)return;
   const retry=document.getElementById('aiEntRetry');
   if(retry)retry.onclick=()=>aiEntSync(plan);
-  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
+  body.innerHTML='<div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
   const base=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
   let d=null,errMsg='';
   try{
@@ -479,10 +479,10 @@ function renderAiEnt(body,d,added){
   const p=row('📍','地名',d.entities.places);
   const f=row('🍜','美食',d.entities.foods);
   const s=row('🏙','商圈',d.entities.districts);
-  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'Dots Studio 大模型':'本地规则（未配置 API Key）'}${added?` · 已补进行程 ${added} 个点位`:''}</div>`;
+  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'AI 大模型':'本地规则（未配置 API Key）'}${added?` · 已补进行程 ${added} 个点位`:''}</div>`;
   body.innerHTML=(p||f||s)
     ?(p+f+s+meta)
-    :`<div>暂未从「${escHtml(d.keyword)}」相关攻略里抽取到实体，换个目的地或稍后重试。</div>${meta}`;
+    :`<div>${escHtml(d.message||`暂未从「${d.keyword||''}」相关攻略里抽取到实体，换个目的地或稍后重试。`)}</div>${meta}`;
 }
 /* ---- 路线模块：出行方式切换 / 里程时间统计 ---- */
 let rtMode=localStorage.getItem('fmw_rt_mode')||'drive';

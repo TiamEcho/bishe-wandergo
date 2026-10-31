@@ -1,11 +1,11 @@
 /* =========================================================
- * Dots Studio 大模型接入：从攻略文本里抽取「地名 / 美食 / 商圈」
- * 未配置 DOTS_API_KEY 或调用失败 → 自动降级为本地规则抽取
+ * 大模型接入（OpenAI 兼容协议）：从攻略文本里抽取「地名 / 美食 / 商圈」
+ * 默认智谱 GLM（glm-4-flash 免费）；未配置 DOTS_API_KEY 或调用失败 → 本地规则抽取
  * ========================================================= */
 const { localExtract, parseJsonLoose, normalizeAi } = require('./extract');
 
-const BASE = (process.env.DOTS_API_BASE || 'https://note3-prev-api.askdiandian.com/v1').replace(/\/$/, '');
-const MODEL = process.env.DOTS_MODEL || 'dots3-note-prev';
+const BASE = (process.env.DOTS_API_BASE || 'https://open.bigmodel.cn/api/paas/v4').replace(/\/$/, '');
+const MODEL = process.env.DOTS_MODEL || 'glm-4-flash';
 const KEY = process.env.DOTS_API_KEY || '';
 const CHAT_PATH = process.env.DOTS_CHAT_PATH || '/chat/completions';
 const TIMEOUT = Number(process.env.DOTS_TIMEOUT || 18000);
@@ -19,7 +19,7 @@ const SYSTEM = `你是旅游攻略信息抽取引擎。请从用户给出的攻�
 mention 表示该实体在文本中出现的次数（估算即可，最少 1）。不要编造文本中不存在的内容。`;
 
 /**
- * 调用 Dots Studio 抽取实体
+ * 调用大模型抽取实体
  * @param {string} text 攻略正文
  * @param {object} ctx  { city, spotNames, cityNames }
  */
@@ -49,7 +49,7 @@ async function extractEntities(text, ctx = {}) {
       });
       clearTimeout(timer);
 
-      if (!res.ok) throw new Error(`Dots API ${res.status}`);
+      if (!res.ok) throw new Error(`AI API ${res.status}`);
       const data = await res.json();
       const raw = data?.choices?.[0]?.message?.content
         || data?.output_text
@@ -131,7 +131,7 @@ async function chat(message, history = []) {
         signal: ctl.signal
       });
       clearTimeout(timer);
-      if (!res.ok) throw new Error(`Dots API ${res.status}`);
+      if (!res.ok) throw new Error(`AI API ${res.status}`);
       const data = await res.json();
       const raw = data?.choices?.[0]?.message?.content
         || data?.output_text

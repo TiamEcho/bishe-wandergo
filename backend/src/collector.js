@@ -3,7 +3,7 @@
  * 采集顺序（有则用，无则降级）：
  *   1) 离线爬虫包 js/posts_crawl.json
  *   2) 景点库自动拼装
- * 之后逐篇调用 Dots Studio 抽取地名/美食/商圈，写入 entity 表
+ * 之后逐篇调用大模型抽取地名/美食/商圈，写入 entity 表
  * ========================================================= */
 const dbx = require('./db');
 const { extractEntities } = require('./dots');

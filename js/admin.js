@@ -69,7 +69,7 @@ createApp({
           checkins: r.stats.checkins,
           entities: r.stats.entities,
           cities: r.stats.cities,
-          ai: (r.ai && r.ai.configured) ? 'Dots Studio 已配置' : 'Dots Studio 未配置 · 本地规则抽取'
+          ai: (r.ai && r.ai.configured) ? `大模型已配置 · ${r.ai.model || ''}` : '大模型未配置 · 本地规则抽取'
         };
       } else {
         this.backend.ok = false;

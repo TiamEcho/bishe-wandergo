@@ -49,6 +49,6 @@ app.listen(PORT, () => {
   console.log(`  WanderGo backend  http://localhost:${PORT}`);
   console.log(`  静态前端          http://localhost:${PORT}/index.html`);
   console.log(`  种子数据          ${seedInfo.seeded ? '已初始化' : '已存在，跳过'} | guides ${st.guides} / checkins ${st.checkins} / entities ${st.entities}`);
-  console.log(`  Dots Studio       ${process.env.DOTS_API_KEY ? '已配置 Key' : '未配置 Key（实体抽取走本地规则）'}`);
+  console.log(`  大模型            ${process.env.DOTS_API_KEY ? '已配置 Key' : '未配置 Key（实体抽取走本地规则）'}`);
   console.log('----------------------------------------------------');
 });
