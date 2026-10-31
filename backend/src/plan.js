@@ -149,6 +149,10 @@ async function collectSpots(city, want) {
 
   return {
     chosen: chosen.slice(0, want),
+    /* 近邻余量：同城库不够时，60km 内同省的补位候选，供「某天景点太少」时回捞 */
+    rest: chosen.length >= want
+      ? []
+      : nearPool(center, libPool, 30).map(toSpot).filter(s => !chosen.some(c => c.name === s.name)),
     center,
     libraryHit: chosen.filter(c => !String(c.id).startsWith('am_')).length,
     amapHit: chosen.filter(c => String(c.id).startsWith('am_')).length,
@@ -208,19 +212,80 @@ async function planRoute(city, days, want) {
   /* ④ 收集景点：AI 生成（20 个）→ 去重 → 按方位角排序预分组 → 扇形分区 →
    *    某天景点偏少时从最多那天借一个 → 周边餐饮住宿 */
   const wantSpots = Math.min(20, Math.max(12, d * 4));
-  const { chosen, center, libraryHit, amapHit, scanned } = await collectSpots(city, wantSpots);
+  const { chosen, rest, center, libraryHit, amapHit, scanned } = await collectSpots(city, wantSpots);
 
-  /* ② 去重：先按方位角排序再均摊到每天做预分组，随后逐日去重，被删的位置从剩菜池补 */
+  /* ② 去重：先按方位角排序再均摊到每天做预分组，随后逐日去重，被删的位置从剩菜池补。
+   *    预分组会留一部分景点在 spare，供去重补位与「某天太薄」时回捞 */
   const ordered = chosen.slice().sort((a, b) => bearing(center, a) - bearing(center, b));
   const n = Math.min(d, Math.max(1, Math.ceil(ordered.length / 3)));
   const pre = Array.from({ length: n }, () => []);
-  ordered.forEach((s, i) => pre[i % n].push(s));
   const spare = [];
+  ordered.forEach((s, i) => {
+    const k = i % (n + 1);
+    if (k < n) pre[k].push(s); else spare.push(s);
+  });
   const { days: deduped, removed, filled } = deduplicateSpots(pre, spare);
 
-  /* ③ 扇形分区：以城市中心为锚点，按方位角均分 360° */
+  /* ③ 扇形分区：以城市中心为锚点，按方位角切片 */
   const flat = (deduped.some(x => x.length) ? deduped.flat() : ordered);
   const fanDays = fanCluster(flat, center, n);
+
+  /* ③b 天数回归：景点全挤在同一侧时扇区可能为空，先保证每天都有分配 */
+  const used = new Set(fanDays.flat().map(s => s.name));
+  fanDays.forEach(list => {
+    if (list.length) return;
+    while (spare.length && !list.length) {
+      const cand = spare.shift();
+      if (used.has(cand.name)) continue;
+      used.add(cand.name);
+      list.push(cand);
+    }
+  });
+
+  /* ③c 每天至少 3 个景点：优先补方位角相邻的站内库余量（rest，同省 60km 内），
+   *     余量不够再从「最挤那天」拆一半过来（景点全挤在同一侧时必走这一步） */
+  const totalAvail = chosen.length + rest.filter(x => !used.has(x.name)).length;
+  const MIN_PER_DAY = Math.min(Math.floor(totalAvail / n), 3);
+  const dayDist = (list, pt) => (list.length ? Math.min(...list.map(c => dist(c, pt))) : 9999);
+  const restPool = rest.filter(x => !used.has(x.name));
+  for (let guard = 0; guard < n * 8; guard++) {
+    /* thin = 景点最少的那一天；它已达标说明所有天都达标 */
+    const thin = fanDays.reduce((acc, l, i) =>
+      (acc < 0 || l.length < fanDays[acc].length ? i : acc), -1);
+    if (thin < 0 || fanDays[thin].length >= MIN_PER_DAY) break;
+    const target = fanDays[thin];
+    const mid = (thin + 0.5) * (360 / n);
+    const angGap = s => {
+      const diff = Math.abs(bearing(center, s) - mid);
+      return Math.min(diff, 360 - diff);
+    };
+
+    /* 1) 站内库余量：同扇区内取角距最近的，否则退化为离该天最近的 */
+    let best = -1, bestScore = Infinity;
+    restPool.forEach((c, ci) => {
+      if (used.has(c.name)) return;
+      const score = angGap(c) < 360 / n ? angGap(c) : 180 + dayDist(target, c);
+      if (score < bestScore) { bestScore = score; best = ci; }
+    });
+    if (best >= 0 && bestScore < 180) {
+      const cand = restPool.splice(best, 1)[0];
+      used.add(cand.name);
+      target.push(cand);
+      continue;
+    }
+
+    /* 2) 余量耗尽：从最多那天拆一半过来 */
+    let src = -1;
+    fanDays.forEach((l, i) => {
+      if (i !== thin && l.length >= MIN_PER_DAY && (src < 0 || l.length > fanDays[src].length)) src = i;
+    });
+    if (src < 0) break;
+    const half = fanDays[src].slice().sort((a, b) => dist(center, a) - dist(center, b))
+      .slice(Math.ceil(fanDays[src].length / 2));
+    const move = new Set(half);
+    fanDays[src] = fanDays[src].filter(x => !move.has(x));
+    target.push(...half);
+  }
 
   /* ④ 每天按距中心由近到远 → 顺序推进；再加餐饮与住宿 */
   const out = [];

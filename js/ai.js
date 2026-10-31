@@ -378,6 +378,28 @@ function fanCluster(spots,center,dayCount){
     buckets[short].push(short>over?b.pop():b.shift());
     buckets[short].sort((x,y)=>x.ang-y.ang);
   }
+  /* 扇区为空：把「与空扇区角距最近」的超额扇区拆一半过去（与后端一致） */
+  const angGap=(i,k)=>{
+    const co=k=>(k+0.5)*step;
+    const diff=Math.abs(co(i)-co(k));
+    return Math.min(diff,360-diff);
+  };
+  for(let r=0;r<n;r++){
+    const short=buckets.findIndex(b=>b.length===0);
+    if(short<0)break;
+    let big=-1,bestGap=Infinity;
+    buckets.forEach((b,i)=>{
+      if(i===short||b.length<2)return;
+      const g=angGap(short,i);
+      if(g<bestGap){bestGap=g;big=i}
+    });
+    if(big<0)break;
+    const sortedBig=buckets[big].slice().sort((x,y)=>x.d-y.d);
+    const half=sortedBig.slice(Math.ceil(sortedBig.length/2));
+    const keep=new Set(half);
+    buckets[big]=sortedBig.filter(x=>!keep.has(x));
+    buckets[short]=half;
+  }
   return buckets.map(b=>b.sort((x,y)=>x.d-y.d).map(x=>x.s));
 }
 /* 具体时刻表：每天从 9:00 起，每个景点 150 分钟 + 20 分钟赶路，三餐按时间就近插入 */
@@ -410,6 +432,21 @@ function fanApply(plan){
   const ids=plan.spots.filter(id=>{const s=spotById(id);return s&&s.lng!=null});
   if(ids.length<3)return plan;
   const daily=fanCluster(ids.map(spotById),center,plan.routeDays.length);
+  /* 每天至少 3 个景点（与后端一致）：不足的那天从最多那天拆一半过来 */
+  const MIN=Math.min(Math.floor(ids.length/daily.length),3);
+  for(let g=0;g<daily.length*8;g++){
+    let thin=-1;
+    daily.forEach((l,i)=>{if(thin<0||l.length<daily[thin].length)thin=i});
+    if(thin<0||daily[thin].length>=MIN)break;
+    let src=-1;
+    daily.forEach((l,i)=>{if(i!==thin&&l.length>=MIN&&(src<0||l.length>daily[src].length))src=i});
+    if(src<0)break;
+    const half=daily[src].slice().sort((a,b)=>fanDist(center,a)-fanDist(center,b))
+      .slice(Math.ceil(daily[src].length/2));
+    const mv=new Set(half.map(s=>s.id));
+    daily[src]=daily[src].filter(s=>!mv.has(s.id));
+    daily[thin].push(...half);
+  }
   plan.routeDays=daily.map(list=>list.map(s=>s.id));
   plan.timelines=plan.routeDays.map(list=>buildFanTimeline(list,plan.prov||plan.dest));
   plan.__fan=plan.routeDays.map(list=>{
