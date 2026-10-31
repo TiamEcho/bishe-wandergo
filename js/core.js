@@ -33,6 +33,7 @@ function setTheme(t){
   }
   document.documentElement.dataset.theme=t;localStorage.setItem('fmw_theme',t);
   $$('#themeDrop [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  document.dispatchEvent(new CustomEvent('themechange',{detail:{theme:t}}));
   toast('主题已切换 ✨');
 }
 /* ---- 主题样式（皮肤）：与主题颜色独立，可自由组合 ---- */
@@ -347,9 +348,9 @@ function loadCharts(cb){
 }
 /* ================= 弹窗 ================= */
 function openModal(html,wide){$('#modalBox').className='modal'+(wide?' wide':'');$('#modalBox').innerHTML=html;$('#ovl').classList.add('show')}
-function closeModal(){$('#ovl').classList.remove('show');stopVSlide()}
+function closeModal(){$('#ovl').classList.remove('show');stopVSlide();if(typeof closeViewer==='function')closeViewer()}
 document.addEventListener('click',e=>{if(e.target&&e.target.id==='ovl')closeModal()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const v=document.getElementById('ivw');if(v&&v.classList.contains('show'))return closeViewer();closeModal()}});
 /* ================= BGM 引擎（WebAudio 合成） ================= */
 const PRESET={
  fresh:{wave:'triangle',gain:.06,dur:.26,seq:[659.3,784,880,1046.5,880,784]},
@@ -386,16 +387,22 @@ function openVideo(d){
   vData=d;vFrame=0;
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
   <div class="vplayer">
-    <div class="vstage" id="vStage">${d.imgs.map(k=>`<img src="${IMG(P[k],'landscape_16_9')}">`).join('')}
-      <div class="vtitle"><h4>${d.t}</h4><p>📍 ${d.loc} · AI 精选打卡视频</p></div></div>
-    <div class="vctl">
-      <button id="vPlay" title="播放/暂停">⏸</button>
-      <div class="vprog"><i id="vProg"></i></div>
-      <span class="vtime" id="vTime">0:00</span>
-      <button id="vBgm" title="BGM 配乐">♪</button>
+    <div class="vmain">
+      <div class="vstage" id="vStage" onclick="openViewer(this.querySelector('img.on')||this.querySelector('img'),'${(d.t||'').replace(/'/g,'')}')">${d.imgs.map(k=>`<img src="${IMG(P[k],'landscape_16_9')}">`).join('')}
+        <div class="vtitle"><h4>${d.t}</h4><p>📍 ${d.loc} · AI 精选打卡视频 · 点击画面可放大</p></div></div>
+      <div class="vctl">
+        <button id="vPlay" title="播放/暂停">⏸</button>
+        <div class="vprog"><i id="vProg"></i></div>
+        <span class="vtime" id="vTime">0:00</span>
+        <button id="vBgm" title="BGM 配乐">♪</button>
+      </div>
     </div>
-    <div class="bgm-chips" id="vBgmChips"></div>
+    <div class="vside">
+      <div class="vside-h">♪ 背景音乐<em>点一下切换试听</em></div>
+      <div class="bgm-chips" id="vBgmChips"></div>
+    </div>
   </div>`,true);
+  const box=$('#modalBox');if(box)box.classList.add('vwide');
   startVSlide();
   $('#vPlay').onclick=toggleVSlide;
   $('#vBgm').onclick=()=>{const on=toggleBgm(d.bgm||'fresh');$('#vBgm').classList.toggle('bgm-on',on);syncBgmChips(on?d.bgm||'fresh':null)};
@@ -403,6 +410,32 @@ function openVideo(d){
   $('#vBgmChips').innerHTML=BGM_LIST.map(b=>`<button class="bgm-chip ${b[0]===(d.bgm||'fresh')?'on':''}" data-b="${b[0]}">${b[2]} ${b[1]}</button>`).join('');
   $$('#vBgmChips .bgm-chip').forEach(ch=>ch.onclick=()=>{const on=toggleBgm(ch.dataset.b);syncBgmChips(on?ch.dataset.b:null)});
 }
+/* ================= 图片查看器：半屏 / 中屏 / 全屏 ================= */
+const IVW_W={half:'56vw',mid:'80vw',full:'100vw'};
+function openViewer(img,cap){
+  if(!img)return;
+  let v=document.getElementById('ivw');
+  if(!v){v=document.createElement('div');v.id='ivw';v.className='ivw';document.body.appendChild(v)}
+  v.innerHTML=`<div class="ivw-box" id="ivwBox">
+    <button class="ivw-x" onclick="closeViewer()">✕</button>
+    <img src="${img.src}" alt="">
+    <div class="ivw-bar">
+      <span class="ivw-cap">${cap||''}</span>
+      <button data-sz="half">半屏</button>
+      <button data-sz="mid" class="on">中屏</button>
+      <button data-sz="full">全屏</button>
+    </div>
+  </div>`;
+  v.classList.add('show');
+  const box=document.getElementById('ivwBox');
+  box.style.setProperty('--ivw-w',IVW_W.mid);
+  v.querySelectorAll('[data-sz]').forEach(b=>b.onclick=()=>{
+    v.querySelectorAll('[data-sz]').forEach(x=>x.classList.toggle('on',x===b));
+    box.style.setProperty('--ivw-w',IVW_W[b.dataset.sz]);
+  });
+  v.onclick=e=>{if(e.target===v)closeViewer()};
+}
+function closeViewer(){const v=document.getElementById('ivw');if(v){v.classList.remove('show');v.innerHTML=''}}
 function syncBgmChips(active){
   $$('#vBgmChips .bgm-chip').forEach(x=>x.classList.toggle('on',x.dataset.b===active));
   $('#vBgm').classList.toggle('bgm-on',!!active);
@@ -422,7 +455,7 @@ function toggleVSlide(){
 function stopVSlide(){clearInterval(vTimer);vTimer=null;clearInterval(vProgTimer);vProgTimer=null;stopBgm()}
 function openPlog(t,loc,img,txtEnc){
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div><div class="dhero" style="height:250px"><img src="${IMG(P[img],'landscape_16_9')}"><div class="dc"><h3>📷 ${t}</h3><div class="meta"><span>📍 ${loc}</span><span>AI 精选 Plog</span></div></div></div>
+  <div><div class="dhero" style="height:250px"><img class="zoomable" src="${IMG(P[img],'landscape_16_9')}" onclick="openViewer(this,'${t.replace(/'/g,'')}')"><div class="dc"><h3>📷 ${t}</h3><div class="meta"><span>📍 ${loc}</span><span>AI 精选 Plog</span></div></div></div>
   <div class="dbody"><p class="desc" style="font-style:italic">${decodeURIComponent(txtEnc)}</p>
   <div class="dbtns"><button class="btn line" onclick="WGO.go('checkin.html')">📸 我也要写 Plog</button><button class="btn gold" onclick="WGO.go('community.html')">看更多真实 Plog</button></div></div></div>`,true);
 }
@@ -437,7 +470,7 @@ function openSpot(id){
   const s=spotById(id);if(!s)return;
   const lit=litSet().has(id);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div class="dhero"><img src="${IMG(P[s.id])}"><div class="dc">
+  <div class="dhero"><img class="zoomable" src="${IMG(P[s.id])}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
     <h3>${s.n} <span class="tagpill ${s.rg}" style="vertical-align:3px">${s.rg==='cn'?'国内':'国外'}</span>${lit?'<span class="tagpill lit">✨ 已点亮</span>':''}</h3>
     <div class="meta"><span>📍 ${s.city}</span><span>${s.tag}</span><span>⭐ ${s.rating}</span></div></div></div>
   <div class="dbody">

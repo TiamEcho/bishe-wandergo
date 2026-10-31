@@ -94,12 +94,18 @@ function geoSpot(name,city,prov,lng,lat,rg){
   s={id,n:name,city:city||prov,rg:rg||'cn',addr:(prov?prov+' · ':'')+(city&&city!==prov?city+' · ':'')+name,
     lng:+(lng+__off(name,.18)).toFixed(4),lat:+(lat+__off(name+'y',.12)).toFixed(4),
     hrs:'2-4 小时',traf:'当地交通可达',price:'以景区公示为准',rating:4.5,
+    openHrs:'以景区公告为准',bestTime:'day',needBook:false,dur:180,
+    __virtual:true,
     tag:'AI 收录 · '+(prov||city||'目的地'),
     desc:name+' —— AI 行程库收录的代表性点位。出发前建议再核对景区开放时间、门票政策与天气。'};
   SPOTS.push(s);
   if(typeof P!=='undefined'&&!P[id])P[id]='travel photography of '+name+' '+(city||prov||'')+', scenic landmark, natural light, high quality';
   if(typeof ICO!=='undefined'&&!ICO[id])ICO[id]='📍';
   return s;
+}
+/* 渲染前过滤：虚拟占位点没有真实图片与介绍，不进景点卡片列表，避免出现「只有名字」的空卡 */
+function realSpots(ids){
+  return ids.map(id=>spotById(id)).filter(s=>s&&!s.__virtual);
 }
 function geoMatch(q){
   let best=null;
@@ -230,18 +236,20 @@ function buildTimeline(ids,city,opts){
   items.sort((a,b)=>a.start-b.start);
   return items;
 }
-/* 把景点按天切分：大景区独占一天（dur>=420），其余每天 2-3 个 */
+/* 把景点按天切分：大景区独占一天（dur>=420），其余每天 3-4 个；
+ * 总点位多于 天数*4 时，多出来的按「备选」均摊到每天，不再挤掉 */
 function splitDays(ids,reqDays){
   const list=ids.map(spotById).filter(Boolean);
   const d=Math.max(1,reqDays||1);
   const days=Array.from({length:d},()=>[]);
   const heavy=list.filter(s=>(s.dur||180)>=400);
   const light=list.filter(s=>(s.dur||180)<400);
+  const perDay=Math.max(3,Math.ceil((heavy.length+light.length)/d));
   let di=0;
   heavy.forEach(s=>{while(days[di%d].length)di++;days[di%d].push(s.id);di++});
   light.forEach(s=>{
     let k=0,guard=0;
-    while(days[di%d].length>=3&&guard++<d*3)di++;
+    while(days[di%d].length>=perDay&&guard++<d*4)di++;
     days[di%d].push(s.id);di++;
   });
   /* 空白天：从已有天数里挪一个过来，保证 Day1..DayN 都有内容 */
@@ -256,8 +264,20 @@ function splitDays(ids,reqDays){
 function genPlan(e,reqDays){
   const [name,prov,lng,lat,spotNames,rg,days]=e;
   const city=name===prov?prov:name;
-  const spots=spotNames.map(n=>geoSpot(n,city,prov,lng,lat,rg).id);
   const useDays=typeof reqDays==='number'?(reqDays||1):(parseInt(days)||2);
+  /* 模板点位通常只有 3-4 个，按天数补足：至少 5 个，1 天 5 个、多天按 2 天/个 递增（上限 10） */
+  const wantN=Math.min(10,Math.max(5,useDays*2+1));
+  let names=spotNames.slice();
+  if(names.length<wantN){
+    /* 用同区已收录的真实景点补齐，仍不够才用模板地名兜底 */
+    const extra=SPOTS.filter(s=>s.rg===rg&&!names.includes(s.n)&&
+      rtDist({lng,lat},s)<900).sort((a,b)=>rtDist({lng,lat},a)-rtDist({lng,lat},b));
+    for(const s of extra){
+      if(names.length>=wantN)break;
+      names.push(s.n);
+    }
+  }
+  const spots=names.map(n=>geoSpot(n,city,prov,lng,lat,rg).id);
   const far=rg==='cn'&&(lng<100||lat>42);
   const budget=rg==='ab'?9000:far?4500:2800;
   const b=[['交通',.38],['住宿',.30],['餐饮',.16],['门票/体验',.10]];
@@ -322,11 +342,21 @@ function matchPlan(q,reqDays,opt){
       rtDist({lng:anchor[0],lat:anchor[1]},s)<80).map(s=>s.id);
     pool=pool.concat(SPOTS.filter(s=>(s.city===city&&s.rg===rg)||near.includes(s.id)));
   }
-  /* ③ 按天数决定取几个点位：大景区按 1 天 1 个，小景点按 1 天 2-3 个 */
+  /* ③ 按天数决定取几个点位：至少 5 个，每天 4 个左右（1 天 5 个，2 天 7 个，3 天 8 个…） */
   const reqD=Math.max(1,reqDays||2);
-  const need=Math.max(2,Math.min(pool.length,reqD===1?3:Math.min(3*reqD,reqD*2+1)));
+  const need=Math.max(5,Math.min(reqD*2+3,reqD*4));
   const ctx={used,ints,pref,anchor,maxDrive:true};
-  const picked=pickSpots(pool,need,ctx);
+  let picked=pickSpots(pool,Math.min(need,pool.length),ctx);
+  if(picked.length<need){
+    /* 同城已排完：用同区 120km 内的真实景点再补一轮，不造占位点 */
+    const has=new Set(picked.map(s=>s.id));
+    const extra=SPOTS.filter(s=>s.rg===rg&&!has.has(s.id)&&!s.__virtual&&
+      rtDist({lng:anchor[0],lat:anchor[1]},s)<120);
+    if(extra.length){
+      pool=pool.concat(extra);
+      picked=pickSpots(pool,Math.min(need,pool.length),ctx);
+    }
+  }
   const spots=picked.map(s=>s.id);
   const dest=bySpot?bySpot.n:city;
   const meta=(typeof DEST_META!=='undefined'&&DEST_META[dest])||{};
@@ -687,7 +717,7 @@ function showPlan(plan,f){
   grid.innerHTML=`
   <div class="mod col-12 clickable" style="animation-delay:.05s" onclick="openMod('spots','${plan.dest}')">
     <h4><span class="mi">🏞</span>景点推荐（含图标分析）<span class="go">查看详情 →</span></h4>
-    <div class="spot-mini-list">${plan.spots.map(id=>{const s=spotById(id);if(!s)return'';return `<div class="spot-mini" onclick="event.stopPropagation();openSpot('${s.id}')"><img src="${IMG(P[s.id])}" loading="lazy"><div><h5>${s.n}</h5><div class="city">${s.city} · ${s.tag}</div><div class="icon-chips"><span class="hl">⭐${s.rating}</span><span>💰${s.price}</span><span>⏱${s.hrs}</span><span>🚄${s.traf.split('（')[0]}</span><span>👫 情侣友好</span><span>🎒 背包友好</span></div></div></div>`}).join('')}</div>
+    <div class="spot-mini-list">${realSpots(plan.spots).map(s=>`<div class="spot-mini" onclick="event.stopPropagation();openSpot('${s.id}')"><img class="zoomable" src="${IMG(P[s.id])}" loading="lazy" onclick="event.stopPropagation();openViewer(this,'${s.n.replace(/'/g,'')}')"><div><h5>${s.n}</h5><div class="city">${s.city} · ${s.tag}</div><div class="icon-chips"><span class="hl">⭐${s.rating}</span><span>💰${s.price}</span><span>⏱${s.hrs}</span><span>🚄${s.traf.split('（')[0]}</span><span>👫 情侣友好</span><span>🎒 背包友好</span></div></div></div>`).join('')}</div>
   </div>
   <div class="mod col-12" style="animation-delay:.1s">
     <h4>路线交流</h4>
@@ -744,13 +774,17 @@ function showPlan(plan,f){
 /* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + AI 抽取） ---- */
 /* 采集走离线爬虫包 / 景点库，通常 1 秒内返回；20 秒超时足够兜底 */
 const AI_ENT_TIMEOUT = 20000;
+let __aiEntDown=false;
 async function aiEntSync(plan){
   const dest=typeof plan==='string'?plan:plan.dest;
   const body=document.getElementById('aiEntBody');if(!body)return;
   const retry=document.getElementById('aiEntRetry');
-  if(retry)retry.onclick=()=>aiEntSync(plan);
+  if(retry)retry.onclick=()=>{__aiEntDown=false;aiEntSync(plan)};
+  /* 已知后端不可达：直接收起模块，不再发请求，避免控制台反复报 ERR_CONNECTION_REFUSED */
+  if(__aiEntDown){const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return}
   body.innerHTML='<div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
-  const base=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
+  const base=(typeof WGOAPI!=='undefined'&&WGOAPI.base)||'';
+  if(!base){const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return}
   let d=null,errMsg='';
   try{
     const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),AI_ENT_TIMEOUT);
@@ -775,34 +809,23 @@ async function aiEntSync(plan){
       body.innerHTML=`<div>采集未完成：${escHtml(errMsg)}</div>`;
       return;
     }
-    /* 后端未启动：整块隐藏，页面与原来完全一致 */
+    /* 连接被拒 / 跨域拦截：标记离线，本次会话内不再请求，模块直接收起 */
+    __aiEntDown=true;
     const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return;
   }
+  __aiEntDown=false;
   const added=(typeof plan==='object')?aiEntApply(plan,d):0;
   renderAiEnt(body,d,added);
 }
-/* 实体驱动行程：把抽取到的真实地名补进景点列表（最多 2 个，标注 🧠 AI 抽取） */
+/* 实体抽取结果只做展示，不再补进行程景点列表：
+ * 抽取到的多是「西藏」「北京」这类地名，直接塞进景点池会造出无名无图的伪景点。
+ * 只有能对上真实景点库（SPOTS）的条目才允许作为「参考点位」展示。 */
 function aiEntApply(plan,d){
   if(!plan||!d||!d.entities)return 0;
-  const list=document.querySelector('#modGrid .spot-mini-list');if(!list)return 0;
-  const known=plan.spots.map(id=>{const s=spotById(id);return s?s.n:''});
-  const anchor=spotById(plan.spots[0])||{lng:104.07,lat:30.67,rg:'cn'};
-  let added=0;
-  (d.entities.places||[]).filter(p=>p&&p.name&&!known.includes(p.name)).slice(0,2).forEach(p=>{
-    const s=geoSpot(p.name,plan.dest,plan.prov,anchor.lng,anchor.lat,anchor.rg||'cn');
-    if(plan.spots.includes(s.id))return;
-    plan.spots.push(s.id);
-    plan.__aiSpots=(plan.__aiSpots||[]).concat(s.id);
-    if(plan.routeDays&&plan.routeDays.length)plan.routeDays[plan.routeDays.length-1].push(s.id);
-    const el=document.createElement('div');
-    el.className='spot-mini';
-    el.innerHTML=`<img src="${IMG(P[s.id])}" loading="lazy"><div><h5>${s.n}</h5><div class="city">${s.city} · ${s.tag}</div><div class="icon-chips"><span class="hl">🧠 AI 抽取</span><span>⭐${s.rating}</span><span>💰${s.price}</span><span>⏱${s.hrs}</span></div></div>`;
-    el.onclick=e=>{e.stopPropagation();if(typeof openSpot==='function')openSpot(s.id)};
-    list.appendChild(el);
-    added++;
-  });
-  if(added)renderItinerary3col(plan);
-  return added;
+  const places=(d.entities.places||[]).filter(p=>p&&p.name);
+  if(!places.length)return 0;
+  /* 命中真实景点的数量，仅用于文案提示，不改动 plan.spots / routeDays */
+  return places.filter(p=>SPOTS.some(s=>s.n===p.name||s.n.includes(p.name)||p.name.includes(s.n))).length;
 }
 function renderAiEnt(body,d,added){
   const row=(ico,label,arr)=>arr&&arr.length
@@ -810,7 +833,7 @@ function renderAiEnt(body,d,added){
   const p=row('📍','地名',d.entities.places);
   const f=row('🍜','美食',d.entities.foods);
   const s=row('🏙','商圈',d.entities.districts);
-  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'AI 大模型':'本地规则（未配置 API Key）'}${added?` · 已补进行程 ${added} 个点位`:''}</div>`;
+  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'AI 大模型':'本地规则（未配置 API Key）'}${added?` · 其中 ${added} 个可对上站内景点库`:''}</div>`;
   body.innerHTML=(p||f||s)
     ?(p+f+s+meta)
     :`<div>${escHtml(d.message||`暂未从「${d.keyword||''}」相关攻略里抽取到实体，换个目的地或稍后重试。`)}</div>${meta}`;
@@ -1010,11 +1033,64 @@ function foodModHtml(plan){
     <p class="mod-note">菜名与价位为当地代表性推荐，评分请点上方平台看实时数据；社区里搜「${dest} 美食」还能看到真实打卡。</p>
   </div>`;
 }
+let __crowdPlan=null;
+/* 时段划分：与时刻表区间对齐 */
+const CROWD_SEGS=[
+  {name:'08:00-11:00 上午',s:8*60,e:11*60,c:'--dc1'},
+  {name:'11:00-14:00 午间',s:11*60,e:14*60,c:'--dc2'},
+  {name:'14:00-17:00 下午',s:14*60,e:17*60,c:'--dc3'},
+  {name:'17:00-20:00 傍晚',s:17*60,e:20*60,c:'--dc4'}
+];
+/* 拥挤度权重：早去人少、傍晚夜景点位更挤 —— 用来修正「停留时长」占比 */
+function crowdWeight(s,seg){
+  const bt=s.bestTime||'day';
+  if(seg.s===8*60)return bt==='morning'?0.6:1.0;
+  if(seg.s===11*60)return 1.15;
+  if(seg.s===14*60)return bt==='sunset'?1.1:1.0;
+  return (bt==='night'||bt==='sunset')?1.3:0.85;
+}
+/* 按真实时刻表统计每个时段的拥挤占比（不再用随机数） */
+function crowdSegments(){
+  const plan=__crowdPlan;
+  const acc=CROWD_SEGS.map(()=>0);
+  let total=0;
+  if(plan&&plan.timelines&&plan.timelines.length){
+    const perDay=1/plan.timelines.length;
+    plan.timelines.forEach(tl=>{
+      tl.filter(it=>it.type==='spot').forEach(it=>{
+        const s=spotById(it.id);if(!s)return;
+        CROWD_SEGS.forEach((seg,i)=>{
+          const ov=Math.max(0,Math.min(it.end,seg.e)-Math.max(it.start,seg.s));
+          if(ov>0){const w=ov*crowdWeight(s,seg)*perDay;acc[i]+=w;total+=w}
+        });
+      });
+    });
+  }
+  if(total<=0)return CROWD_SEGS.map(sg=>({name:sg.name,value:25,c:sg.c}));
+  return CROWD_SEGS.map((sg,i)=>({name:sg.name,value:Math.round(acc[i]/total*1000)/10,c:sg.c}));
+}
+/* 每个景点的最佳到访时段建议 */
+function crowdSpotRows(){
+  const plan=__crowdPlan;if(!plan||!plan.timelines)return '';
+  const seen=new Set(),rows=[];
+  plan.timelines.forEach((tl,di)=>tl.filter(it=>it.type==='spot').forEach(it=>{
+    if(seen.has(it.id))return;seen.add(it.id);
+    const s=spotById(it.id);if(!s||s.__virtual)return;
+    const bt=s.bestTime||'day';
+    const hint=bt==='morning'?'开门后 2 小时内人最少，光线也最柔'
+      :bt==='sunset'?'日落前 1 小时到位，占好机位'
+      :bt==='night'?'入夜后灯光最好，20:00 前收尾'
+      :'上午与傍晚各一段高峰，避开 11:00-14:00';
+    rows.push(`<div class="crowd-spot"><b>${escHtml(s.n)}</b><span>${minToHHMM(it.start)}-${minToHHMM(it.end)}</span><em>Day ${di+1} · ${escHtml(hint)}</em></div>`);
+  }));
+  return rows.length?`<div class="crowd-legend">${rows.join('')}</div>`:'';
+}
 function crowdModHtml(plan){
   return `<div class="mod col-6" style="animation-delay:.6s">
     <h4><span class="mi">👥</span>景点人流量分析 · 分时段饼图<span class="go" onclick="refreshCrowd()">🔄 刷新</span></h4>
     <div id="crowdPie" class="pie-box"></div>
-    <div class="crowd-foot"><span id="crowdTip">正在估算客流…</span><i class="pulse"></i></div>
+    <div id="crowdLegend">${crowdSpotRows()}</div>
+    <div class="crowd-foot"><span id="crowdTip">按本次行程时刻表估算</span><i class="pulse"></i></div>
   </div>`;
 }
 function hotelModHtml(plan){
@@ -1068,32 +1144,38 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(localStorage.getItem('fmw_rail_collapsed')==='1')document.getElementById('modRail')?.classList.add('collapsed');
 });
 
-let __crowdTimer=null,__crowdInst=null;
-function crowdSegments(){
-  const base=[['08:00-11:00 上午',26],['11:00-14:00 午间',24],['14:00-17:00 下午',30],['17:00-20:00 傍晚',20]];
-  return base.map(x=>[x[0],Math.max(6,x[1]+Math.round((Math.random()-.5)*10))]);
+let __crowdInst=null;
+/* 读取当前主题的 CSS 变量真实色值（ECharts 不认 var()） */
+function cssVar(name,fallback){
+  const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v||fallback;
 }
 function refreshCrowd(){
   const el=document.getElementById('crowdPie');if(!el)return;
   const segs=crowdSegments();
   const tip=document.getElementById('crowdTip');
-  if(tip)tip.textContent='最近更新 '+new Date().toLocaleTimeString('zh-CN')+' · 每 15 秒刷新';
+  if(tip)tip.textContent='按本次行程时刻表估算 · '+new Date().toLocaleTimeString('zh-CN');
+  const ink2=cssVar('--ink-2','#c3cede'),panel=cssVar('--panel','#121d36'),line=cssVar('--line','rgba(255,255,255,.09)');
+  const dc=[cssVar('--dc1','#e7c76d'),cssVar('--dc2','#7ea6d9'),cssVar('--dc3','#6cc47a'),cssVar('--dc4','#e58fb1')];
+  const fallback=()=>{el.innerHTML=segs.map((s,i)=>`<div class="pie-fb"><span>${s.name}</span><i><b style="width:${s.value*2}%;background:${dc[i]}"></b></i><em>${s.value}%</em></div>`).join('')};
   ensureECharts(ok=>{
-    if(!ok){el.innerHTML=segs.map(s=>`<div class="pie-fb"><span>${s[0]}</span><i><b style="width:${s[1]*2}%"></b></i><em>${s[1]}%</em></div>`).join('');return}
+    if(!ok){fallback();return}
     if(!__crowdInst||__crowdInst.getDom()!==el){__crowdInst=echarts.init(el)}
     __crowdInst.setOption({backgroundColor:'transparent',
-      tooltip:{trigger:'item',backgroundColor:'rgba(15,23,42,.92)',borderColor:'rgba(231,199,109,.4)',textStyle:{color:'#fff',fontSize:12},formatter:'{b}<br/>占比 {d}%'},
-      color:['#e7c76d','#7ea6d9','#6cc47a','#e58fb1'],
+      tooltip:{trigger:'item',backgroundColor:panel,borderColor:line,textStyle:{color:ink2,fontSize:12},formatter:'{b}<br/>占比 {d}%'},
+      color:dc,
       series:[{type:'pie',radius:['46%','74%'],center:['50%','52%'],avoidLabelOverlap:true,
-        itemStyle:{borderColor:'rgba(10,14,24,.6)',borderWidth:2,borderRadius:6},
-        label:{color:'#cfd6e6',fontSize:11,formatter:'{b}\n{d}%'},
-        labelLine:{lineStyle:{color:'rgba(255,255,255,.3)'}},
-        data:segs.map(s=>({name:s[0],value:s[1]}))}]});
+        itemStyle:{borderColor:panel,borderWidth:2,borderRadius:6},
+        label:{color:ink2,fontSize:11,formatter:'{b}\n{d}%'},
+        labelLine:{lineStyle:{color:line}},
+        data:segs.map(s=>({name:s.name,value:s.value}))}]},true);
+    __crowdInst.resize();
   });
 }
 function initPlanExtras(plan){
-  /* 人流饼图 + 自动刷新 */
+  /* 人流饼图：绑定本次行程，按时刻表一次性计算（不再定时抽样刷新） */
+  __crowdPlan=plan||null;
   refreshCrowd();
-  if(__crowdTimer)clearInterval(__crowdTimer);
-  __crowdTimer=setInterval(()=>{if(document.getElementById('crowdPie'))refreshCrowd();else{clearInterval(__crowdTimer);__crowdTimer=null}},15000);
 }
+/* 主题切换后重算配色 */
+document.addEventListener('themechange',()=>{if(document.getElementById('crowdPie'))refreshCrowd()});
