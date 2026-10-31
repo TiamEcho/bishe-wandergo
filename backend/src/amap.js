@@ -12,6 +12,31 @@ const TIMEOUT = Number(process.env.AMAP_TIMEOUT || 6000);
 
 const isOn = () => !!KEY;
 
+/* 常见错误码 → 人话，方便在日志和接口返回里直接定位问题 */
+const ERR_HINT = {
+  10001: 'Key 无效：服务平台类型可能选成了「Web端(JS API)」，后端调用必须用「Web服务」类型的 Key',
+  10002: 'Key 被禁用或服务未开通',
+  10003: '当日调用量超过配额',
+  10004: '单位时间调用过于频繁（QPS 超限）',
+  10005: 'IP 白名单校验未通过',
+  10006: 'Key 的域名白名单校验未通过',
+  10009: 'Key 与绑定的平台不匹配',
+  10044: '账号当日调用量已达上限'
+};
+
+/* 记录最近一次失败，供接口返回 reason 用 */
+let lastError = null;
+let loggedCode = '';   /* 同一错误码只打印一次，避免 18 个并发请求刷屏 */
+const getLastError = () => lastError;
+const clearLastError = () => { lastError = null; loggedCode = ''; };
+
+function report(path, info, code) {
+  lastError = { path, info, infocode: code, hint: ERR_HINT[code] || '' };
+  if (loggedCode === code + info) return;
+  loggedCode = code + info;
+  console.warn('[amap]', path, info, code, lastError.hint);
+}
+
 async function call(path, params) {
   if (!KEY) return null;
   const qs = new URLSearchParams(Object.assign({ key: KEY, output: 'JSON' }, params));
@@ -21,12 +46,13 @@ async function call(path, params) {
     const r = await fetch(`${HOST}${path}?${qs}`, { signal: ctl.signal });
     const j = await r.json();
     if (String(j.status) !== '1') {
-      console.warn('[amap]', path, j.info || 'error', j.infocode || '');
+      report(path, String(j.info || ''), String(j.infocode || ''));
       return null;
     }
     return j;
   } catch (e) {
-    console.warn('[amap]', path, e.name === 'AbortError' ? 'timeout' : String(e.message || e));
+    const msg = e.name === 'AbortError' ? 'timeout' : String(e.message || e);
+    report(path, msg, '');
     return null;
   } finally {
     clearTimeout(timer);
@@ -88,4 +114,4 @@ const restaurantAround = (lng, lat, radius = 500, limit = 8) =>
 const hotelAround = (lng, lat, radius = 1500, limit = 5) =>
   searchAround(lng, lat, '100000', '', radius, limit);
 
-module.exports = { isOn, call, geocodeCity, searchAround, restaurantAround, hotelAround, parseLocation, KEY };
+module.exports = { isOn, call, geocodeCity, searchAround, restaurantAround, hotelAround, parseLocation, getLastError, clearLastError, ERR_HINT, KEY };

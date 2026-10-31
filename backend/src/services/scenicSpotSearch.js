@@ -119,6 +119,7 @@ async function searchCitySpots(city, opts = {}) {
   }
 
   /* 1) 6 组关键词 × 3 页 = 18 个请求，并发限流 */
+  amap.clearLastError();
   const tasks = [];
   const metas = [];
   SEARCH_KEYWORDS.forEach((kw, gi) => {
@@ -175,13 +176,20 @@ async function searchCitySpots(city, opts = {}) {
   const byCategory = {};
   out.forEach(p => { byCategory[p.category] = (byCategory[p.category] || 0) + 1; });
 
+  /* 5) 一条都没拿到时，把高德返回的错误码带出去，避免「静默空结果」无从排查 */
+  const err = amap.getLastError();
+  const failed = out.length === 0 && err
+    ? { reason: 'amap_error', info: err.info, infocode: err.infocode, hint: err.hint }
+    : {};
+
   return {
     ok: true,
     city: cityArg,
     total: out.length,
     enough: out.length >= TARGET_TOTAL,
     byCategory,
-    places: out
+    places: out,
+    ...failed
   };
 }
 
