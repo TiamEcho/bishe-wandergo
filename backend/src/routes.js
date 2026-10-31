@@ -9,6 +9,7 @@ const { collectGuide } = require('./collector');
 const { aiStatus, extractEntities, chat } = require('./dots');
 const { localExtract } = require('./extract');
 const { planRoute } = require('./plan');
+const { searchCitySpots } = require('./services/scenicSpotSearch');
 
 const router = express.Router();
 
@@ -320,6 +321,21 @@ router.post('/plan/route', async (req, res) => {
   } catch (e) {
     console.error('[plan/route]', e);
     res.status(500).json({ ok: false, message: '规划失败', error: String(e.message || e) });
+  }
+});
+
+/* ⑧ GET /api/plan/spots?city=杭州&limit=200 —— 城市可玩点检索
+ * 6 组关键词（景区 / 步行街 / 文创园 / 美食街 / 公园 / 博物馆）各翻 3 页，
+ * 合并按名称去重，返回带 category 的完整列表，用于前端「换一个景点」替换池 */
+router.get('/plan/spots', async (req, res) => {
+  try {
+    const city = String(req.query.city || '').trim();
+    if (!city) return res.status(400).json({ ok: false, message: 'city 不能为空' });
+    const out = await searchCitySpots(city, { limit: req.query.limit });
+    res.json(out);
+  } catch (e) {
+    console.error('[plan/spots]', e);
+    res.status(500).json({ ok: false, message: '检索失败', error: String(e.message || e) });
   }
 });
 

@@ -88,4 +88,4 @@ const restaurantAround = (lng, lat, radius = 500, limit = 8) =>
 const hotelAround = (lng, lat, radius = 1500, limit = 5) =>
   searchAround(lng, lat, '100000', '', radius, limit);
 
-module.exports = { isOn, geocodeCity, searchAround, restaurantAround, hotelAround, parseLocation, KEY };
+module.exports = { isOn, call, geocodeCity, searchAround, restaurantAround, hotelAround, parseLocation, KEY };

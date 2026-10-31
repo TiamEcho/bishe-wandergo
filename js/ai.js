@@ -430,6 +430,9 @@ function applyRemotePlan(plan,remote){
         (spotById(it.id)||{}).rg||'cn');
       if(it.lng!=null&&it.lat!=null){s.lng=it.lng;s.lat=it.lat}
       if(it.address)s.addr=it.address;
+      /* 后端标注的类别（景点/购物/文创/美食/休闲/文化）+ 高德原始 type，前端可据此显示标签 */
+      if(it.tags)s.tag=it.tags;
+      if(it.amapType)s.__amapType=it.amapType;
       if(!ids.includes(s.id))ids.push(s.id);
       items.push({type:'spot',id:s.id,n:s.n,start:it.start,end:it.end,dur:it.dur||150,
         openHrs:s.openHrs||'',needBook:!!s.needBook,bookNote:s.bookNote||'',traf:s.traf||'',price:it.price||s.price||'',
