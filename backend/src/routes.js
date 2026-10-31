@@ -50,7 +50,7 @@ router.get('/search', async (req, res, next) => {
     const q = String(req.query.q || '').trim();
     const limit = Math.min(Number(req.query.limit) || 60, 200);
 
-    const guides = await dbx.searchGuides(q, limit);
+    let guides = await dbx.searchGuides(q, limit);
     const checkins = await dbx.searchCheckins(q, Math.min(limit, 40));
 
     /* 城市判定：优先用别名表（洱海→大理），其次城市名包含匹配，最后回退到 q 本身 */
@@ -59,6 +59,12 @@ router.get('/search', async (req, res, next) => {
       const tally = new Map();
       [...guides, ...checkins].forEach(r => { if (r.city) tally.set(r.city, (tally.get(r.city) || 0) + 1); });
       city = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || q || null;
+    }
+
+    /* 城市已明确时，剔除命中词只出现在正文里的异地攻略（如搜「大理」却带出西藏帖） */
+    if (city) {
+      const sameCity = guides.filter(g => g.city === city);
+      if (sameCity.length) guides = sameCity;
     }
 
     /* 实体检索：先按原文匹配，再用判定出的城市补一轮（搜「洱海」也能拿到大理的实体） */

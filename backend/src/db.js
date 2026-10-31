@@ -275,14 +275,42 @@ Object.entries({
 }).forEach(([city, names]) => names.forEach(n => ALIAS.set(n, city)));
 const ALIAS_KEYS = [...ALIAS.keys()].sort((a, b) => b.length - a.length);
 
+/* 检索扩展词：查询词 / 别名全称 / 别名去掉「市、县、区、山」等尾字。
+   短词（≤2 字）不参与，长词额外派生短核心词，避免「大表姐西藏旅行」因含「大」被「大理」命中。 */
+const fullWordOf = w => ({ 大理: '大理古城', 丽江: '丽江古城' }[w] || w);
+function expandTerms(kw) {
+  const terms = new Set();
+  const add = t => {
+    if (!t || t.length < 2) return;
+    terms.add(t);
+    for (const suffix of ['古城', '雪山', '景区', '风景区', '古镇', '山', '湖', '市', '县', '区']) {
+      if (t.length - suffix.length >= 2 && t.endsWith(suffix)) {
+        terms.add(t.slice(0, -suffix.length));
+        break;
+      }
+    }
+  };
+  add(kw);
+  const city = ALIAS.get(kw);
+  if (city) {
+    add(city);
+    ALIAS_KEYS.forEach(alias => { if (ALIAS.get(alias) === city) add(fullWordOf(alias)); });
+  }
+  return [...terms];
+}
+
 function guessCity(text, locHint) {
+  /* 地址字段（如「B站 · 西藏」）优先于正文判定，避免正文里的「大表姐」被当成「大理」 */
+  const loc = String(locHint || '');
+  if (loc) {
+    const hit = ALIAS_KEYS.find(k => loc.includes(k));
+    if (hit) return ALIAS.get(hit);
+    const parts = loc.split(/·|\||-|\/|\s+/).map(s => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
   const body = `${text || ''} ${locHint || ''}`;
   for (const k of ALIAS_KEYS) {
     if (body.includes(k)) return ALIAS.get(k);
-  }
-  if (locHint) {
-    const parts = String(locHint).split(/·|\||-|\/|\s+/).map(s => s.trim()).filter(Boolean);
-    if (parts.length) return parts[parts.length - 1];
   }
   return null;
 }
@@ -369,24 +397,33 @@ async function stats() {
   };
 }
 
+/* 多个检索词走「城市优先 + 正文长词」的分层匹配，不再对全字段做 %q% 模糊，
+   避免搜索「大理」时把标题含「大」字的西藏帖子带出来。 */
 async function searchGuides(q, limit = 60) {
   if (!q) {
     return impl.all('SELECT * FROM guide ORDER BY created_at DESC LIMIT ?', [limit]);
   }
-  const like = `%${q}%`;
+  const terms = expandTerms(q);
+  const cityWhere = terms.map(() => 'g.city LIKE ?').join(' OR ');
+  const bodyWhere = terms.filter(t => t.length >= 2).map(() => 'g.title LIKE ? OR g.content LIKE ?').join(' OR ');
+  const params = [...terms.map(t => `%${t}%`), ...terms.filter(t => t.length >= 2).flatMap(t => [`%${t}%`, `%${t}%`])];
   return impl.all(`
     SELECT DISTINCT g.* FROM guide g
-    LEFT JOIN entity e ON e.guide_id = g.id
-    WHERE g.city LIKE ? OR g.title LIKE ? OR g.content LIKE ? OR e.name LIKE ?
-    ORDER BY g.created_at DESC LIMIT ?`, [like, like, like, like, limit]);
+    WHERE ${cityWhere} OR ${bodyWhere}
+    ORDER BY ((CASE WHEN ${cityWhere} THEN 1 ELSE 0 END)) DESC, g.created_at DESC
+    LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
 async function searchCheckins(q, limit = 40) {
   if (!q) return impl.all('SELECT * FROM checkin ORDER BY created_at DESC LIMIT ?', [limit]);
-  const like = `%${q}%`;
+  const terms = expandTerms(q);
+  const cityWhere = terms.map(() => 'city LIKE ?').join(' OR ');
+  const bodyWhere = terms.filter(t => t.length >= 2).map(() => 'spot LIKE ? OR text LIKE ?').join(' OR ');
+  const params = [...terms.map(t => `%${t}%`), ...terms.filter(t => t.length >= 2).flatMap(t => [`%${t}%`, `%${t}%`])];
   return impl.all(`SELECT * FROM checkin
-    WHERE city LIKE ? OR spot LIKE ? OR text LIKE ?
-    ORDER BY created_at DESC LIMIT ?`, [like, like, like, limit]);
+    WHERE ${cityWhere} OR ${bodyWhere}
+    ORDER BY ((CASE WHEN ${cityWhere} THEN 1 ELSE 0 END)) DESC, created_at DESC
+    LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
 async function searchEntities(q, limit = 30) {
@@ -394,10 +431,15 @@ async function searchEntities(q, limit = 30) {
     return impl.all(`SELECT type,name,MAX(city) AS city,SUM(mention) AS mention FROM entity
       GROUP BY type,name ORDER BY mention DESC LIMIT ?`, [limit]);
   }
-  const like = `%${q}%`;
+  const terms = expandTerms(q);
+  const cityWhere = terms.map(() => 'city LIKE ?').join(' OR ');
+  const nameWhere = terms.map(() => 'name LIKE ?').join(' OR ');
+  const params = [...terms.map(t => `%${t}%`), ...terms.map(t => `%${t}%`)];
   return impl.all(`SELECT type,name,MAX(city) AS city,SUM(mention) AS mention FROM entity
-    WHERE name LIKE ? OR city LIKE ?
-    GROUP BY type,name ORDER BY mention DESC LIMIT ?`, [like, like, limit]);
+    WHERE ${cityWhere} OR ${nameWhere}
+    GROUP BY type,name
+    ORDER BY ((CASE WHEN ${cityWhere} THEN 1 ELSE 0 END)) DESC, mention DESC
+    LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
 async function addCheckin(d) {
@@ -456,22 +498,16 @@ async function addEntities(guideId, city, entities, engine) {
   return n;
 }
 
-/* 采集时从原始爬虫包里捞取候选（相当于"采集"这一步的离线数据源） */
+/* 采集时从原始爬虫包里捞取候选（相当于"采集"这一步的离线数据源）；
+   用 expandTerms 过滤掉单字词，防止「大理」命中标题含「大」字的无关内容。 */
 function crawlCandidates(keyword, limit = 8) {
   const kw = String(keyword || '').trim();
   if (!kw) return [];
-
-  /* 城市、景区别名统一展开，避免搜索「玉龙雪山攻略」或「洱海」时因原文没有完全包含输入词而空结果。 */
-  const city = ALIAS.get(kw) || guessCity(kw, '');
-  const terms = new Set([kw]);
-  if (city) {
-    terms.add(city);
-    ALIAS_KEYS.forEach(alias => { if (ALIAS.get(alias) === city) terms.add(alias); });
-  }
+  const terms = expandTerms(kw);
 
   return (CRAWL.posts || []).filter(p => {
     const body = `${p.title || ''} ${p.content || ''} ${p.location || ''} ${p.topics || ''}`;
-    return [...terms].some(term => body.includes(term));
+    return terms.some(term => body.includes(term));
   }).slice(0, limit);
 }
 

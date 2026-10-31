@@ -89,6 +89,11 @@ async function collectGuide(keyword) {
     candidates = buildFromSpots(kw);
     collectedFrom = 'spot-library';
   }
+  /* 采集词是具体城市时，剔除正文顺带提及该词的异地内容 */
+  if (candidates.length && dbx.CITY_NAMES.includes(city)) {
+    const sameCity = candidates.filter(c => c.city === city);
+    if (sameCity.length) candidates = sameCity;
+  }
   if (!candidates.length) {
     return {
       ok: true,
