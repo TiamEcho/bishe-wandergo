@@ -147,12 +147,39 @@ function matchPlan(q,reqDays){
     if(q.includes(k)){
       const p=PLANS[k];
       /* 强制按用户请求天数分配景点，确保 Day1..DayN 完整输出 */
-      if(reqDays&&reqDays>1)p.routeDays=distributeDays(p.spots,reqDays);
+      if(reqDays&&reqDays>1){
+        p.routeDays=distributeDays(p.spots,reqDays);
+        /* 模板内景点不足时用同城景点补齐，避免跨城市混排 */
+        const used=new Set(p.spots);
+        const extra=SPOTS.filter(s=>!used.has(s.id)&&s.rg===(p.__ab?'ab':'cn')&&
+          p.spots.some(id=>{const t=spotById(id);return t&&t.city===s.city})).map(s=>s.id);
+        if(extra.length){
+          const need=Math.min(reqDays,p.spots.length+extra.length);
+          p.spots=p.spots.concat(extra.slice(0,need-p.spots.length));
+          p.routeDays=distributeDays(p.spots,reqDays);
+        }
+      }
       p.__reqDays=reqDays;return p;
     }
   }
   const hit=SPOTS.find(s=>q.includes(s.n)||(s.city&&q.includes(s.city)));
-  if(hit){const base=PLANS['大理'];const spots=[hit.id,...base.spots.filter(i=>i!==hit.id).slice(0,2)];return {...base,dest:hit.city+' · '+hit.n,days:(reqDays||2)+' 天',routeDays:distributeDays(spots,reqDays||2),spots,__reqDays:reqDays}}
+  if(hit){
+    /* 单点命中：只取同城景点补齐，绝不跨城市混排 */
+    const need=Math.max(2,Math.min(reqDays||2,4));
+    const same=SPOTS.filter(s=>s!==hit&&s.city===hit.city&&s.rg===hit.rg).slice(0,need-1).map(s=>s.id);
+    const spots=[hit.id,...same];
+    return {__lite:true,dest:hit.n,prov:hit.city,__ab:hit.rg==='ab',from:'你的城市',days:(reqDays||2)+' 天',__reqDays:reqDays,
+      spots,routeDays:distributeDays(spots,reqDays||2),
+      budget:spots.length<=1?1800:2600,
+      budgetItems:[{k:'交通',v:900,c:'--dc1'},{k:'住宿',v:800,c:'--dc2'},{k:'餐饮',v:500,c:'--dc3'},{k:'门票/体验',v:300,c:'--dc4'},{k:'其他',v:100,c:'--dc5'}],
+      transport:[{m:'✈️ 飞机',t:'视航线',p:'¥600 起',s:.85,note:'远距离最省时间'},{m:'🚄 高铁',t:'约 3-6h',p:'¥300 起',s:.8,note:'准点、性价比高'},{m:'🚗 自驾',t:'按路线',p:'油费+过路费',s:.7,note:'灵活自由'}],
+      planB:{rain:'如遇降雨，改走'+hit.city+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而更通透。',rest:'逛累了就近找一家咖啡馆或茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就把最远的点位砍掉，核心景区慢游半天也算完整的一天。'},
+      crowd:{kid:'带娃优先选有观光车接驳的点位，少走台阶，备齐防晒与常用药。',elder:'每天核心点位不超过 2 个，注意景区接驳车末班时间。',couple:hit.city+'的日出 / 日落时段人少光好，适合拍照。'},
+      videos:[{t:hit.n+'打卡合集',loc:hit.city,imgs:[hit.id,same[0]||hit.id]}],
+      plogs:[{t:'在'+hit.city+'的慢时光',img:hit.id,txt:hit.city+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。'}],
+      tips:'本行程基于景点库中的「'+hit.n+'」生成；该城市收录点位有限时，行程天数会按点位数量收缩，可参考社区里的真实攻略补充。'
+    };
+  }
   const g=geoMatch(q);
   if(g)return genPlan(g,reqDays);
   return null;
@@ -228,6 +255,10 @@ const CITY_COORD={
  '呼和浩特':[111.75,40.84],'银川':[106.23,38.49],'兰州':[103.83,36.06],'西宁':[101.78,36.62],
  '乌鲁木齐':[87.62,43.83],'拉萨':[91.11,29.65],'海口':[110.20,20.04],'三亚':[109.51,18.25],
  '大理':[100.16,25.68],'丽江':[100.23,26.88],'昆明南':[102.83,24.88],'宁波':[121.55,29.87],
+ /* 以下为 SPOTS 里出现但原表缺失的城市：保证「直接搜景点名」时里程 / 交通不出错 */
+ '阿坝州':[102.22,31.90],'九寨沟县':[103.92,33.26],'海北州':[100.90,36.96],
+ '黄山市':[118.17,30.13],'延边':[129.51,42.89],'阿坝':[102.22,31.90],
+ '湘西':[109.74,28.31],'马累':[73.51,4.17],'维克':[-19.01,63.42],
  '苏州':[120.62,31.30],'无锡':[120.30,31.57],'常州':[119.97,31.78],'温州':[120.70,28.00],
  '桂林':[110.29,25.27],'张家界':[110.48,29.12],'洛阳':[112.45,34.62],'开封':[114.31,34.80],
  '威海':[122.12,37.51],'烟台':[121.39,37.54],'珠海':[113.57,22.27],'佛山':[113.12,23.02],

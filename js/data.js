@@ -86,6 +86,55 @@ const SPOTS=[
 ];
 const spotById=id=>SPOTS.find(s=>s.id===id);
 
+/* ================= 数据：同城补充景点（仅进入 SPOTS 池，不影响已有卡片/统计） ================= */
+const SPOT_EXTRA=[
+ {id:'cangshan',n:'苍山',city:'大理',rg:'cn',addr:'大理市苍山世界地质公园',lng:100.130,lat:25.680,hrs:'半天',traf:'感通索道/洗马潭索道',price:'¥120 起（含索道）',rating:4.7,tag:'雪山 · 云海',desc:'十九峰十八溪，索道上去看云海翻涌，玉带路徒步最出片。'},
+ {id:'xizhou',n:'喜洲古镇',city:'大理',rg:'cn',addr:'大理市喜洲镇',lng:100.130,lat:25.860,hrs:'半天',traf:'古城打车约 30 分钟',price:'免费',rating:4.6,tag:'白族 · 古建',desc:'白族民居博物馆、转角楼和喜洲粑粑，麦田最绿是四月。'},
+ {id:'shuanglang',n:'双廊古镇',city:'大理',rg:'cn',addr:'大理市双廊镇',lng:100.190,lat:25.900,hrs:'半天-1天',traf:'环海东路自驾 / 包车',price:'免费',rating:4.7,tag:'海景 · 日落',desc:'洱海东岸的海景小镇，日落时分整片湖面都是金色。'},
+ /* ---- 九寨 / 成都 ---- */
+ {id:'huanglong',n:'黄龙风景区',city:'阿坝州',rg:'cn',addr:'阿坝州松潘县黄龙乡',lng:103.824,lat:32.754,hrs:'1 天',traf:'九黄机场包车约 1.5h / 川主寺班车',price:'¥170（索道另计）',rating:4.8,tag:'钙化池 · 彩池',desc:'三千多个钙化彩池顺山而下，五彩池在阳光下像打翻的眼影盘。'},
+ {id:'kuanzhai',n:'宽窄巷子',city:'成都',rg:'cn',addr:'成都市青羊区长顺上街',lng:104.055,lat:30.669,hrs:'半天',traf:'地铁4号线宽窄巷子站',price:'免费',rating:4.5,tag:'老街 · 市井',desc:'三条清代巷子拼成的成都样本，掏耳朵、盖碗茶、龙抄手一次体验完。'},
+ {id:'wuhou',n:'武侯祠·锦里',city:'成都',rg:'cn',addr:'成都市武侯区武侯祠大街231号',lng:104.043,lat:30.646,hrs:'半天',traf:'地铁3号线高升桥站',price:'¥50（锦里免费）',rating:4.6,tag:'三国 · 夜游',desc:'红墙竹影配三国故事，出门锦里的灯笼一亮就是最成都的夜。'},
+ {id:'panda',n:'成都大熊猫繁育基地',city:'成都',rg:'cn',addr:'成都市成华区熊猫大道1375号',lng:104.147,lat:30.733,hrs:'半天',traf:'地铁3号线熊猫大道站+接驳',price:'¥55',rating:4.8,tag:'萌宠 · 亲子',desc:'早上的熊猫最活跃，七点半进园能看到滚滚吃早饭的全部细节。'},
+ /* ---- 张家界 ---- */
+ {id:'tianmen',n:'天门山',city:'张家界',rg:'cn',addr:'张家界市永定区官黎坪',lng:110.476,lat:29.050,hrs:'1 天',traf:'市区索道站直达（A 线）',price:'¥278（含索道）',rating:4.8,tag:'玻璃栈道 · 天门洞',desc:'7.5 公里索道直接上天，玻璃栈道贴着崖壁，999 级天梯上面就是天门洞。'},
+ {id:'baofeng',n:'宝峰湖',city:'张家界',rg:'cn',addr:'张家界市武陵源区宝峰路',lng:110.500,lat:29.330,hrs:'半天',traf:'武陵源城区打车 10 分钟',price:'¥96（含游船）',rating:4.5,tag:'高峡平湖 · 山歌',desc:'高峡出平湖，坐船听土家阿妹唱山歌，两岸峰林倒影是慢下来的张家界。'},
+ {id:'fron',n:'芙蓉镇',city:'湘西',rg:'cn',addr:'湘西州永顺县王村镇',lng:109.810,lat:28.670,hrs:'半天',traf:'张吉怀高铁芙蓉镇站 / 张家界车程 1.5h',price:'¥100',rating:4.6,tag:'瀑布 · 古镇',desc:'挂在瀑布上的千年古镇，夜幕亮灯后整条街都浮在水汽里。'},
+ /* ---- 清迈 ---- */
+ {id:'doi',n:'素贴山双龙寺',city:'清迈',rg:'ab',addr:'泰国清迈素贴山 Suthep 路',lng:98.921,lat:18.805,hrs:'半天',traf:'红色双条车从清迈大学上山约 30 分钟',price:'30฿',rating:4.7,tag:'金塔 · 俯瞰',desc:'306 级台阶上去是金色佛塔，平台上能俯瞰整个清迈盆地的夜色。'},
+ {id:'nimman',n:'宁曼路',city:'清迈',rg:'ab',addr:'泰国清迈 Nimmanhaemin 路',lng:98.967,lat:18.797,hrs:'半天',traf:'双条车 / Grab 约 10 分钟',price:'免费',rating:4.5,tag:'咖啡 · 文创',desc:'几十家精品咖啡馆与买手店挤在几条巷子里，清迈的审美都在这。'},
+ {id:'elephant',n:'美旺大象营',city:'清迈',rg:'ab',addr:'泰国清迈湄旺县',lng:98.650,lat:18.930,hrs:'1 天',traf:'营地接送车约 1.5h',price:'¥400 起',rating:4.7,tag:'大象 · 公益',desc:'不骑乘的观察型营地，给大象做药球、河边洗澡，是更体面的相处方式。'},
+ {id:'thapae',n:'塔佩门·周日夜市',city:'清迈',rg:'ab',addr:'泰国清迈 Tha Phae 门',lng:98.993,lat:18.787,hrs:'3 小时',traf:'古城步行可达 / 双条车',price:'免费',rating:4.6,tag:'古城 · 夜市',desc:'红砖城墙下喂鸽子，周日傍晚整条 Ratchadamnoen 路变成小吃长龙。'},
+ /* ---- 马尔代夫 ---- */
+ {id:'mushi',n:'马累鱼市·老星期五清真寺',city:'马累',rg:'ab',addr:'马尔代夫马累 Malé 岛',lng:73.509,lat:4.175,hrs:'半天',traf:'机场快艇 15 分钟 + 步行',price:'免费',rating:4.4,tag:'市井 · 人文',desc:'上岛前的半日空档：金枪鱼堆到脚踝的鱼市，和珊瑚石砌成的古清真寺。'},
+ {id:'banana',n:'香蕉礁浮潜点',city:'马尔代夫',rg:'ab',addr:'北马累环礁 Banana Reef',lng:73.480,lat:4.280,hrs:'半天',traf:'度假村多尼船约 20 分钟',price:'含在出海项目',rating:4.8,tag:'浮潜 · 珊瑚',desc:'马尔代夫第一个海洋保护区，垂直的珊瑚墙下常驻海龟与成群玻璃鱼。'},
+ {id:'sandbank',n:'无人沙洲野餐',city:'马尔代夫',rg:'ab',addr:'北马累环礁 私人沙洲',lng:73.450,lat:4.320,hrs:'半天',traf:'多尼船包船约 15 分钟',price:'¥800 起（含餐）',rating:4.9,tag:'私享 · 泻湖',desc:'退潮时露出的一圈白沙，四面全是渐变青蓝，桌上只摆你和海。'},
+ /* ---- 日本：东京 / 京都 ---- */
+ {id:'skytree',n:'东京晴空塔',city:'东京',rg:'ab',addr:'日本东京都墨田区押上1-1-2',lng:139.811,lat:35.710,hrs:'2-3 小时',traf:'地铁半藏门线押上站',price:'¥180 起',rating:4.7,tag:'俯瞰 · 夜景',desc:'350 米展望台看东京摊成一片灯海，天气好能望到富士山的剪影。'},
+ {id:'shibuya',n:'涩谷十字路口',city:'东京',rg:'ab',addr:'日本东京都涩谷区道玄坂',lng:139.700,lat:35.659,hrs:'2 小时',traf:'JR 涩谷站八公口',price:'免费',rating:4.6,tag:'霓虹 · 都市',desc:'一次绿灯三千人同时过街，站在二楼窗边看比走进去更震撼。'},
+ {id:'teamlab',n:'teamLab 无界美术馆',city:'东京',rg:'ab',addr:'日本东京都江东区青海1-3-8',lng:139.781,lat:35.620,hrs:'3 小时',traf:'临海线东京电讯站步行 5 分钟',price:'¥200 起',rating:4.8,tag:'沉浸 · 数字艺术',desc:'光、水与镜面组成的无边空间，雨天的最佳去处，走进去会迷路。'},
+ {id:'kinkakuji',n:'金阁寺',city:'京都',rg:'ab',addr:'日本京都市北区金阁寺町1',lng:135.729,lat:35.039,hrs:'1.5 小时',traf:'市营巴士 12/59 路金阁寺前',price:'¥25',rating:4.7,tag:'名园 · 倒影',desc:'两层金箔贴在池边，风一停，水面上的另一座金阁也完整了。'},
+ {id:'arashiyama',n:'岚山竹林·渡月桥',city:'京都',rg:'ab',addr:'日本京都市右京区嵯峨',lng:135.677,lat:35.009,hrs:'半天',traf:'JR 嵯峨岚山站 / 岚电岚山站',price:'免费',rating:4.8,tag:'竹林 · 山水',desc:'竹叶把光筛成细线，走到渡月桥正好是保津川最开阔的一段。'},
+ /* ---- 巴黎 ---- */
+ {id:'louvre',n:'卢浮宫',city:'巴黎',rg:'ab',addr:'法国巴黎里沃利街',lng:2.338,lat:48.861,hrs:'半天',traf:'地铁1/7号线 Palais Royal 站',price:'€22',rating:4.9,tag:'艺术 · 世界遗产',desc:'从《蒙娜丽莎》到胜利女神，真要全看完得三天，抓三件镇馆之宝就够。'},
+ {id:'orsay',n:'奥赛博物馆',city:'巴黎',rg:'ab',addr:'法国巴黎荣誉军团街1号',lng:2.326,lat:48.860,hrs:'3 小时',traf:'地铁12号线 Solférino 站',price:'€16',rating:4.8,tag:'印象派 · 大钟',desc:'火车站改建的博物馆，透过巨型钟面看塞纳河，光比画还好看。'},
+ {id:'montmartre',n:'蒙马特高地·圣心堂',city:'巴黎',rg:'ab',addr:'法国巴黎第十八区',lng:2.343,lat:48.887,hrs:'半天',traf:'地铁2号线 Anvers 站',price:'免费（登顶另计）',rating:4.7,tag:'山城 · 艺术家',desc:'台阶上的街头画家、小丘广场的画摊，日落时整座巴黎铺在脚下。'},
+ /* ---- 冰岛 ---- */
+ {id:'thingvellir',n:'辛格维利尔国家公园',city:'雷克雅未克',rg:'ab',addr:'冰岛黄金圈 Þingvellir',lng:-21.130,lat:64.256,hrs:'半天',traf:'租车自驾约 50 分钟',price:'免费（停车费）',rating:4.7,tag:'裂谷 · 世界遗产',desc:'欧亚与北美两大板块的裂缝里走路，脚下就是地球的接缝。'},
+ {id:'gullfoss',n:'黄金瀑布',city:'雷克雅未克',rg:'ab',addr:'冰岛黄金圈 Gullfoss',lng:-20.120,lat:64.327,hrs:'1.5 小时',traf:'租车自驾约 1.5h',price:'免费',rating:4.9,tag:'瀑布 · 彩虹',desc:'两级跌水砸进峡谷，水雾里几乎天天挂着彩虹，站近点会被淋透。'},
+ {id:'vik',n:'维克黑沙滩',city:'维克',rg:'ab',addr:'冰岛南岸 Reynisfjara',lng:-19.045,lat:63.404,hrs:'半天',traf:'1 号公路自驾约 2.5h',price:'免费',rating:4.9,tag:'黑沙滩 · 玄武岩',desc:'黑砂、玄武岩柱与海里冒出的雷尼斯岩，注意疯狗浪，别背对海。'},
+ /* ---- 三亚 ---- */
+ {id:'wuzhizhou',n:'蜈支洲岛',city:'三亚',rg:'cn',addr:'三亚市海棠湾镇蜈支洲岛',lng:109.766,lat:18.311,hrs:'1 天',traf:'后海码头乘船上岛',price:'¥136（含船票）',rating:4.8,tag:'海岛 · 浮潜',desc:'三亚最好的浮潜点，能见度十米起，环岛电瓶车一路都是观景台。'},
+ {id:'yalong',n:'呀诺达雨林',city:'三亚',rg:'cn',addr:'三亚市保亭县三道镇',lng:109.640,lat:18.450,hrs:'1 天',traf:'景区直通车约 1h',price:'¥128',rating:4.6,tag:'雨林 · 溯溪',desc:'热带雨林里的空中栈道与踏瀑戏水，太阳再毒里面也是凉的。'},
+ {id:'houhai',n:'后海村',city:'三亚',rg:'cn',addr:'三亚市海棠湾后海村',lng:109.760,lat:18.330,hrs:'半天',traf:'海棠湾打车 20 分钟',price:'免费（冲浪课 ¥300 起）',rating:4.6,tag:'冲浪 · 渔村',desc:'国内最容易入门的冲浪湾，浪温柔、教练多，傍晚的村口全是晒伤的人。'}
+];
+SPOT_EXTRA.forEach(s=>{if(!SPOTS.some(x=>x.id===s.id)){SPOTS.push(s);
+  if(typeof P!=='undefined'&&!P[s.id])P[s.id]='travel photography of '+s.n+' '+s.city+', scenic landmark, natural light, high quality';
+  if(typeof ICO!=='undefined'&&!ICO[s.id])ICO[s.id]=s.rg==='ab'?'🌍':'🏔️';}});
+/* 全量补图：任何景点都要有配图，否则卡片会显示 src="undefined" */
+SPOTS.forEach(s=>{if(typeof P!=='undefined'&&!P[s.id])
+  P[s.id]='travel photography of '+(s.n||s.city)+', scenic landmark, natural light, high quality';});
+
 /* ================= 数据：社区动态 ================= */
 const POSTS=[
  {id:'p1',u:'阿澈的镜头',c:'#5b82b8',loc:'大理 · 洱海生态廊道',rg:'cn',type:'video',time:'2 小时前',txt:'清晨六点的洱海日出，我把风的声音都录进去了，BGM 一开就是旅行的味道 ✨',likes:328,cmts:42,imgs:['erhai','ys','ylw'],bgm:'calm',real:true},
@@ -239,88 +288,88 @@ const SHOPS=[
 ];
 
 const PLANS={
- '大理':{dest:'大理',days:'3 天 2 晚',budget:3000,spots:['erhai','ys','qhh'],transport:[{m:'✈️ 飞机',t:'约 3h 20m',p:'¥1,280 起',s:.92,note:'直飞大理机场'},{m:'🚄 高铁',t:'约 11h',p:'¥780 起',s:.74,note:'昆明中转'},{m:'🚗 自驾',t:'约 16h',p:'¥1,100 油费过路',s:.6,note:'沿途可玩昆明'}],
+ '大理':{dest:'大理',days:'3 天 2 晚',budget:3000,spots:['erhai','cangshan','xizhou','shuanglang'],transport:[{m:'✈️ 飞机',t:'约 3h 20m',p:'¥1,280 起',s:.92,note:'直飞大理机场'},{m:'🚄 高铁',t:'约 11h',p:'¥780 起',s:.74,note:'昆明中转'},{m:'🚗 自驾',t:'约 16h',p:'¥1,100 油费过路',s:.6,note:'沿途可玩昆明'}],
    budgetItems:[{k:'交通',v:1280,c:'--dc1'},{k:'住宿',v:840,c:'--dc2'},{k:'餐饮',v:520,c:'--dc3'},{k:'门票/体验',v:240,c:'--dc4'},{k:'其他',v:120,c:'--dc5'}],
-   videos:[{t:'环海西路骑行 vlog',loc:'大理 · 洱海',imgs:['erhai','ys','ylw']},{t:'才村码头日出 4K',loc:'大理 · 才村',imgs:['erhai','xihu']}],
+   videos:[{t:'环海西路骑行 vlog',loc:'大理 · 洱海',imgs:['erhai','xizhou']},{t:'才村码头日出 4K',loc:'大理 · 才村',imgs:['erhai','cangshan']}],
    plogs:[{t:'湖边咖啡的一下午',img:'erhai',txt:'才村码头的下午，风把云吹得很慢。点一杯手冲，把环海西路骑到日落——这份松弛感，就是来大理的理由。'}],
    tips:'住宿选才村/龙龛码头一带，海景房提前 2 周订更便宜；电动车记得选续航 80km+。'},
- '九寨':{dest:'成都 · 九寨沟',days:'4 天 3 晚',budget:3600,spots:['jzg','bmy'],transport:[{m:'✈️ 飞机',t:'2h + 1.5h 车',p:'¥1,500 起',s:.9,note:'成都转九黄机场'},{m:'🚌 大巴',t:'约 8h',p:'¥320',s:.62,note:'直达沟口'},{m:'🚗 自驾',t:'约 7.5h',p:'¥900',s:.7,note:'川西风光在路上'}],
+ '九寨':{dest:'成都 · 九寨沟',days:'4 天 3 晚',budget:3600,spots:['jzg','huanglong','kuanzhai'],transport:[{m:'✈️ 飞机',t:'2h + 1.5h 车',p:'¥1,500 起',s:.9,note:'成都转九黄机场'},{m:'🚌 大巴',t:'约 8h',p:'¥320',s:.62,note:'直达沟口'},{m:'🚗 自驾',t:'约 7.5h',p:'¥900',s:.7,note:'川西风光在路上'}],
    budgetItems:[{k:'交通',v:1500,c:'--dc1'},{k:'住宿',v:960,c:'--dc2'},{k:'餐饮',v:600,c:'--dc3'},{k:'门票/观光车',v:430,c:'--dc4'},{k:'其他',v:110,c:'--dc5'}],
-   videos:[{t:'九寨沟彩色海子混剪',loc:'阿坝 · 九寨沟',imgs:['jzg','qhh']},{t:'成都 24 小时吃播',loc:'成都',imgs:['panda']}],
+   videos:[{t:'九寨沟彩色海子混剪',loc:'阿坝 · 九寨沟',imgs:['jzg','huanglong']},{t:'成都 24 小时吃播',loc:'成都',imgs:['kuanzhai','wuhou']}],
    plogs:[{t:'高原上的一天',img:'jzg',txt:'早上七点进沟抢第一批观光车，五彩池在阳光下蓝得不真实。记得带巧克力，海拔面前糖分是正义。'}],
    tips:'沟口住宿最方便；早晚温差 15℃+，冲锋衣必带；门票提前 3 天在官方公众号预约。'},
- '日本':{dest:'东京 · 京都',days:'6 天 5 晚',budget:12000,spots:['senso','inari','mbs'],transport:[{m:'✈️ 直飞',t:'约 3h',p:'¥2,600 起',s:.94,note:'上海/北京出发'},{m:'🚄 新干线',t:'2h 15m',p:'¥550',s:.86,note:'东京-京都'},{m:'🚇 地铁周游券',t:'—',p:'¥160/天',s:.8,note:'市内通勤'}],
+ '日本':{dest:'东京 · 京都',days:'6 天 5 晚',budget:12000,spots:['senso','skytree','inari','kinkakuji'],transport:[{m:'✈️ 直飞',t:'约 3h',p:'¥2,600 起',s:.94,note:'上海/北京出发'},{m:'🚄 新干线',t:'2h 15m',p:'¥550',s:.86,note:'东京-京都'},{m:'🚇 地铁周游券',t:'—',p:'¥160/天',s:.8,note:'市内通勤'}],
    budgetItems:[{k:'机票',v:2600,c:'--dc1'},{k:'住宿',v:4200,c:'--dc2'},{k:'餐饮',v:2200,c:'--dc3'},{k:'交通',v:1500,c:'--dc4'},{k:'购物/其他',v:1500,c:'--dc5'}],
-   videos:[{t:'京都千本鸟居漫步',loc:'京都 · 伏见稻荷',imgs:['inari','senso']},{t:'东京霓虹夜行记',loc:'东京 · 涩谷',imgs:['shibuya','mbs']}],
+   videos:[{t:'京都千本鸟居漫步',loc:'京都 · 伏见稻荷',imgs:['inari','kinkakuji']},{t:'东京霓虹夜行记',loc:'东京 · 涩谷',imgs:['shibuya','skytree']}],
    plogs:[{t:'红叶季的京都清晨',img:'inari',txt:'六点半的伏见稻荷几乎没有人，朱红鸟居在晨光里一路向上。山腰的小茶屋卖现烤麻糬，比任何网红店都好吃。'}],
    tips:'办日本签证需 10 个工作日；现金+微信双备；ICOCA 卡关西通用；红叶季住宿提前 1 个月。'},
- '巴黎':{dest:'巴黎',days:'5 天 4 晚',budget:20000,spots:['paris'],transport:[{m:'✈️ 直飞',t:'约 11h',p:'¥6,800 起',s:.88,note:'国内直飞 CDG'},{m:'🚇 地铁 Navigo',t:'周卡',p:'¥240',s:.85,note:'市内全通'},{m:'🚲 Vélib 共享单车',t:'按次',p:'¥15',s:.7,note:'塞纳河畔骑行'}],
+ '巴黎':{dest:'巴黎',days:'5 天 4 晚',budget:20000,spots:['paris','louvre','orsay','montmartre'],transport:[{m:'✈️ 直飞',t:'约 11h',p:'¥6,800 起',s:.88,note:'国内直飞 CDG'},{m:'🚇 地铁 Navigo',t:'周卡',p:'¥240',s:.85,note:'市内全通'},{m:'🚲 Vélib 共享单车',t:'按次',p:'¥15',s:.7,note:'塞纳河畔骑行'}],
    budgetItems:[{k:'机票',v:6800,c:'--dc1'},{k:'住宿',v:7200,c:'--dc2'},{k:'餐饮',v:3200,c:'--dc3'},{k:'门票/博物馆通票',v:1600,c:'--dc4'},{k:'交通/其他',v:1200,c:'--dc5'}],
-   videos:[{t:'塞纳河黄昏航拍',loc:'巴黎 · 埃菲尔铁塔',imgs:['paris']}],
+   videos:[{t:'塞纳河黄昏航拍',loc:'巴黎 · 埃菲尔铁塔',imgs:['paris','orsay']},{t:'卢浮宫三件宝速通',loc:'巴黎 · 卢浮宫',imgs:['louvre','montmartre']}],
    plogs:[{t:'左岸咖啡与铁塔的整点闪灯',img:'paris',txt:'战神广场的草坪上野餐等闪灯，九点整铁塔真的会bling bling。博物馆通票排队能省两小时。'}],
    tips:'申根签证材料早备；地铁防扒手；博物馆通票 4 日票最划算；周日很多店休息。'},
- '冰岛':{dest:'冰岛环岛',days:'7 天 6 晚',budget:25000,spots:['ice'],transport:[{m:'✈️ 转机',t:'约 17h',p:'¥8,500 起',s:.8,note:'北欧中转'},{m:'🚗 租车 SUV',t:'全程',p:'¥6,000/周',s:.92,note:'环岛必备'},{m:'🚌 一日游巴士',t:'按线路',p:'¥600/条',s:.65,note:'不想自驾可选'}],
+ '冰岛':{dest:'冰岛环岛',days:'7 天 6 晚',budget:25000,spots:['ice','thingvellir','gullfoss','vik'],transport:[{m:'✈️ 转机',t:'约 17h',p:'¥8,500 起',s:.8,note:'北欧中转'},{m:'🚗 租车 SUV',t:'全程',p:'¥6,000/周',s:.92,note:'环岛必备'},{m:'🚌 一日游巴士',t:'按线路',p:'¥600/条',s:.65,note:'不想自驾可选'}],
    budgetItems:[{k:'机票',v:8500,c:'--dc1'},{k:'租车+油费',v:7000,c:'--dc2'},{k:'住宿',v:6000,c:'--dc3'},{k:'蓝湖/项目',v:2200,c:'--dc4'},{k:'餐饮/其他',v:1300,c:'--dc5'}],
-   videos:[{t:'极光延时摄影',loc:'冰岛 · 黄金圈',imgs:['ice','qhh']}],
+   videos:[{t:'极光延时摄影',loc:'冰岛 · 黄金圈',imgs:['ice','thingvellir']},{t:'黄金瀑布与黑沙滩',loc:'冰岛 · 南岸',imgs:['gullfoss','vik']}],
    plogs:[{t:'在世界尽头追光',img:'ice',txt:'晚上十点，向导突然熄了车灯——绿色的光带在头顶舞了二十分钟。冰岛教会我：计划和运气各占一半。'}],
    tips:'秋冬必须租 SUV；极光预报App 每天看；超市自炊省一半餐费；蓝湖需提前订时段。'},
- '三亚':{dest:'三亚',days:'4 天 3 晚',budget:4500,spots:['ylw'],transport:[{m:'✈️ 飞机',t:'约 3h',p:'¥1,600 起',s:.9,note:'多城市直飞'},{m:'🚗 租车',t:'全程',p:'¥1,200',s:.82,note:'海棠湾-亚龙湾方便'},{m:'🚕 打车',t:'按次',p:'¥60-150',s:.7,note:'市内灵活'}],
+ '三亚':{dest:'三亚',days:'4 天 3 晚',budget:4500,spots:['ylw','wuzhizhou','houhai'],transport:[{m:'✈️ 飞机',t:'约 3h',p:'¥1,600 起',s:.9,note:'多城市直飞'},{m:'🚗 租车',t:'全程',p:'¥1,200',s:.82,note:'海棠湾-亚龙湾方便'},{m:'🚕 打车',t:'按次',p:'¥60-150',s:.7,note:'市内灵活'}],
    budgetItems:[{k:'机票',v:1600,c:'--dc1'},{k:'酒店(海景)',v:1500,c:'--dc2'},{k:'餐饮/海鲜',v:800,c:'--dc3'},{k:'潜水/项目',v:450,c:'--dc4'},{k:'交通/其他',v:150,c:'--dc5'}],
-   videos:[{t:'亚龙湾航拍日落',loc:'三亚 · 亚龙湾',imgs:['ylw','erhai']}],
+   videos:[{t:'亚龙湾航拍日落',loc:'三亚 · 亚龙湾',imgs:['ylw','wuzhizhou']},{t:'后海冲浪第一天',loc:'三亚 · 后海村',imgs:['houhai','yalong']}],
    plogs:[{t:'椰林、沙滩和一个什么都不做的下午',img:'ylw',txt:'亚龙湾的沙真的细，赤脚走不硌脚。海鲜加工店自己买比店里的便宜一半，记得看秤。'}],
    tips:'旺季机票酒店提前 3 周；防晒 50+ 必备；海鲜去第一市场自选加工；免税店最后一天再去买。'},
- '张家界':{dest:'张家界',days:'4 天 3 晚',budget:3200,spots:['zjj','huangshan','greatwall'],transport:[{m:'✈️ 飞机',t:'约 2.5h',p:'¥1,100 起',s:.88,note:'直飞张家界荷花机场'},{m:'🚄 高铁',t:'约 6.5h',p:'¥640 起',s:.82,note:'长沙中转很顺'},{m:'🚌 大巴',t:'约 9h',p:'¥300',s:.58,note:'预算之选'}],
+ '张家界':{dest:'张家界',days:'4 天 3 晚',budget:3200,spots:['zjj','tianmen','baofeng','fron'],transport:[{m:'✈️ 飞机',t:'约 2.5h',p:'¥1,100 起',s:.88,note:'直飞张家界荷花机场'},{m:'🚄 高铁',t:'约 6.5h',p:'¥640 起',s:.82,note:'长沙中转很顺'},{m:'🚌 大巴',t:'约 9h',p:'¥300',s:.58,note:'预算之选'}],
    budgetItems:[{k:'交通',v:1100,c:'--dc1'},{k:'住宿(武陵源)',v:920,c:'--dc2'},{k:'餐饮',v:560,c:'--dc3'},{k:'门票/索道',v:500,c:'--dc4'},{k:'其他',v:120,c:'--dc5'}],
-   videos:[{t:'袁家界云海延时',loc:'张家界 · 武陵源',imgs:['zjj','huangshan']},{t:'玻璃桥挑战实录',loc:'张家界 · 大峡谷',imgs:['zjj','greatwall']}],
+   videos:[{t:'袁家界云海延时',loc:'张家界 · 武陵源',imgs:['zjj','baofeng']},{t:'天门山玻璃栈道实录',loc:'张家界 · 天门山',imgs:['tianmen','fron']}],
    plogs:[{t:'阿凡达的悬浮山找到了',img:'zjj',txt:'早上进袁家界时云雾未散，石柱从云里冒出来的一瞬间真的会失语。山上猴群凶，零食藏好！'}],
    tips:'四日票足够玩遍核心景区；住武陵源门口最方便；天门山要单独买票且提前订 A 线；雨后一天云海概率最高。'},
- '清迈':{dest:'清迈',days:'5 天 4 晚',budget:5500,spots:['chiangmai','gp','ubud'],transport:[{m:'✈️ 直飞',t:'约 3.5h',p:'¥2,200 起',s:.9,note:'广州/昆明直飞多'},{m:'🛵 摩托车',t:'全程',p:'¥80/天',s:.85,note:'古城代步神器'},{m:'🚐 双条车',t:'按次',p:'¥6-10',s:.7,note:'招手即停'}],
+ '清迈':{dest:'清迈',days:'5 天 4 晚',budget:5500,spots:['chiangmai','doi','nimman','elephant','thapae'],transport:[{m:'✈️ 直飞',t:'约 3.5h',p:'¥2,200 起',s:.9,note:'广州/昆明直飞多'},{m:'🛵 摩托车',t:'全程',p:'¥80/天',s:.85,note:'古城代步神器'},{m:'🚐 双条车',t:'按次',p:'¥6-10',s:.7,note:'招手即停'}],
    budgetItems:[{k:'机票',v:2200,c:'--dc1'},{k:'住宿',v:1400,c:'--dc2'},{k:'餐饮/夜市',v:800,c:'--dc3'},{k:'厨房课程/大象营',v:700,c:'--dc4'},{k:'交通/其他',v:400,c:'--dc5'}],
-   videos:[{t:'清迈古城的一天',loc:'清迈 · 契迪龙寺',imgs:['chiangmai','gp']},{t:'丛林飞跃全程记录',loc:'清迈 · 湄林',imgs:['ubud','chiangmai']}],
+   videos:[{t:'清迈古城的一天',loc:'清迈 · 契迪龙寺',imgs:['chiangmai','thapae']},{t:'与大象共处一日',loc:'清迈 · 美旺',imgs:['elephant','doi']}],
    plogs:[{t:'周日夜市的人间烟火',img:'chiangmai',txt:'从塔佩门一路吃到古城另一头，芒果糯米饭 20 块，按摩 40 块一小时。清迈的成本结构对钱包极其友好。'}],
    tips:'11-2 月凉季最舒服；寺庙进殿要过膝；泰北菜偏辣可以要求 not spicy；办落地签备好现金和照片。'},
- '马尔代夫':{dest:'马尔代夫',days:'5 天 4 晚',budget:18000,spots:['maldives','ylw','oia'],transport:[{m:'✈️ 直飞',t:'约 8h',p:'¥6,500 起',s:.92,note:'多城市直飞马累'},{m:'🚤 快艇上岛',t:'20-60min',p:'含在套餐',s:.88,note:'近距环礁'},{m:'🚁 水上飞机',t:'20-40min',p:'¥2,000 起',s:.95,note:'远景看环礁超值'}],
+ '马尔代夫':{dest:'马尔代夫',days:'5 天 4 晚',budget:18000,spots:['maldives','banana','sandbank','mushi'],transport:[{m:'✈️ 直飞',t:'约 8h',p:'¥6,500 起',s:.92,note:'多城市直飞马累'},{m:'🚤 快艇上岛',t:'20-60min',p:'含在套餐',s:.88,note:'近距环礁'},{m:'🚁 水上飞机',t:'20-40min',p:'¥2,000 起',s:.95,note:'远景看环礁超值'}],
    budgetItems:[{k:'机票',v:6500,c:'--dc1'},{k:'度假村(一价全包)',v:8500,c:'--dc2'},{k:'上岛交通',v:1500,c:'--dc3'},{k:'出海项目',v:1000,c:'--dc4'},{k:'小费/其他',v:500,c:'--dc5'}],
-   videos:[{t:'水上屋清晨航拍',loc:'马尔代夫 · 北马累环礁',imgs:['maldives','ylw']},{t:'与鲸鲨同游',loc:'马尔代夫 · 南阿里环礁',imgs:['maldives','oia']}],
+   videos:[{t:'水上屋清晨航拍',loc:'马尔代夫 · 北马累环礁',imgs:['maldives','sandbank']},{t:'香蕉礁浮潜实录',loc:'马尔代夫 · 香蕉礁',imgs:['banana','mushi']}],
    plogs:[{t:'推开房门就是泻湖',img:'maldives',txt:'浮潜一次看到 4 只海龟 1 只礁鲨。一价全包真的省心，冰箱饮料随便拿，落日巡航配香槟是标配。'}],
    tips:'一价全包比半包省心也更省；选带浮梯的房型；淡季 5-10 月价格低 30%；自带浮潜面镜更卫生。'}
 };
 
 /* ================= 扩展：AI 方案增强数据（出发地/路线/备案/人群/自驾里程） ================= */
 Object.assign(PLANS['大理'],{
- from:'上海',dist:2300,routeDays:[['erhai'],['ys'],['qhh']],
+ from:'上海',dist:2300,routeDays:[['erhai'],['cangshan'],['xizhou'],['shuanglang']],
  planB:{rain:'下雨改走室内：大理床单厂艺术区 + 喜洲匠志集扎染博物馆；洱海边咖啡馆躲雨也很出片。',rest:'才村码头「海豚阿德书店」/ 环海西路中途「云水花田」咖啡馆，落地窗看海歇脚。',lazy:'不想环海骑行就改乘电动摆渡车，或干脆订海景房躺平看云。'},
  crowd:{kid:'环海骑行选亲子双人车并戴好头盔；苍山索道海拔较高，给娃备薄外套。',elder:'古城石板路多，建议舒适运动鞋、放缓节奏；高反风险低但别赶行程。',couple:'龙龛码头日出 + 理想邦拍照，包一辆电动车环海最出片。'}});
 Object.assign(PLANS['九寨'],{
- from:'成都',dist:400,routeDays:[['jzg'],['bmy']],
+ from:'成都',dist:400,routeDays:[['jzg'],['huanglong'],['kuanzhai'],['wuhou']],
  planB:{rain:'雨天改看《九寨·藏谜》演出，或回藏家客栈围炉喝酥油茶。',rest:'沟口游客中心休息区有热饮和氧气吧，走累了先回撤休息。',lazy:'体力不足就只走树正寨—诺日朗瀑布精华段，其余坐观光车看窗外的海子。'},
  crowd:{kid:'高原河谷早晚冷，儿童备抓绒衣；栈道湿滑请牵好手。',elder:'景区海拔 2000-3100m，老人行前查血压、备便携氧气，勿剧烈行走。',couple:'五彩池清晨人少光美，适合牵手慢拍。'}});
 Object.assign(PLANS['日本'],{
- from:'上海',dist:450,routeDays:[['senso','mbs'],['inari']],
+ from:'上海',dist:450,routeDays:[['senso','skytree'],['inari','kinkakuji']],
  planB:{rain:'雨天首选 teamLab 无界美术馆 / 京都铁道博物馆，室内遛一天不亏。',rest:'涩谷「蔦屋书店」、京都东山 % Arabica 咖啡，坐下来歇脚看街景。',lazy:'买一张地铁一日券，挑两三家咖啡店慢慢晃，也是旅行。'},
  crowd:{kid:'迪士尼与 JR 儿童票规则提前查；日本商场母婴室完善。',elder:'地铁楼梯多，优先乘电梯；刷 ICOCA 老人卡有折扣。',couple:'鸭川河岸散步 + 先斗町居酒屋是经典夜景路线。'}});
 Object.assign(PLANS['巴黎'],{
- from:'上海',dist:60,routeDays:[['paris']],
+ from:'上海',dist:60,routeDays:[['paris'],['louvre'],['orsay'],['montmartre']],
  planB:{rain:'雨天正好逛卢浮宫 / 奥赛室内馆，排队的人反而更少。',rest:'花神咖啡馆一杯热巧、卢森堡公园长椅，都是标准巴黎式休息。',lazy:'买博物馆通票挑 2-3 个精华馆，其余时间塞纳河边发呆。'},
  crowd:{kid:'铁塔草坪与塞纳河边适合遛娃；国立博物馆 18 岁以下免费。',elder:'地铁注意防扒，老人建议打车；大馆均有轮椅租借。',couple:'蒙马特高地日落 + 艺术桥挂锁是必做清单。'}});
 Object.assign(PLANS['冰岛'],{
- from:'雷克雅未克',dist:1330,routeDays:[['ice']],
+ from:'雷克雅未克',dist:1330,routeDays:[['ice'],['thingvellir'],['gullfoss'],['vik']],
  planB:{rain:'天气差就改蓝湖温泉 / 冰岛国家博物馆，极光等 KP 指数高再追。',rest:'环岛 1 号公路沿途 N1 加油站都有热狗和咖啡，随停随歇。',lazy:'只玩黄金圈 + 蓝湖短线，不硬环岛。'},
  crowd:{kid:'黄金圈步道有护栏，孩子注意防风保暖；地热区别越界。',elder:'租 SUV 选自动挡+加热座椅；夜间驾驶交给年轻同伴。',couple:'极光玻璃屋躺着看光带，是顶配浪漫。'}});
 Object.assign(PLANS['三亚'],{
- from:'广州',dist:850,routeDays:[['ylw']],
+ from:'广州',dist:850,routeDays:[['ylw'],['wuzhizhou'],['houhai'],['yalong']],
  planB:{rain:'雨天改逛国际免税城 + 亚特兰蒂斯水族馆，室内也精彩。',rest:'亚龙湾酒店大堂吧、第一市场一杯老盐柠檬水。',lazy:'酒店私享沙滩躺平一天，也是度假的一部分。'},
  crowd:{kid:'亚龙湾浪小适合娃玩水；全程防晒 50+、及时补涂。',elder:'海鲜选清蒸少辣；酒店备常用药，附近医院距离远。',couple:'日落帆船 + 海棠湾沙滩酒吧。'}});
 Object.assign(PLANS['张家界'],{
- from:'长沙',dist:320,routeDays:[['zjj']],
+ from:'长沙',dist:320,routeDays:[['zjj'],['tianmen'],['baofeng'],['fron']],
  planB:{rain:'雨后恰是云海概率最高的时候，坐百龙天梯上山看云瀑更值。',rest:'武陵源标志门游客中心、溪布街小吃街歇脚。',lazy:'只走袁家界精华环线，其余全靠观光车接驳。'},
  crowd:{kid:'山上猴群会抢食，零食收好；恐高的娃慎选玻璃桥。',elder:'台阶多，多坐索道与百龙天梯；山里温差大备外套。',couple:'大峡谷玻璃桥 + 夜看《魅力湘西》。'}});
 Object.assign(PLANS['清迈'],{
- from:'广州',dist:150,routeDays:[['chiangmai'],['gp']],
+ from:'广州',dist:150,routeDays:[['chiangmai','thapae'],['doi'],['elephant'],['nimman']],
  planB:{rain:'雨季下午常有阵雨：上午排寺庙，下午改泰式烹饪课 / 按摩。',rest:'宁曼路 Ristr8to 咖啡、古城 The Baristro，冰拿铁续命。',lazy:'双条车环古城一圈，塔佩门喂鸽子。'},
  crowd:{kid:'大象营选「观察型」营地；夜市人多牵好手。',elder:'寺庙进殿过膝，备一条纱笼；双条车谈好价再上车。',couple:'周日夜市 + 11 月天灯节是顶配浪漫。'}});
 Object.assign(PLANS['马尔代夫'],{
- from:'上海',dist:0,routeDays:[['maldives']],
+ from:'上海',dist:0,routeDays:[['maldives'],['banana'],['sandbank'],['mushi']],
  planB:{rain:'降雨多为一阵：改做水疗 Spa / 水上中心浮潜课。',rest:'水屋露台吊床 + 无边泳池，躺着等雨停。',lazy:'一价全包躺玩：三餐+酒水+浮潜全含。'},
  crowd:{kid:'儿童俱乐部可托管；浮潜必须穿救生衣。',elder:'水上屋栈道防滑；选带私人泳池的沙屋更稳妥。',couple:'落日巡航 + 沙滩私宴，提前 2 天预订。'}});
 
