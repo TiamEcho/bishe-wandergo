@@ -16,11 +16,9 @@ const WGOAPI=(()=>{
   const _isLocal=/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(_host)
     ||location.protocol==='file:';
   const _isGithubIO=/\.github\.io$/i.test(_host);
-  /* Render 后端（占位）：等 Render 部署成功后，把双引号里换成你拿到的真实 URL。
-   * 在 GitHub Pages 上也可以临时用 localStorage 覆盖：
-   *   localStorage.setItem('wgo_api','https://真实后端URL.onrender.com')
-   * 然后刷新页面。 */
-  const RENDER_BACKEND='https://wandergo-backend.onrender.com';
+  /* Render 已部署后端；GitHub Pages 默认使用此地址。
+   * localStorage 中的 wgo_api 可用于临时覆盖。 */
+  const RENDER_BACKEND='https://wandergo-backend-6i1z.onrender.com';
   const _auto=_isLocal?'http://localhost:8080'
     :_isGithubIO?RENDER_BACKEND
     :(location.protocol==='https:'?location.origin:location.protocol+'//'+_host+':8080');
