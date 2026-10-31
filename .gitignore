@@ -11,3 +11,7 @@ tools/MediaCrawler/
 backend/node_modules/
 backend/data/
 backend/.env
+
+# 打包交付物与调试日志（体积过大，不进仓库）
+*.zip
+debug.log

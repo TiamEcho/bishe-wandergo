@@ -1,31 +1,180 @@
 /* =========================================================
- * SQLite 数据层：建表 + 首次启动自动灌入种子数据
- * 种子来源：js/spots_crawl.json（景点）、js/posts_crawl.json（爬虫攻略）
+ * 数据层：PostgreSQL（生产）/ SQLite（本地无 DATABASE_URL 时）
+ *
+ * 生产：在 Render 创建 Postgres 后，DATABASE_URL 会自动注入，数据持久保存
+ * 本地：不配 DATABASE_URL 时仍用 better-sqlite3，方便离线开发
+ *
+ * 两种驱动统一暴露成同一套接口：
+ *   dbx.all(sql, params)  -> Promise<row[]>
+ *   dbx.get(sql, params)  -> Promise<row|null>
+ *   dbx.run(sql, params)  -> Promise<{ changes, lastId }>
+ *   dbx.seed() / stats() / searchGuides() / ... （均为 async）
+ *
+ * SQL 统一使用 ? 占位符；Postgres 下自动转成 $1,$2...
  * ========================================================= */
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
 const { localExtract } = require('./extract');
 
-const ROOT = path.resolve(__dirname, '..', '..');          // 项目根目录
-const DATA_DIR = process.env.DB_DIR || path.join(__dirname, '..', 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const ROOT = path.resolve(__dirname, '..', '..');   // 项目根目录
+const USE_PG = !!process.env.DATABASE_URL;
 
-const db = new Database(path.join(DATA_DIR, 'wandergo.db'));
-db.pragma('journal_mode = WAL');
+/* ---------------- 驱动抽象 ---------------- */
+let impl;
+
+if (USE_PG) {
+  /* ---------- PostgreSQL（pg 驱动） ---------- */
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL)
+      ? false
+      : { rejectUnauthorized: false }
+  });
+
+  /* ? 占位符 → $1 $2 ...（跳过字符串字面量里的 ?，本项目的 SQL 里没有这种用法） */
+  const toPg = sql => {
+    let i = 0;
+    return sql.replace(/\?/g, () => `$${++i}`);
+  };
+
+  impl = {
+    dialect: 'postgres',
+    raw: pool,
+    async all(sql, params = []) {
+      const r = await pool.query(toPg(sql), params);
+      return r.rows;
+    },
+    async get(sql, params = []) {
+      const r = await pool.query(toPg(sql), params);
+      return r.rows[0] || null;
+    },
+    async run(sql, params = []) {
+      /* INSERT 需要拿自增 id 时自动补 RETURNING id */
+      const needId = /^\s*insert/i.test(sql) && !/returning/i.test(sql);
+      const r = await pool.query(toPg(sql) + (needId ? ' RETURNING id' : ''), params);
+      return { changes: r.rowCount, lastId: r.rows[0] ? r.rows[0].id : null };
+    },
+    async exec(sql) {
+      await pool.query(sql);
+    },
+    async tx(fn) {
+      /* 种子数据初始化用；单连接事务 */
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const ctx = {
+          all: async (s, p = []) => (await client.query(toPg(s), p)).rows,
+          get: async (s, p = []) => (await client.query(toPg(s), p)).rows[0] || null,
+          run: async (s, p = []) => {
+            const needId = /^\s*insert/i.test(s) && !/returning/i.test(s);
+            const r = await client.query(toPg(s) + (needId ? ' RETURNING id' : ''), p);
+            return { changes: r.rowCount, lastId: r.rows[0] ? r.rows[0].id : null };
+          }
+        };
+        const out = await fn(ctx);
+        await client.query('COMMIT');
+        return out;
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
+  };
+} else {
+  /* ---------- SQLite（better-sqlite3） ---------- */
+  const Database = require('better-sqlite3');
+  const DATA_DIR = process.env.DB_DIR || path.join(__dirname, '..', 'data');
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+
+  const sdb = new Database(path.join(DATA_DIR, 'wandergo.db'));
+  sdb.pragma('journal_mode = WAL');
+
+  impl = {
+    dialect: 'sqlite',
+    raw: sdb,
+    async all(sql, params = []) { return sdb.prepare(sql).all(...params); },
+    async get(sql, params = []) { return sdb.prepare(sql).get(...params) || null; },
+    async run(sql, params = []) {
+      const r = sdb.prepare(sql).run(...params);
+      return { changes: r.changes, lastId: Number(r.lastInsertRowid) };
+    },
+    async exec(sql) { sdb.exec(sql); },
+    async tx(fn) {
+      const ctx = {
+        all: impl.all, get: impl.get, run: impl.run
+      };
+      /* better-sqlite3 的事务要求同步函数，这里用 IMMEDIATE 手动包一层 */
+      sdb.exec('BEGIN IMMEDIATE');
+      try {
+        const out = await fn(ctx);
+        sdb.exec('COMMIT');
+        return out;
+      } catch (e) {
+        try { sdb.exec('ROLLBACK'); } catch { /* ignore */ }
+        throw e;
+      }
+    }
+  };
+}
 
 /* ---------------- 建表 ---------------- */
-db.exec(`
+const DDL = impl.dialect === 'postgres'
+  ? `
 CREATE TABLE IF NOT EXISTS guide(
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  ext_id        TEXT UNIQUE,              -- 去重键（原帖 id / 外链）
+  id            SERIAL PRIMARY KEY,
+  ext_id        TEXT UNIQUE,
   title         TEXT NOT NULL,
   content       TEXT,
   city          TEXT,
   cover         TEXT,
-  source        TEXT,                     -- bilibili / xiaohongshu / system ...
+  source        TEXT,
   source_url    TEXT,
-  type          TEXT,                     -- video / note / guide
+  type          TEXT,
+  like_count    INTEGER DEFAULT 0,
+  comment_count INTEGER DEFAULT 0,
+  created_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS checkin(
+  id         SERIAL PRIMARY KEY,
+  "user"     TEXT,
+  city       TEXT,
+  spot       TEXT,
+  text       TEXT,
+  mood       TEXT,
+  cost       DOUBLE PRECISION DEFAULT 0,
+  cover      TEXT,
+  source     TEXT DEFAULT 'web',
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS entity(
+  id         SERIAL PRIMARY KEY,
+  guide_id   INTEGER,
+  city       TEXT,
+  type       TEXT,
+  name       TEXT,
+  mention    INTEGER DEFAULT 1,
+  engine     TEXT,
+  created_at TEXT,
+  UNIQUE(guide_id, type, name)
+);
+CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
+CREATE INDEX IF NOT EXISTS idx_check_city  ON checkin(city);
+CREATE INDEX IF NOT EXISTS idx_entity_name ON entity(name);
+`
+  : `
+CREATE TABLE IF NOT EXISTS guide(
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ext_id        TEXT UNIQUE,
+  title         TEXT NOT NULL,
+  content       TEXT,
+  city          TEXT,
+  cover         TEXT,
+  source        TEXT,
+  source_url    TEXT,
+  type          TEXT,
   like_count    INTEGER DEFAULT 0,
   comment_count INTEGER DEFAULT 0,
   created_at    TEXT
@@ -46,22 +195,35 @@ CREATE TABLE IF NOT EXISTS entity(
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   guide_id   INTEGER,
   city       TEXT,
-  type       TEXT,                        -- place / food / district
+  type       TEXT,
   name       TEXT,
   mention    INTEGER DEFAULT 1,
-  engine     TEXT,                        -- dots / local
+  engine     TEXT,
   created_at TEXT,
   UNIQUE(guide_id, type, name)
 );
 CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
 CREATE INDEX IF NOT EXISTS idx_check_city  ON checkin(city);
 CREATE INDEX IF NOT EXISTS idx_entity_name ON entity(name);
-`);
+`;
 
 /* ---------------- 种子数据 ---------------- */
-function readJson(p) {
+const readJson = p => {
   try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return null; }
-}
+};
+
+/* 插入攻略：SQLite 用 INSERT OR IGNORE，Postgres 用 ON CONFLICT DO NOTHING */
+const GUIDE_COLS = '(ext_id,title,content,city,cover,source,source_url,type,like_count,comment_count,created_at)';
+const guideInsertSql = () => (impl.dialect === 'postgres'
+  ? `INSERT INTO guide ${GUIDE_COLS} VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
+  : `INSERT OR IGNORE INTO guide ${GUIDE_COLS} VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+
+const ENTITY_COLS = '(guide_id,city,type,name,mention,engine,created_at)';
+const entityInsertSql = () => (impl.dialect === 'postgres'
+  ? `INSERT INTO entity ${ENTITY_COLS} VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
+  : `INSERT OR IGNORE INTO entity ${ENTITY_COLS} VALUES (?,?,?,?,?,?,?)`);
+
+const CHECKIN_COLS = `(${impl.dialect === 'postgres' ? '"user"' : 'user'},city,spot,text,mood,cost,cover,source,created_at)`;
 const SPOTS = readJson(path.join(ROOT, 'js', 'spots_crawl.json')) || [];
 const CRAWL = readJson(path.join(ROOT, 'js', 'posts_crawl.json')) || { posts: [] };
 
@@ -102,7 +264,6 @@ Object.entries({
   苏州: ['苏州', '平江路', '山塘街'],
   北京: ['北京', '故宫', '长城', '南锣鼓巷'],
   上海: ['上海', '外滩', '武康路'],
-  重庆: ['重庆', '洪崖洞'],
   桂林: ['桂林', '阳朔', '遇龙河'],
   张家界: ['张家界', '武陵源'],
   哈尔滨: ['哈尔滨', '中央大街'],
@@ -114,14 +275,42 @@ Object.entries({
 }).forEach(([city, names]) => names.forEach(n => ALIAS.set(n, city)));
 const ALIAS_KEYS = [...ALIAS.keys()].sort((a, b) => b.length - a.length);
 
+/* 检索扩展词：查询词 / 别名全称 / 别名去掉「市、县、区、山」等尾字。
+   短词（≤2 字）不参与，长词额外派生短核心词，避免「大表姐西藏旅行」因含「大」被「大理」命中。 */
+const fullWordOf = w => ({ 大理: '大理古城', 丽江: '丽江古城' }[w] || w);
+function expandTerms(kw) {
+  const terms = new Set();
+  const add = t => {
+    if (!t || t.length < 2) return;
+    terms.add(t);
+    for (const suffix of ['古城', '雪山', '景区', '风景区', '古镇', '山', '湖', '市', '县', '区']) {
+      if (t.length - suffix.length >= 2 && t.endsWith(suffix)) {
+        terms.add(t.slice(0, -suffix.length));
+        break;
+      }
+    }
+  };
+  add(kw);
+  const city = ALIAS.get(kw);
+  if (city) {
+    add(city);
+    ALIAS_KEYS.forEach(alias => { if (ALIAS.get(alias) === city) add(fullWordOf(alias)); });
+  }
+  return [...terms];
+}
+
 function guessCity(text, locHint) {
+  /* 地址字段（如「B站 · 西藏」）优先于正文判定，避免正文里的「大表姐」被当成「大理」 */
+  const loc = String(locHint || '');
+  if (loc) {
+    const hit = ALIAS_KEYS.find(k => loc.includes(k));
+    if (hit) return ALIAS.get(hit);
+    const parts = loc.split(/·|\||-|\/|\s+/).map(s => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
   const body = `${text || ''} ${locHint || ''}`;
   for (const k of ALIAS_KEYS) {
     if (body.includes(k)) return ALIAS.get(k);
-  }
-  if (locHint) {
-    const parts = String(locHint).split(/·|\||-|\/|\s+/).map(s => s.trim()).filter(Boolean);
-    if (parts.length) return parts[parts.length - 1];
   }
   return null;
 }
@@ -132,166 +321,212 @@ const now = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 
-function seed() {
-  const guideCount = db.prepare('SELECT COUNT(*) c FROM guide').get().c;
+async function seed() {
+  await impl.exec(DDL);
+
+  const g = await impl.get('SELECT COUNT(*) AS c FROM guide');
+  const guideCount = Number(g ? g.c : 0);
   if (guideCount > 0) return { seeded: false, guides: guideCount };
 
-  const insertGuide = db.prepare(`INSERT OR IGNORE INTO guide
-    (ext_id,title,content,city,cover,source,source_url,type,like_count,comment_count,created_at)
-    VALUES (@ext_id,@title,@content,@city,@cover,@source,@source_url,@type,@like_count,@comment_count,@created_at)`);
-  const insertEntity = db.prepare(`INSERT OR IGNORE INTO entity
-    (guide_id,city,type,name,mention,engine,created_at) VALUES (?,?,?,?,?,'local',?)`);
-
-  const tx = db.transaction(() => {
+  const result = await impl.tx(async ctx => {
     /* 1) 爬虫攻略 → guide */
-    (CRAWL.posts || []).forEach(p => {
+    let nGuide = 0;
+    for (const p of (CRAWL.posts || [])) {
       const text = `${p.title || ''} ${p.content && p.content !== '-' ? p.content : ''}`;
-      const city = guessCity(text, p.location);
-      insertGuide.run({
-        ext_id: `crawl-${p.id}`,
-        title: p.title || '旅行攻略',
-        content: p.content && p.content !== '-' ? p.content : '',
-        city,
-        cover: p.cover || '',
-        source: p.source || 'web',
-        source_url: p.sourceUrl || p.videoUrl || '',
-        type: p.type || 'note',
-        like_count: p.likeCount || 0,
-        comment_count: p.commentCount || 0,
-        created_at: p.createdAt || now()
-      });
-    });
+      const r = await ctx.run(guideInsertSql(), [
+        `crawl-${p.id}`, p.title || '旅行攻略',
+        p.content && p.content !== '-' ? p.content : '',
+        guessCity(text, p.location), p.cover || '', p.source || 'web',
+        p.sourceUrl || p.videoUrl || '', p.type || 'note',
+        p.likeCount || 0, p.commentCount || 0, p.createdAt || now()
+      ]);
+      nGuide += r.changes;
+    }
 
     /* 2) 景点 → 演示打卡记录（每个城市取 1~2 条，保证按城市搜索有内容） */
-    const insertCheckin = db.prepare(`INSERT INTO checkin
-      (user,city,spot,text,mood,cost,cover,source,created_at) VALUES (?,?,?,?,?,?,?,'seed',?)`);
     const seen = new Map();
-    ALL_SPOTS.forEach((s, i) => {
+    let idx = 0;
+    for (const s of ALL_SPOTS) {
       const cnt = seen.get(s.city) || 0;
-      if (cnt >= 2 || !s.city) return;
+      if (cnt >= 2 || !s.city) continue;
       seen.set(s.city, cnt + 1);
-      const price = parseFloat(String(s.price).replace(/[^\d.]/g, '')) || (20 + i * 3);
-      insertCheckin.run(
-        '旅行者小W', s.city, s.name,
-        s.desc || `${s.name}打卡完成，值得一来。`,
-        ['😌 治愈放松', '🤩 惊喜满满', '🚶 慢慢逛'][i % 3],
-        price, s.img || '',
-        new Date(Date.now() - i * 36e5).toISOString().slice(0, 19).replace('T', ' ')
+      const price = parseFloat(String(s.price).replace(/[^\d.]/g, '')) || (20 + idx * 3);
+      await ctx.run(
+        `INSERT INTO checkin ${CHECKIN_COLS} VALUES (?,?,?,?,?,?,?,?,?)`,
+        [
+          '旅行者小W', s.city, s.name,
+          s.desc || `${s.name}打卡完成，值得一来。`,
+          ['😌 治愈放松', '🤩 惊喜满满', '🚶 慢慢逛'][idx % 3],
+          price, s.img || '', 'seed',
+          new Date(Date.now() - idx * 36e5).toISOString().slice(0, 19).replace('T', ' ')
+        ]
       );
-    });
+      idx++;
+    }
 
     /* 3) 对存量攻略跑一次本地实体抽取，作为 AI 结果的基线 */
-    for (const g of db.prepare('SELECT id,title,content,city FROM guide').all()) {
-      const r = localExtract(`${g.title} ${g.content || ''}`, { city: g.city, spotNames: SPOT_NAMES, cityNames: CITY_NAMES });
-      [['place', r.places], ['food', r.foods], ['district', r.districts]].forEach(([type, arr]) => {
-        arr.forEach(e => insertEntity.run(g.id, g.city, type, e.name, e.mention, now()));
+    const guides = await ctx.all('SELECT id,title,content,city FROM guide');
+    const sqlEntity = entityInsertSql();
+    for (const gd of guides) {
+      const r = localExtract(`${gd.title} ${gd.content || ''}`, {
+        city: gd.city, spotNames: SPOT_NAMES, cityNames: CITY_NAMES
       });
+      const pairs = [['place', r.places], ['food', r.foods], ['district', r.districts]];
+      for (const [type, arr] of pairs) {
+        for (const e of arr) {
+          await ctx.run(sqlEntity, [gd.id, gd.city, type, e.name, e.mention, 'local', now()]);
+        }
+      }
     }
+    return { nGuide };
   });
-  tx();
 
-  return {
-    seeded: true,
-    guides: db.prepare('SELECT COUNT(*) c FROM guide').get().c,
-    checkins: db.prepare('SELECT COUNT(*) c FROM checkin').get().c,
-    entities: db.prepare('SELECT COUNT(*) c FROM entity').get().c
-  };
+  const st = await stats();
+  return { seeded: true, guides: st.guides, checkins: st.checkins, entities: st.entities, inserted: result.nGuide };
 }
 
 /* ---------------- 查询/写入方法 ---------------- */
-function stats() {
+async function stats() {
+  const g = await impl.get('SELECT COUNT(*) AS c FROM guide');
+  const c = await impl.get('SELECT COUNT(*) AS c FROM checkin');
+  const e = await impl.get('SELECT COUNT(*) AS c FROM entity');
+  const ci = await impl.get('SELECT COUNT(DISTINCT city) AS c FROM guide WHERE city IS NOT NULL');
   return {
-    guides: db.prepare('SELECT COUNT(*) c FROM guide').get().c,
-    checkins: db.prepare('SELECT COUNT(*) c FROM checkin').get().c,
-    entities: db.prepare('SELECT COUNT(*) c FROM entity').get().c,
-    cities: db.prepare('SELECT COUNT(DISTINCT city) c FROM guide WHERE city IS NOT NULL').get().c
+    guides: Number(g.c), checkins: Number(c.c),
+    entities: Number(e.c), cities: Number(ci.c)
   };
 }
 
-function searchGuides(q, limit = 60) {
+/* 多个检索词走「城市优先 + 正文长词」的分层匹配，不再对全字段做 %q% 模糊，
+   避免搜索「大理」时把标题含「大」字的西藏帖子带出来。 */
+async function searchGuides(q, limit = 60) {
   if (!q) {
-    return db.prepare('SELECT * FROM guide ORDER BY created_at DESC LIMIT ?').all(limit);
+    return impl.all('SELECT * FROM guide ORDER BY created_at DESC LIMIT ?', [limit]);
   }
-  const like = `%${q}%`;
-  return db.prepare(`
-    SELECT DISTINCT g.* FROM guide g
-    LEFT JOIN entity e ON e.guide_id = g.id
-    WHERE g.city LIKE ? OR g.title LIKE ? OR g.content LIKE ? OR e.name LIKE ?
-    ORDER BY g.created_at DESC LIMIT ?`).all(like, like, like, like, limit);
+  const terms = expandTerms(q);
+  const cityWhere = terms.map(() => 'g.city LIKE ?').join(' OR ');
+  const bodyWhere = terms.filter(t => t.length >= 2).map(() => 'g.title LIKE ? OR g.content LIKE ?').join(' OR ');
+  const params = [...terms.map(t => `%${t}%`), ...terms.filter(t => t.length >= 2).flatMap(t => [`%${t}%`, `%${t}%`])];
+  /* ORDER BY 的 CASE 表达式必须出现在 SELECT 列表中（Postgres DISTINCT 限制），
+     因此拆成子查询再排序，兼容 SQLite 与 PostgreSQL */
+  return impl.all(`
+    SELECT * FROM (
+      SELECT g.*, (CASE WHEN ${cityWhere} THEN 1 ELSE 0 END) AS _hit
+      FROM guide g
+      WHERE ${cityWhere} OR ${bodyWhere}
+    ) t
+    ORDER BY _hit DESC, created_at DESC
+    LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
-function searchCheckins(q, limit = 40) {
-  if (!q) return db.prepare('SELECT * FROM checkin ORDER BY created_at DESC LIMIT ?').all(limit);
-  const like = `%${q}%`;
-  return db.prepare(`SELECT * FROM checkin
-    WHERE city LIKE ? OR spot LIKE ? OR text LIKE ?
-    ORDER BY created_at DESC LIMIT ?`).all(like, like, like, limit);
+async function searchCheckins(q, limit = 40) {
+  if (!q) return impl.all('SELECT * FROM checkin ORDER BY created_at DESC LIMIT ?', [limit]);
+  const terms = expandTerms(q);
+  const cityWhere = terms.map(() => 'city LIKE ?').join(' OR ');
+  const bodyWhere = terms.filter(t => t.length >= 2).map(() => 'spot LIKE ? OR text LIKE ?').join(' OR ');
+  const params = [...terms.map(t => `%${t}%`), ...terms.filter(t => t.length >= 2).flatMap(t => [`%${t}%`, `%${t}%`])];
+  return impl.all(`SELECT * FROM (
+      SELECT c.*, (CASE WHEN ${cityWhere} THEN 1 ELSE 0 END) AS _hit
+      FROM checkin c
+      WHERE ${cityWhere} OR ${bodyWhere}
+    ) t
+    ORDER BY _hit DESC, created_at DESC
+    LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
-function searchEntities(q, limit = 30) {
+async function searchEntities(q, limit = 30) {
   if (!q) {
-    return db.prepare(`SELECT type,name,MAX(city) city,SUM(mention) mention FROM entity
-      GROUP BY type,name ORDER BY mention DESC LIMIT ?`).all(limit);
+    return impl.all(`SELECT type,name,MAX(city) AS city,SUM(mention) AS mention FROM entity
+      GROUP BY type,name ORDER BY mention DESC LIMIT ?`, [limit]);
   }
-  const like = `%${q}%`;
-  return db.prepare(`SELECT type,name,MAX(city) city,SUM(mention) mention FROM entity
-    WHERE name LIKE ? OR city LIKE ?
-    GROUP BY type,name ORDER BY mention DESC LIMIT ?`).all(like, like, limit);
+  const terms = expandTerms(q);
+  const cityWhere = terms.map(() => 'city LIKE ?').join(' OR ');
+  const nameWhere = terms.map(() => 'name LIKE ?').join(' OR ');
+  const params = [...terms.map(t => `%${t}%`), ...terms.map(t => `%${t}%`)];
+  return impl.all(`SELECT type,name,MAX(city) AS city,SUM(mention) AS mention FROM (
+      SELECT e.*, (CASE WHEN ${cityWhere} THEN 1 ELSE 0 END) AS _hit
+      FROM entity e
+      WHERE ${cityWhere} OR ${nameWhere}
+    ) t
+    GROUP BY type,name
+    ORDER BY MAX(_hit) DESC, mention DESC
+    LIMIT ?`, [...params, ...terms.map(t => `%${t}%`), limit]);
 }
 
-function addCheckin(d) {
-  const r = db.prepare(`INSERT INTO checkin (user,city,spot,text,mood,cost,cover,source,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?)`).run(
-    d.user || '匿名旅行者', d.city || '', d.spot || '', d.text || '',
-    d.mood || '😌 治愈放松', Number(d.cost) || 0, d.cover || '', d.source || 'web', now()
+async function addCheckin(d) {
+  const u = impl.dialect === 'postgres' ? '"user",' : 'user,';
+  const r = await impl.run(
+    `INSERT INTO checkin (${u}city,spot,text,mood,cost,cover,source,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [
+      d.user || '匿名旅行者', d.city || '', d.spot || '', d.text || '',
+      d.mood || '😌 治愈放松', Number(d.cost) || 0, d.cover || '', d.source || 'web', now()
+    ]
   );
-  return db.prepare('SELECT * FROM checkin WHERE id = ?').get(r.lastInsertRowid);
+  return impl.get('SELECT * FROM checkin WHERE id = ?', [r.lastId]);
 }
 
 /* 攻略入库（返回是否新增，用于采集去重统计） */
-function addGuide(g) {
+async function addGuide(g) {
   const ext = g.ext_id || (g.source_url ? `${g.source}-${g.source_url}` : null);
-  const info = db.prepare(`INSERT OR IGNORE INTO guide
-    (ext_id,title,content,city,cover,source,source_url,type,like_count,comment_count,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+  const cols = `(ext_id,title,content,city,cover,source,source_url,type,like_count,comment_count,created_at)`;
+  const vals = [
     ext, g.title, g.content || '', g.city || null, g.cover || '', g.source || 'web',
     g.source_url || '', g.type || 'guide', g.like_count || 0, g.comment_count || 0, g.created_at || now()
-  );
+  ];
+
+  const info = impl.dialect === 'postgres'
+    ? await impl.run(`INSERT INTO guide ${cols} VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`, vals)
+    : await impl.run(`INSERT OR IGNORE INTO guide ${cols} VALUES (?,?,?,?,?,?,?,?,?,?,?)`, vals);
+
   if (info.changes === 0) {
-    const row = ext ? db.prepare('SELECT * FROM guide WHERE ext_id = ?').get(ext) : null;
+    const row = ext ? await impl.get('SELECT * FROM guide WHERE ext_id = ?', [ext]) : null;
     return { created: false, row };
   }
-  return { created: true, row: db.prepare('SELECT * FROM guide WHERE id = ?').get(info.lastInsertRowid) };
+  return { created: true, row: await impl.get('SELECT * FROM guide WHERE id = ?', [info.lastId]) };
 }
 
 /* 写入实体（同一篇攻略同类型同名去重） */
-function addEntities(guideId, city, entities, engine) {
-  const stmt = db.prepare(`INSERT OR IGNORE INTO entity
-    (guide_id,city,type,name,mention,engine,created_at) VALUES (?,?,?,?,?,?,?)`);
+async function addEntities(guideId, city, entities, engine) {
   let n = 0;
-  [['place', entities.places], ['food', entities.foods], ['district', entities.districts]]
-    .forEach(([type, arr]) => {
-      (arr || []).forEach(e => {
-        const info = stmt.run(guideId, city || null, type, e.name, e.mention || 1, engine || 'local', now());
-        n += info.changes;
-      });
-    });
+  const groups = [['place', entities.places], ['food', entities.foods], ['district', entities.districts]];
+  for (const [type, arr] of groups) {
+    for (const e of (arr || [])) {
+      const r = impl.dialect === 'postgres'
+        ? await impl.run(
+          `INSERT INTO entity (guide_id,city,type,name,mention,engine,created_at)
+           VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+          [guideId, city || null, type, e.name, e.mention || 1, engine || 'local', now()]
+        )
+        : await impl.run(
+          `INSERT OR IGNORE INTO entity (guide_id,city,type,name,mention,engine,created_at)
+           VALUES (?,?,?,?,?,?,?)`,
+          [guideId, city || null, type, e.name, e.mention || 1, engine || 'local', now()]
+        );
+      n += r.changes;
+    }
+  }
   return n;
 }
 
-/* 采集时从原始爬虫包里捞取候选（相当于"采集"这一步的离线数据源） */
+/* 采集时从原始爬虫包里捞取候选（相当于"采集"这一步的离线数据源）；
+   用 expandTerms 过滤掉单字词，防止「大理」命中标题含「大」字的无关内容。 */
 function crawlCandidates(keyword, limit = 8) {
   const kw = String(keyword || '').trim();
   if (!kw) return [];
-  const like = `${kw}`;
+  const terms = expandTerms(kw);
+
   return (CRAWL.posts || []).filter(p => {
     const body = `${p.title || ''} ${p.content || ''} ${p.location || ''} ${p.topics || ''}`;
-    return body.includes(kw);
+    return terms.some(term => body.includes(term));
   }).slice(0, limit);
 }
 
 module.exports = {
-  db, seed, stats, searchGuides, searchCheckins, searchEntities,
+  dialect: impl.dialect,
+  raw: impl.raw,
+  all: impl.all, get: impl.get, run: impl.run,
+  seed, stats, searchGuides, searchCheckins, searchEntities,
   addCheckin, addGuide, addEntities, crawlCandidates,
   SPOTS: ALL_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,
   cityOf: term => ALIAS.get(String(term || '').trim()) || null

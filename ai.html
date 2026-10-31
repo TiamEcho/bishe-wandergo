@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI 旅行规划 · WANDERGO</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/pages.css">
 </head>
@@ -21,8 +22,12 @@
       <p class="ai-sub">填写以下信息，AI 将为你量身定制一份模块化旅行攻略</p>
 
       <div class="ai-block">
-        <div class="ai-block-head"><span class="ai-num">01</span>目的地与日期</div>
+        <div class="ai-block-head"><span class="ai-num">01</span>出发地与目的地</div>
         <div class="ai-row">
+          <div class="ai-field grow">
+            <label>* 出发地（起点）</label>
+            <input id="fFrom" placeholder="你从哪出发，例如：成都 / 上海">
+          </div>
           <div class="ai-field grow">
             <label>* 目的地城市</label>
             <input id="fDest" placeholder="输入城市名称，例如：中国·杭州">
@@ -43,12 +48,34 @@
       </div>
 
       <div class="ai-block">
-        <div class="ai-block-head"><span class="ai-num">02</span>偏好设置</div>
-        <div class="ai-row">
+        <div class="ai-block-head"><span class="ai-num">02</span>出行方式与预算偏好</div>
+        <div class="ai-field">
+          <label>可接受的交通方式（可多选 · 混合分段）</label>
+          <div class="ai-interests ai-multi" id="fTraffic">
+            <button type="button" data-k="bus">🚌 大巴</button>
+            <button type="button" data-k="rail">🚄 动车</button>
+            <button type="button" data-k="train">🚂 火车</button>
+            <button type="button" data-k="plane">✈️ 飞机</button>
+          </div>
+          <p class="ai-hint">可多选，系统会按耗时 / 价格自动分段组合（例如先高铁到枢纽、再转大巴进景区）。</p>
+        </div>
+        <div class="ai-row" style="margin-top:14px">
           <div class="ai-field grow">
-            <label>交通方式</label>
-            <select id="fTransport">
-              <option>公共交通</option><option>自驾</option><option>飞机</option><option>高铁</option><option>飞机+高铁</option>
+            <label>总预算（每人 · 可选）</label>
+            <select id="fBudgetOpt">
+              <option value="0">暂不限定（按偏好自动估算）</option>
+              <option value="1500">¥1,500 以内 · 极简</option>
+              <option value="3000">¥3,000 左右 · 常规</option>
+              <option value="5000">¥5,000 左右 · 品质</option>
+              <option value="8000">¥8,000 左右 · 轻奢</option>
+              <option value="15000">¥15,000 以上 · 不设限</option>
+            </select>
+          </div>
+          <div class="ai-field grow">
+            <label>出行偏好</label>
+            <select id="fPref">
+              <option value="cheap">经济划算（省钱优先，可接受折腾）</option>
+              <option value="comfort">舒适优先（预算充足，少折腾）</option>
             </select>
           </div>
           <div class="ai-field grow">
@@ -108,10 +135,12 @@
 <script src="js/api.js?v=1120"></script>
 <script src="js/core.js?v=1120"></script>
 <script src="js/map.js?v=1120"></script>
-<script src="js/ai.js?v=1120"></script>
+<script src="js/ai.js?v=1121"></script>
 <script>
 /* 深度链接：ai.html?dest=大理&days=3 自动填充并生成方案 */
 const _dest=WGO.q('dest');
+const _from=WGO.q('from');
+if(_from&&_from!=='ai-analysis'&&document.getElementById('fFrom'))document.getElementById('fFrom').value=_from;
 if(_dest){
   const fDest=document.getElementById('fDest');
   const _days=parseInt(WGO.q('days')||'0',10);

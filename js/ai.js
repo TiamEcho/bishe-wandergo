@@ -204,21 +204,96 @@ function calcDays(){
 }
 /* 读取表单，拼接查询文本供 matchPlan 识别目的地 */
 function readForm(){
+  const from=$('#fFrom').value.trim();
   const dest=$('#fDest').value.trim();
   const days=calcDays();
-  const transport=$('#fTransport').value;
+  const traffic=[...$$('#fTraffic button.on')].map(b=>b.dataset.k);
+  const budget=Number(($('#fBudgetOpt')||{}).value||0);
+  const pref=($('#fPref')||{}).value||'cheap';
   const stay=$('#fStay').value;
   const interests=[...$$('#fInterests button.on')].map(b=>b.textContent).join('、');
   const special=$('#fSpecial').value.trim();
-  return {dest,days,transport,stay,interests,special,
+  return {from,dest,days,traffic,budget,pref,stay,interests,special,
     query:dest+(interests?' '+interests:'')+(special?' '+special:'')};
+}
+/* ---- 交通规划：按起点→目的地估算距离，再按用户勾选的方式组合分段 ---- */
+const CITY_COORD={
+ '北京':[116.41,39.90],'上海':[121.47,31.23],'广州':[113.26,23.13],'深圳':[114.06,22.55],
+ '成都':[104.07,30.67],'重庆':[106.55,29.56],'杭州':[120.15,30.28],'南京':[118.80,32.06],
+ '武汉':[114.30,30.59],'西安':[108.94,34.34],'长沙':[112.94,28.23],'郑州':[113.63,34.75],
+ '昆明':[102.83,24.88],'贵阳':[106.71,26.60],'南宁':[108.37,22.82],'福州':[119.30,26.08],
+ '厦门':[118.09,24.48],'南昌':[115.86,28.68],'合肥':[117.28,31.86],'济南':[117.00,36.65],
+ '青岛':[120.38,36.07],'天津':[117.20,39.13],'沈阳':[123.43,41.80],'大连':[121.61,38.91],
+ '哈尔滨':[126.63,45.75],'长春':[125.32,43.82],'石家庄':[114.51,38.04],'太原':[112.55,37.87],
+ '呼和浩特':[111.75,40.84],'银川':[106.23,38.49],'兰州':[103.83,36.06],'西宁':[101.78,36.62],
+ '乌鲁木齐':[87.62,43.83],'拉萨':[91.11,29.65],'海口':[110.20,20.04],'三亚':[109.51,18.25],
+ '大理':[100.16,25.68],'丽江':[100.23,26.88],'昆明南':[102.83,24.88],'宁波':[121.55,29.87],
+ '苏州':[120.62,31.30],'无锡':[120.30,31.57],'常州':[119.97,31.78],'温州':[120.70,28.00],
+ '桂林':[110.29,25.27],'张家界':[110.48,29.12],'洛阳':[112.45,34.62],'开封':[114.31,34.80],
+ '威海':[122.12,37.51],'烟台':[121.39,37.54],'珠海':[113.57,22.27],'佛山':[113.12,23.02],
+ '东莞':[113.75,23.02],'泉州':[118.68,24.87],'徐州':[117.28,34.20],'兰州西':[103.83,36.06]
+};
+const TRAFFIC_META={
+ bus:{icon:'🚌',name:'长途大巴',v:70,comfort:.55,fixed:20,perKm:.32,minP:40,note:'城乡 / 景区接驳最灵活'},
+ rail:{icon:'🚄',name:'动车高铁',v:210,comfort:.85,fixed:40,perKm:.45,minP:60,note:'准点、性价比高，优先推荐'},
+ train:{icon:'🚂',name:'普速火车',v:95,comfort:.62,fixed:25,perKm:.22,minP:35,note:'夜间卧铺可省一晚住宿'},
+ plane:{icon:'✈️',name:'飞机',v:700,comfort:.95,fixed:180,perKm:.62,minP:320,note:'远距离最省时间，含机建燃油'}
+};
+/* 城市名容错：取用户输入里能命中的城市 */
+function cityCoordOf(name){
+  if(!name)return null;
+  if(CITY_COORD[name])return CITY_COORD[name];
+  for(const k in CITY_COORD)if(name.includes(k))return CITY_COORD[k];
+  const g=geoMatch(name);
+  return g?[g[2],g[3]]:null;
+}
+function kmBetween(a,b){
+  if(!a||!b)return 0;
+  const R=6371,r=Math.PI/180;
+  const dLat=(b[1]-a[1])*r,dLng=(b[0]-a[0])*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dLng/2)**2;
+  return Math.round(2*R*Math.asin(Math.sqrt(h))*1.18); /* ×1.18 折算实际铁路 / 公路里程 */
+}
+function legTimeTxt(km,v){
+  const h=km/v;const hh=Math.floor(h),mm=Math.round((h-hh)*60);
+  return (hh?hh+'h':'')+(mm?mm+'min':'')||'30min';
+}
+/* 生成主线路段（起点 → 目的地），按勾选方式与偏好挑出最优组合 */
+function planMainLeg(km,traffic,pref){
+  const modes=(traffic&&traffic.length?traffic:['rail','plane']).map(k=>TRAFFIC_META[k]?k:'rail');
+  const cost=k=>Math.max(TRAFFIC_META[k].minP,Math.round((TRAFFIC_META[k].fixed+km*TRAFFIC_META[k].perKm)/10)*10);
+  const time=k=>km/TRAFFIC_META[k].v+0.6;
+  const score=k=>pref==='comfort'
+    ? time(k)-TRAFFIC_META[k].comfort*1.6               /* 舒适优先：时间短、舒适度高 */
+    : cost(k)/60+time(k)*0.35;                          /* 经济划算：以票价为主 */
+  const sorted=modes.slice().sort((a,b)=>score(a)-score(b));
+  const best=sorted[0];
+  const segs=[{m:TRAFFIC_META[best].icon+' '+TRAFFIC_META[best].name,t:legTimeTxt(km,TRAFFIC_META[best].v),p:'¥'+cost(best),s:TRAFFIC_META[best].comfort,note:TRAFFIC_META[best].note}];
+  /* 混合分段：中远距离且勾选了多种方式时，补充「枢纽中转」备选更便宜 / 更舒适的组合 */
+  if(modes.length>1&&km>400){
+    const alt=sorted[1];
+    if(pref==='cheap'&&cost(alt)>=cost(best)){
+      /* 经济模式给出「枢纽换乘更省」的提示段 */
+      segs.push({m:'🔁 分段换乘方案',t:legTimeTxt(km,TRAFFIC_META[alt].v)+' + ',p:'¥'+Math.max(30,Math.round(cost(alt)*0.82/10)*10),s:Math.min(.95,TRAFFIC_META[alt].comfort+.05),note:'换乘一次可省约 15-20% 票款'});
+    }else if(pref==='comfort'&&time(alt)>time(best)){
+      segs.push({m:'🔁 备选换乘',t:legTimeTxt(km,TRAFFIC_META[alt].v),p:'¥'+cost(alt),s:TRAFFIC_META[alt].comfort,note:'一等座 / 商务座更宽松'});
+    }
+  }
+  if(km<80&&!modes.includes('bus'))segs.push({m:'🚌 大巴 / 城际公交',t:legTimeTxt(Math.max(30,km),70),p:'¥'+Math.max(15,Math.round(km*0.32/5)*5),s:.55,note:'短途直达，无需提前抢票'});
+  segs.push({m:'🏨 目的地接驳',t:'按次 20-40min',p:'¥30-80',s:.65,note:'高铁站 / 机场到酒店，打车或景区直通车'});
+  return segs;
 }
 function runAI(){
   const f=readForm();
+  if(!f.from)return toast('请先填写出发地（起点）📍');
   if(!f.dest)return toast('请先填写目的地城市 ✍️');
   disposeItineraryMap();
-  window.scrollTo({top:$('.ai-hero-box').getBoundingClientRect().top+window.scrollY-90,behavior:'smooth'});
   const pipe=$('#pipeline');pipe.classList.add('show');
+  /* 进度条出现后再滚到进度条位置，避免继续停留在页面顶部 */
+  requestAnimationFrame(()=>{
+    const y=pipe.getBoundingClientRect().top+window.scrollY-90;
+    window.scrollTo({top:Math.max(0,y),behavior:'smooth'});
+  });
   const steps=$$('.step');steps.forEach(s=>s.classList.remove('doing','done'));
   $('#modGrid').classList.remove('show');$('#planHead').classList.remove('show');$('#itin3col').classList.remove('show');
   let p=0;$('#pipeBar').style.width='4%';
@@ -235,7 +310,7 @@ function runAI(){
   const t1=setInterval(()=>{
     if(si>0&&steps[si-1]){steps[si-1].classList.remove('doing');steps[si-1].classList.add('done')}
     if(si<4){steps[si].classList.add('doing');p=Math.min(97,(si+1)/4*96);$('#pipeBar').style.width=p+'%';si++}
-    else{clearInterval(t1);clearInterval(t2);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(f.query,f.days))},420)}
+    else{clearInterval(t1);clearInterval(t2);steps[3].classList.remove('doing');steps[3].classList.add('done');$('#pipeBar').style.width='100%';setTimeout(()=>{pipe.classList.remove('show');showPlan(matchPlan(f.query,f.days),f)},420)}
   },seg);
 }
 $('#aiGo').onclick=()=>runAI();
@@ -244,6 +319,8 @@ $('#fStart').addEventListener('change',calcDays);
 $('#fEnd').addEventListener('change',calcDays);
 /* 兴趣标签多选 */
 $$('#fInterests button').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+/* 交通方式多选（大巴 / 动车 / 火车 / 飞机，可混合分段） */
+$$('#fTraffic button').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
 function planRoute(plan){
   /* 由 routeDays 生成路线数据（每日不同颜色，首点打旗标） */
   const segs=(plan.routeDays||[plan.spots.slice(0,1)]).map((ids,di)=>({
@@ -343,11 +420,38 @@ function renderItinerary3col(plan){
   box.querySelectorAll('[role="tab"]').forEach(b=>b.onclick=()=>paintDay(+b.dataset.day));
   paintDay(-1);
 }
-function showPlan(plan){
+/* ---- 按用户填写的信息覆盖模板里的交通 / 预算（起点、混合方式、预算档位、偏好） ---- */
+function applyPrefs(plan,f){
+  if(!f)return plan;
+  const from=f.from||plan.from||'你的城市';
+  plan.from=from;
+  const km=kmBetween(cityCoordOf(from),cityCoordOf(plan.dest)||cityCoordOf(plan.prov||''));
+  plan.dist=km||plan.dist||0;
+  if(km){
+    const legs=planMainLeg(km,f.traffic,f.pref);
+    plan.transport=legs.map(x=>({m:x.m,t:x.t,p:x.p,s:x.s,note:x.note}));
+    plan.__km=km;
+    /* 交通费取主段票价重算预算，避免与前面「出行方式」模块自相矛盾 */
+    const main=Number(String(legs[0].p).replace(/[^\d]/g,''))||0;
+    const fallback=f.pref==='comfort'?Math.max(plan.budget,3800):Math.min(plan.budget,3000);
+    const total=f.budget>0?Math.max(f.budget,main+Math.max(400,f.budget*.15)):Math.max(fallback,main*1.8);
+    const ratio=f.pref==='comfort'
+      ?[['交通',.34],['住宿',.32],['餐饮',.19],['门票/体验',.11]]
+      :[['交通',.28],['住宿',.27],['餐饮',.22],['门票/体验',.17]];
+    const items=ratio.map((x,i)=>({k:x[0],v:Math.round(total*x[1]/10)*10,c:'--dc'+(i+1)}));
+    items.push({k:'其他',v:Math.max(0,total-items.reduce((s,x)=>s+x.v,0)),c:'--dc5'});
+    plan.budgetItems=items;
+    plan.budget=items.reduce((s,x)=>s+x.v,0);
+    plan.__pref=f.pref;plan.__budgetCap=f.budget;
+  }
+  return plan;
+}
+function showPlan(plan,f){
+  plan=applyPrefs(plan,f);
   const grid=$('#modGrid');
   disposeItineraryMap();
   if(!plan){grid.classList.add('show');grid.innerHTML='<div class="mod col-12">没有识别到目的地 🤔 全国各省 / 市 / 自治区均已收录（含新疆、西藏、内蒙古、黑龙江等远距离目的地），试试直接输入地名，如：<b>常州 / 新疆 / 西藏 / 内蒙古 / 长沙 / 青岛 / 瑞士 / 土耳其</b>，或点击地图上的景点让 AI 规划 ✨</div>';$('#planHead').classList.remove('show');$('#itin3col').classList.remove('show');$('#itin3col').innerHTML='';return}
-  $('#planHead').innerHTML=`<div class="t">🧩 AI 已为你规划 · <b>${plan.dest}</b> · ${plan.days} · 出发地 <b>${plan.from||'你的城市'}</b> · 参考预算 <b>${fmt(plan.budget)}</b></div><button class="btn line" onclick="document.getElementById('fDest').focus();window.scrollTo({top:document.querySelector('.ai-hero-box').offsetTop-90,behavior:'smooth'})">换个问法重新规划</button>`;
+  $('#planHead').innerHTML=`<div class="t">🧩 AI 已为你规划 · <b>${plan.dest}</b> · ${plan.days} · <b>${escHtml(plan.from||'你的城市')}</b> → ${escHtml(plan.dest)}${plan.__km?' · 约 '+plan.__km+' km':''} · ${plan.__pref==='comfort'?'舒适优先':'经济划算'} · 参考总预算 <b>${fmt(plan.budget)}</b>/人</div><button class="btn line" onclick="document.getElementById('fDest').focus();window.scrollTo({top:document.querySelector('.ai-hero-box').offsetTop-90,behavior:'smooth'})">换个问法重新规划</button>`;
   $('#planHead').classList.add('show');
   /* 双栏行程结果（卡片 + 地图） */
   renderItinerary3col(plan);
@@ -367,7 +471,7 @@ function showPlan(plan){
     </div>
   </div>
   <div class="mod col-6 clickable" style="animation-delay:.15s" onclick="openMod('transport','${plan.dest}')">
-    <h4><span class="mi">🚄</span>出行方式 · 可视化对比<span class="go">图表 + 平台比价 →</span></h4>
+    <h4><span class="mi">🚄</span>出行方式 · ${escHtml(plan.from||'你的城市')} → ${escHtml(plan.dest)}${plan.__km?'（约 '+plan.__km+' km）':''}<span class="go">图表 + 平台比价 →</span></h4>
     ${plan.transport.map(t=>`<div class="trow"><span class="tm">${t.m}</span><div><div class="bar"><i style="width:${t.s*100}%"></i></div><div style="font-size:10.5px;color:var(--muted);margin-top:2px">${t.note} · 约 ${t.t}</div></div><span class="tp">${t.p}</span></div>`).join('')}
   </div>
   <div class="mod col-6 clickable" style="animation-delay:.25s" onclick="openMod('budget','${plan.dest}')" >
@@ -400,7 +504,7 @@ function showPlan(plan){
   <div class="mod col-12" style="animation-delay:.6s;border-style:dashed"><h4><span class="mi">💡</span>AI 省钱贴士</h4><p style="font-size:12.5px;color:var(--ink-2)">${plan.tips}</p></div>
   <div class="mod col-12" id="aiEntMod" style="animation-delay:.65s">
     <h4><span class="mi">🤖</span>AI 实体抽取 · ${plan.dest}<span class="go" id="aiEntRetry">重新采集 →</span></h4>
-    <div class="mod-blist" id="aiEntBody"><div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div></div>
+    <div class="mod-blist" id="aiEntBody"><div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div></div>
   </div>`;
   grid.classList.add('show');
   aiEntSync(plan);
@@ -410,7 +514,7 @@ function showPlan(plan){
   setTimeout(()=>initPlanExtras(plan),40);
   renderCmts(planKeyOf(plan)||plan.dest);
 }
-/* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + Dots Studio 抽取） ---- */
+/* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + AI 抽取） ---- */
 /* 采集走离线爬虫包 / 景点库，通常 1 秒内返回；20 秒超时足够兜底 */
 const AI_ENT_TIMEOUT = 20000;
 async function aiEntSync(plan){
@@ -418,7 +522,7 @@ async function aiEntSync(plan){
   const body=document.getElementById('aiEntBody');if(!body)return;
   const retry=document.getElementById('aiEntRetry');
   if(retry)retry.onclick=()=>aiEntSync(plan);
-  body.innerHTML='<div>正在调用 Dots Studio 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
+  body.innerHTML='<div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
   const base=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://localhost:8080';
   let d=null,errMsg='';
   try{
@@ -479,10 +583,10 @@ function renderAiEnt(body,d,added){
   const p=row('📍','地名',d.entities.places);
   const f=row('🍜','美食',d.entities.foods);
   const s=row('🏙','商圈',d.entities.districts);
-  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'Dots Studio 大模型':'本地规则（未配置 API Key）'}${added?` · 已补进行程 ${added} 个点位`:''}</div>`;
+  const meta=`<div><b>📊 本次采集</b>${d.collected} 条内容 · 新增入库 ${d.created} 条 · 抽取引擎 ${d.engine==='dots'?'AI 大模型':'本地规则（未配置 API Key）'}${added?` · 已补进行程 ${added} 个点位`:''}</div>`;
   body.innerHTML=(p||f||s)
     ?(p+f+s+meta)
-    :`<div>暂未从「${escHtml(d.keyword)}」相关攻略里抽取到实体，换个目的地或稍后重试。</div>${meta}`;
+    :`<div>${escHtml(d.message||`暂未从「${d.keyword||''}」相关攻略里抽取到实体，换个目的地或稍后重试。`)}</div>${meta}`;
 }
 /* ---- 路线模块：出行方式切换 / 里程时间统计 ---- */
 let rtMode=localStorage.getItem('fmw_rt_mode')||'drive';
