@@ -549,6 +549,33 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
   #itin3col .journey-card{gap:10px;padding:10px}
   #itin3col .journey-card img{width:88px;height:100px}
 }
+/* ---- 时间轴视图（景点 + 三餐 + 开放时间 + 预约提示） ---- */
+#itin3col .book-banner{background:#fff;border:1px solid #E2E8F0;border-left:4px solid #2196F3;border-radius:12px;padding:12px 14px;margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
+#itin3col .book-banner .bk-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#475569}
+#itin3col .tl-badge{display:inline-block;background:#FEF3C7;color:#B45309;border:1px solid #FDE68A;border-radius:999px;font-size:10.5px;padding:1px 8px;margin-left:6px;white-space:nowrap}
+#itin3col .book-banner .tl-badge{margin-left:0}
+#itin3col .tl-eat-chip{background:#ECFDF5;color:#047857;border:1px solid #A7F3D0;border-radius:999px;font-size:10.5px;padding:1px 8px}
+#itin3col .timeline{list-style:none;margin:0;padding:0 0 0 18px;border-left:2px solid #DBEAFE}
+#itin3col .tl-item{position:relative;display:flex;gap:12px;padding:10px 0 10px 6px;border-radius:12px;cursor:pointer;transition:.2s;min-width:0}
+#itin3col .tl-item::before{content:'';position:absolute;left:-25px;top:18px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #2196F3}
+#itin3col .tl-item.tl-eat::before{border-color:#10B981;background:#10B981}
+#itin3col .tl-item.tl-eat{cursor:default}
+#itin3col .tl-item:hover{background:#F1F5F9}
+#itin3col .tl-item.selected{background:#EFF6FF;outline:2px solid #BFDBFE;outline-offset:-2px}
+#itin3col .tl-time{flex:none;width:92px;font-size:12px;font-weight:600;color:#2196F3;padding-top:2px;font-variant-numeric:tabular-nums}
+#itin3col .tl-eat .tl-time{color:#10B981}
+#itin3col .tl-body{min-width:0;flex:1}
+#itin3col .tl-body h5{font-size:15px;font-weight:600;color:#1E293B;margin-bottom:4px;overflow-wrap:anywhere;display:flex;align-items:center;flex-wrap:wrap}
+#itin3col .tl-body p{font-size:12.5px;color:#64748B;margin:2px 0;overflow-wrap:anywhere}
+#itin3col .tl-body p.tl-book{color:#B45309;background:#FFFBEB;border-radius:8px;padding:4px 8px;margin-top:5px}
+#itin3col .tl-media{display:flex;align-items:center;gap:10px;margin-top:6px}
+#itin3col .tl-media img{width:96px;height:64px;object-fit:cover;border-radius:10px;flex:none}
+@media(max-width:760px){
+  #itin3col .timeline{padding-left:14px}
+  #itin3col .tl-item{flex-direction:column;gap:2px;padding-left:2px}
+  #itin3col .tl-time{width:auto}
+  #itin3col .tl-media img{width:76px;height:54px}
+}
 .spot-mini-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .spot-mini{display:flex;gap:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:13px;padding:10px;cursor:pointer;transition:.22s}
 .spot-mini:hover{border-color:var(--line-gold);transform:translateX(4px)}
