@@ -777,6 +777,10 @@ async function finishPlan(f,pipe,tip){
       fanApply(plan);
     }
     assertUniqueDays(plan);
+  }else{
+    /* 没认出目的地：matchPlan 返回 null，直接给提示文案，不走 showPlan 的算路流程
+     * （applyPrefs 会往 plan 上写 from，对 null 赋值会抛 TypeError） */
+    toast('没有识别到目的地 🤔 试试直接输入地名，如：常州 / 新疆 / 西藏 / 长沙 / 青岛 / 瑞士 / 土耳其');
   }
   pipe.classList.remove('show');
   showPlan(plan,f);
@@ -910,7 +914,7 @@ function renderItinerary3col(plan){
 }
 /* ---- 按用户填写的信息覆盖模板里的交通 / 预算（起点、混合方式、预算档位、偏好） ---- */
 function applyPrefs(plan,f){
-  if(!f)return plan;
+  if(!plan||!f)return plan;
   const from=f.from||plan.from||'你的城市';
   plan.from=from;
   const km=kmBetween(cityCoordOf(from),cityCoordOf(plan.dest)||cityCoordOf(plan.prov||''));
