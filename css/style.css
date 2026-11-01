@@ -565,6 +565,18 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 #itin3col .tl-item::before{content:'';position:absolute;left:-25px;top:18px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #2196F3}
 #itin3col .tl-item.tl-eat::before{border-color:#10B981;background:#10B981}
 #itin3col .tl-item.tl-eat{cursor:default}
+/* ---- 可拖拽调配：景点 / 餐饮 / 住宿都能拖动，也能拖到后面几天的时间轴 ---- */
+#itin3col .tl-item[draggable]{cursor:grab}
+#itin3col .tl-item[draggable]:active{cursor:grabbing}
+#itin3col .tl-item.tl-stay::before{border-color:#F59E0B;background:#F59E0B}
+#itin3col .tl-item.dragging{opacity:.45;background:#E2E8F0}
+#itin3col .tl-item.drop-before{box-shadow:inset 0 3px 0 #2196F3}
+#itin3col .timeline.drag-over{background:#F8FAFC;border-radius:12px;outline:2px dashed #93C5FD;outline-offset:4px}
+#itin3col .tl-head{display:flex;gap:12px;padding:2px 0 8px;cursor:default}
+#itin3col .tl-head h5{font-size:13px;color:#475569;font-weight:800}
+#itin3col .tl-head::before{display:none}
+#itin3col .tl-hint{font-size:11.5px;color:#94A3B8}
+#itin3col .tl-item[draggable] .tl-time{font-variant-numeric:tabular-nums}
 #itin3col .tl-item:hover{background:#F1F5F9}
 #itin3col .tl-item.selected{background:#EFF6FF;outline:2px solid #BFDBFE;outline-offset:-2px}
 #itin3col .tl-time{flex:none;width:92px;font-size:12px;font-weight:600;color:#2196F3;padding-top:2px;font-variant-numeric:tabular-nums}

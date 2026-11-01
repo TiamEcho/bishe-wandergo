@@ -36,6 +36,18 @@ function poolOfCity(city, rg) {
     (!rg || !s.region || s.region === rg));
 }
 
+/* data.js 里人工精编的核心打卡点（63 条，含坐标 / 评分 / 标签 / 描述）。
+ * 线上 Render 拿不到高德坐标时，这批景点是保证「行程像这个城市」的最后一道兜底；
+ * 之前 db.js 只取到 id/n/city/tag/desc，坐标为空被 s.lng != null 全部过滤掉。 */
+function namesOfCity(city) {
+  const has = new Set(dbx.SPOTS.filter(s => s.lng != null).map(s => s.name));
+  /* 去重按「名称互相包含」判定：库里已有「武侯祠」「锦里古街」时，
+   * data.js 的「武侯祠·锦里」不再重复进场 */
+  const dup = n => [...has].some(x => x && (x.includes(n) || n.includes(x)));
+  return (dbx.DATA_SPOTS || []).filter(s =>
+    s.name && !dup(s.name) && (cityHit(s.city, city) || cityHit(s.province, city)));
+}
+
 /* 站内库不足时的近邻补位：半径收紧到 60km 且要求同省，
    否则「杭州」可能混进苏州的周庄、山塘街，单日里程直接飙到 150km */
 function nearPool(center, exclude, limit = 14) {
@@ -80,6 +92,10 @@ function fromAmap(p) {
   };
 }
 
+/* 国内检索不到任何结果时（线上 Render 的高德 Key 常因 IP 白名单 / 配额失效），
+   至少要凑够这么多个同城精编景点，否则行程会退化成「全站第一条景点」 */
+const MIN_SPOTS_OFFLINE = 6;
+
 /* ---- ① 收集景点 ----------------------------------------------------
  * 国内：高德关键词检索为主，AI 建议 + 站内库兜底
  * 海外：站内精编库 → AI 生成景点名 + Nominatim 坐标 → OSM 兜底
@@ -101,10 +117,12 @@ async function collectSpots(city, want) {
       lat: libPool.reduce((a, s) => a + s.lat, 0) / libPool.length
     };
   }
-  const geo = await amap.geocodeCity(city);
+  /* 站内库命中太少（线上高德坐标拿不到时只会有寥寥几条）就走一次地理编码：
+   * 本来只有「库内完全没有」才编码，导致中心点漂到默认的北京，
+   * 后续各类距离排序全部按北京算，行程完全跑偏 */
+  const geo = libPool.length < MIN_SPOTS_OFFLINE ? await amap.geocodeCity(city) : null;
   if (geo) center = { lng: geo.lng, lat: geo.lat };
   center = resolveCenter(city, center) || { lng: 116.397, lat: 39.908 };
-
   const overseas = isOverseas(city, center);
 
   /* 按目的地自动选源，返回结构一致（places 已带 category 与 source）。
@@ -119,7 +137,12 @@ async function collectSpots(city, want) {
   const chosen = [];
   const push = s => {
     if (!s || chosen.length >= want) return;
-    if (chosen.some(c => c.name === s.name)) return;
+    /* 只比完全同名挡不住「武侯祠 / 武侯祠·锦里」「成都大熊猫繁育基地 /
+     * 成都大熊猫繁育研究基地」这类近义重复，改成名称互相包含 */
+    const dup = c => c.name === s.name ||
+      (c.name.length >= 3 && s.name.length >= 3 &&
+        (c.name.includes(s.name) || s.name.includes(c.name)));
+    if (chosen.some(dup)) return;
     chosen.push(s);
   };
 
@@ -215,6 +238,17 @@ async function collectSpots(city, want) {
 
     /* 3) 近邻补位：同城库已全部入场后仍不足，才补 60km 内同省景点 */
     if (chosen.length < want) nearPool(center, libPool, 30).map(toSpot).forEach(push);
+
+    /* 4) 精编打卡点兜底：线上 Render 拿不到高德坐标时，站内库会被上面的坐标过滤砍掉大半，
+     *    此时把 data.js 的精编打卡点按城市补进来，保证行程至少是「这个城市」的，
+     *    而不是所有城市都返回同一条景点。 */
+    if (chosen.length < MIN_SPOTS_OFFLINE) {
+      const dup = n => chosen.some(c => c.name === n || c.name.includes(n) || n.includes(c.name));
+      namesOfCity(city).forEach(s => {
+        if (chosen.length >= want || dup(s.name)) return;
+        push({ ...toSpot(s), tags: s.tags || '', desc: s.desc || '' });
+      });
+    }
   }
 
   /* 命中来源统计：站内库的 id 是 spot_xxx / 纯名称，
@@ -315,7 +349,9 @@ async function planRoute(city, days, want) {
   const d = Math.max(1, Number(days) || 2);
   /* ④ 收集景点：AI 生成（20 个）→ 去重 → 按方位角排序预分组 → 扇形分区 →
    *    某天景点偏少时从最多那天借一个 → 周边餐饮住宿 */
-  const wantSpots = Math.min(20, Math.max(12, d * 4));
+  /* 每天 3-4 个景点即可，按天数取总数；原先 max(12, d*4) 让 2 天也要 12 个，
+   * 下面再按 ceil(景点数/3) 分区，2 天行程被拆成 4 天 */
+  const wantSpots = Math.min(16, Math.max(6, d * 4));
   const { chosen, rest, center, libraryHit, amapHit, osmHit, scanned, provider, foodPool, overseas } =
     await collectSpots(city, wantSpots);
 
@@ -323,6 +359,7 @@ async function planRoute(city, days, want) {
    *    海外按距中心排序后连续分块（人工挑选的离散点，均分会切出
    *    「一天全在 40km 外、一天只剩 2 个」这种极端分配） */
   const ordered = chosen.slice().sort((a, b) => bearing(center, a) - bearing(center, b));
+  /* 天数由用户给定：当天数 ≤ 请求天数就用请求天数，否则才按景点数压缩 */
   const n = Math.min(d, Math.max(1, Math.ceil(ordered.length / 3)));
   const near = ordered.slice().sort((a, b) => dist(center, a) - dist(center, b));
   const fanDays = overseas ? ringSplit(near, center, n) : fanCluster(ordered, center, n);

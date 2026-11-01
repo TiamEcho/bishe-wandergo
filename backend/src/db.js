@@ -233,30 +233,32 @@ const CRAWL = readJson(path.join(ROOT, 'js', 'posts_crawl.json')) || { posts: []
 const DATA_SPOTS = (() => {
   try {
     const txt = fs.readFileSync(path.join(ROOT, 'js', 'data.js'), 'utf-8');
-    const re = /\{id:'([^']+)',n:'([^']+)',city:'([^']+)'(?:,rg:'([^']*)')?[^\n]*?lng:(-?[\d.]+),lat:(-?[\d.]+)[^\n]*?tag:'([^']*)',desc:'([^']*)'/g;
+    /* 先按「景点对象开头」切块，再在块内分别取坐标，避免坐标缺失的条目把整条正则卡死 */
+    const re = /\{id:'([^']+)',n:'([^']+)',city:'([^']+)'([^\n]*)/g;
     const out = [];
     let m;
     while ((m = re.exec(txt)) !== null) {
-      /* 同一行里 addr / hrs / price / rating 的顺序固定，单独补取，缺了不影响主字段 */
-      const line = m[0];
+      const line = m[4] || '';
       const grab = key => {
-        const r = new RegExp(`,${key}:'([^']*)'`).exec(line);
-        return r ? r[1] : '';
+        const r = new RegExp(`,${key}:('([^']*)'|(-?[\\d.]+))`).exec(line);
+        return r ? (r[2] != null ? r[2] : r[3]) : '';
       };
+      const lng = Number(grab('lng'));
+      const lat = Number(grab('lat'));
       out.push({
         spot_id: m[1],
         name: m[2],
         city: m[3].split('·')[0].trim(),
-        lng: Number(m[5]),
-        lat: Number(m[6]),
+        lng: Number.isFinite(lng) && lng !== 0 ? lng : null,
+        lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
         address: grab('addr'),
         hours: grab('hrs'),
         price: grab('price'),
         traffic: grab('traf'),
         rating: Number(grab('rating')) || 0,
-        region: m[4] || 'cn',
-        tags: m[7],
-        desc: m[8],
+        region: grab('rg') || 'cn',
+        tags: grab('tag'),
+        desc: grab('desc'),
         geo_src: 'manual',
         src: 'data.js 精编'
       });
@@ -552,6 +554,6 @@ module.exports = {
   all: impl.all, get: impl.get, run: impl.run,
   seed, stats, searchGuides, searchCheckins, searchEntities,
   addCheckin, addGuide, addEntities, crawlCandidates,
-  SPOTS: ALL_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,
+  SPOTS: ALL_SPOTS, DATA_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,
   cityOf: term => ALIAS.get(String(term || '').trim()) || null
 };

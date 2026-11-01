@@ -1031,12 +1031,199 @@ function bookBanner(plan){
   return `<div class="book-banner">${bookHtml}<div class="bk-row"><b>🍽 三餐已排入行程</b><span class="tl-eat-chip">每天 早 / 午 / 晚 就近匹配 · 共 ${eatDays} 天</span></div></div>`;
 }
 let __itinCurDay=-1,__itinMap=null,__itinVersion=0;
+/* ---- 行程条目：景点 / 餐饮 / 住宿统一成一种可拖拽行 ----
+ * data-kind + data-day + data-key 三元组唯一标识一条：
+ *   spot  → key 是景点 id
+ *   eat   → key 是 eatRank 里的下标（一条餐饮 = 一个对象）
+ *   hotel → key 是 hotelRank 里的下标 */
+function tlRowHtml(c,di,order){
+  if(c.t==='spot'){
+    const p=c.p,it=p.__itl||{};
+    const rests=(it.restaurants||[]).slice(0,2);
+    const restHtml=rests.length?`<div class="tl-near"><span class="tl-near-l">🍽 附近餐饮</span>${rests.map(r=>`<span class="tl-near-i">${escHtml(r.name)}${r.rating?' ⭐'+r.rating:''}${r.price?' · '+escHtml(String(r.price)):''}</span>`).join('')}</div>`:'';
+    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(P[p.id])}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`;
+  }
+  if(c.t==='eat'){
+    const it=c.it;
+    return `<li class="tl-item tl-eat" draggable="true" data-kind="eat" data-day="${di}" data-key="${c.k}" data-order="${order}"><span class="tl-time" data-slot="eat:${c.k}">—</span><div class="tl-body"><h5>🍽 ${escHtml(it.meal||'用餐')} · ${escHtml(it.n)}</h5><p>${escHtml(it.note||'')}${it.price?' · 人均 '+escHtml(String(it.price)):''}</p></div></li>`;
+  }
+  const h=c.h;
+  return `<li class="tl-item tl-stay" draggable="true" data-kind="hotel" data-day="${di}" data-key="${c.k}" data-order="${order}"><span class="tl-time" data-slot="hotel:${c.k}">入住</span><div class="tl-body"><h5>🏨 ${escHtml(h.n)}</h5><p>${escHtml(h.note||'')}${h.price?' · 参考价 '+escHtml(String(h.price)):''}</p></div></li>`;
+}
+/* 一次拖拽的结果落到 plan：改所属天 + 改同类条目里的相对顺序，
+ * 然后按「景点 → 餐饮 → 住宿」整体重排每条的先后，并把时刻重算一遍 */
+function applyMove(plan,mv){
+  const {kind,key,fromDay,toDay,beforeKey}=mv;
+  if(kind==='spot'){
+    const src=(plan.routeDays[fromDay]||[]).filter(id=>id!==key);
+    const dst=fromDay===toDay?src:(plan.routeDays[toDay]||[]).slice();
+    if(fromDay!==toDay)plan.routeDays[fromDay]=src;
+    const at=dst.indexOf(beforeKey);
+    dst.splice(at<0?dst.length:at,0,key);
+    plan.routeDays[toDay]=dst;
+    plan.spots=plan.routeDays.flat();
+  }
+  const list=mv.list;                       /* 该类的有序数组（eatRank / hotelRank 或拼好的用餐列表） */
+  if(!list)return;
+  const cur=list.find(x=>String(x.__k)===String(key));
+  if(!cur)return;
+  cur.day=toDay;
+  const others=list.filter(x=>x!==cur);
+  const idx=others.findIndex(x=>String(x.__k)===String(beforeKey));
+  others.splice(idx<0?others.length:idx,0,cur);
+  list.length=0;list.push(...others);
+}
+/* 按拖动后的顺序重算每条的先后序号 + 起止时刻（09:00 起，景点 150 分钟、正餐 50 分钟，行间 20 分钟） */
+function retimePlan(plan){
+  const lines=[];
+  (plan.routeDays||[]).forEach((ids,day)=>ids.forEach(id=>lines.push({k:'spot:'+id,day})));
+  (plan.eatRank||[]).forEach(e=>lines.push({k:'eat:'+e.__k,day:e.day,e}));
+  (plan.hotelRank||[]).forEach(h=>lines.push({k:'hotel:'+h.__k,day:h.day,h}));
+  const byDay={};
+  lines.forEach(x=>(byDay[x.day]=byDay[x.day]||[]).push(x));
+  Object.keys(byDay).forEach(d=>{
+    let cur=9*60;
+    byDay[d].forEach(x=>{
+      if(x.h){x.h.t0=null;x.h.t1=null;return}
+      const dur=x.e?({早餐:45,午餐:50,晚餐:70}[x.e.meal]||60):150;
+      x.t0=cur;x.t1=cur+dur;cur+=dur+20;
+    });
+  });
+  /* 回写到 timelines / eats / hotels —— 这三份是渲染和保存走的数据 */
+  plan.timelines=plan.routeDays.map((ids,di)=>{
+    const old=(plan.__itl||[])[di]||[];
+    return ids.map(id=>{
+      const it=old.find(x=>x.id===id)||{type:'spot',id,dur:150};
+      const ln=lines.find(l=>l.k==='spot:'+id);
+      return {...it,type:'spot',id,n:(spotById(id)||{}).n||it.n,start:ln.t0,end:ln.t1,dur:150};
+    });
+  });
+  plan.eats=plan.routeDays.map((_,di)=>(plan.eatRank||[]).filter(e=>e.day===di)
+    .map(e=>({type:'eat',meal:e.meal,n:e.n,note:e.note,price:e.price,start:e.t0,end:e.t1})));
+  plan.hotels=plan.routeDays.map((_,di)=>(plan.hotelRank||[]).filter(h=>h.day===di).map(h=>h.__h));
+}
+/* 时刻回填：把 retimePlan 算出的起止时间写到对应条目的时间列 */
+function fillTimes(plan,cards){
+  const put=(slot,txt)=>{const el=cards.querySelector(`[data-slot="${slot}"]`);if(el)el.textContent=txt};
+  (plan.routeDays||[]).forEach((ids,di)=>{
+    ((plan.timelines&&plan.timelines[di])||[]).forEach(it=>{
+      if(it.id!=null&&it.start!=null)put('spot:'+it.id,minToHHMM(it.start)+'-'+minToHHMM(it.end));
+    });
+    ((plan.eatRank||[]).filter(e=>e.day===di)).forEach(e=>{
+      if(e.t0!=null)put('eat:'+e.__k,minToHHMM(e.t0)+'-'+minToHHMM(e.t1));
+    });
+  });
+}
+/* 拖拽：HTML5 DnD（桌面）+ touch 兜底（移动端）。
+ * 放到某条上 = 插到它前面；放到某天空白处 = 追加到当天末尾 */
+function bindDrag(plan,cards,repaint){
+  let drag=null;
+  const clear=()=>{
+    cards.querySelectorAll('.dragging').forEach(el=>el.classList.remove('dragging'));
+    cards.querySelectorAll('.drop-before').forEach(el=>el.classList.remove('drop-before'));
+    cards.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  };
+  const mvFrom=(el,toDay,beforeKey)=>({
+    kind:el.dataset.kind,key:el.dataset.key,fromDay:+el.dataset.day,toDay,beforeKey,
+    list:el.dataset.kind==='eat'?plan.eatRank:(el.dataset.kind==='hotel'?plan.hotelRank:null)
+  });
+  cards.querySelectorAll('.tl-item[draggable]').forEach(el=>{
+    el.addEventListener('dragstart',e=>{
+      drag=el;el.classList.add('dragging');
+      try{e.dataTransfer.setData('text/plain',el.dataset.key);e.dataTransfer.effectAllowed='move'}catch(_){}
+    });
+    el.addEventListener('dragend',()=>{drag=null;clear()});
+  });
+  cards.querySelectorAll('.timeline[data-day]').forEach(ul=>{
+    ul.addEventListener('dragover',e=>{
+      if(!drag)return;
+      e.preventDefault();
+      clear();ul.classList.add('drag-over');
+      const over=[...ul.querySelectorAll('.tl-item[draggable]')].find(x=>x!==drag&&x.getBoundingClientRect().top>e.clientY-8);
+      if(over)over.classList.add('drop-before');
+    });
+    ul.addEventListener('dragleave',e=>{if(!ul.contains(e.relatedTarget))ul.classList.remove('drag-over')});
+    ul.addEventListener('drop',e=>{
+      if(!drag)return;
+      e.preventDefault();
+      const toDay=+ul.dataset.day;
+      const over=[...ul.querySelectorAll('.tl-item[draggable]')].find(x=>x!==drag&&x.getBoundingClientRect().top>e.clientY-8);
+      const mv=mvFrom(drag,toDay,over?over.dataset.key:null);
+      clear();drag=null;
+      applyMove(plan,mv);
+      retimePlan(plan);
+      savePlanEdits(plan);
+      repaint();
+      toast('已调整：行程顺序与时间已重新排布');
+    });
+  });
+  /* 移动端：长按 200ms 后进入拖拽，松手落在哪条上面就插到它前面 */
+  let touchEl=null,touchTimer=null;
+  cards.querySelectorAll('.tl-item[draggable]').forEach(el=>{
+    el.addEventListener('touchstart',()=>{
+      touchTimer=setTimeout(()=>{touchEl=el;el.classList.add('dragging')},200);
+    },{passive:true});
+    el.addEventListener('touchmove',()=>{
+      if(!touchEl)clearTimeout(touchTimer);
+    },{passive:true});
+    el.addEventListener('touchend',e=>{
+      clearTimeout(touchTimer);
+      if(!touchEl){touchEl=null;return}
+      const t=e.changedTouches[0];
+      const under=document.elementFromPoint(t.clientX,t.clientY);
+      const li=under&&under.closest('.tl-item[draggable]');
+      const ul=under&&under.closest('.timeline[data-day]');
+      const src=touchEl;
+      clear();
+      touchEl=null;
+      if(!ul){return}
+      const mv=mvFrom(src,+ul.dataset.day,li&&li!==src?li.dataset.key:null);
+      applyMove(plan,mv);
+      retimePlan(plan);
+      savePlanEdits(plan);
+      repaint();
+      toast('已调整：行程顺序与时间已重新排布');
+    });
+  });
+}
+/* 首次渲染前把「餐饮 / 住宿」摊成两份可拖动的有序列表（eatRank / hotelRank）。
+ * 之后拖拽只改这两份列表和 routeDays，再回写 timelines / eats / hotels */
+function ensureRanks(plan){
+  if(plan.eatRank&&plan.hotelRank)return;
+  plan.__itl=(plan.timelines||[]).map(t=>t.slice());
+  plan.eatRank=[];plan.hotelRank=[];
+  (plan.timelines||[]).forEach((items,di)=>{
+    items.filter(it=>it.type==='eat').forEach((it,k)=>{
+      plan.eatRank.push({__k:di+'-'+k,day:di,meal:it.meal||'用餐',n:it.n,note:it.note||'',price:it.price||''});
+    });
+  });
+  (plan.hotels||[]).forEach((h,di)=>{
+    if(!h||!h.n)return;
+    plan.hotelRank.push({__k:'h'+di,day:di,__h:h});
+  });
+  retimePlan(plan);
+}
+/* 拖动结果持久化：刷新页面后仍是调整过的顺序 */
+const PLAN_EDIT_KEY='fmw_plan_edit';
+function savePlanEdits(plan){
+  try{
+    localStorage.setItem(PLAN_EDIT_KEY,JSON.stringify({
+      dest:plan.dest,
+      routeDays:plan.routeDays,
+      eatRank:(plan.eatRank||[]).map(e=>({__k:e.__k,day:e.day,meal:e.meal,n:e.n,note:e.note,price:e.price})),
+      hotelRank:(plan.hotelRank||[]).map(h=>({__k:h.__k,day:h.day,__h:h.__h}))
+    }));
+  }catch(_){}
+}
+/* 生成新行程（换城市 / 重新规划）时旧的手动调整作废 */
+function clearPlanEdits(){try{localStorage.removeItem(PLAN_EDIT_KEY)}catch(_){}}
 function disposeItineraryMap(){
   __itinVersion++;
   if(__itinMap){__itinMap.dispose();__itinMap=null}
 }
 function renderItinerary3col(plan){
   const box=$('#itin3col');if(!box)return;
+  ensureRanks(plan);
   disposeItineraryMap();
   const days=(plan.routeDays&&plan.routeDays.length)?plan.routeDays:[plan.spots.slice(0,1)];
   const segs=days.map((ids,i)=>({day:i+1,points:ids.map(spotById).filter(Boolean).map(s=>({...s}))}));
@@ -1054,35 +1241,32 @@ function renderItinerary3col(plan){
     const selected=idx<0?segs:[segs[idx]];
     let number=0;
     /* 每个景点按出现顺序编号，span 项也带 index 以便与地图联动 */
-    const indexed=selected.map(sg=>({...sg,points:sg.points.map(p=>({...p,index:number++}))}));
+    const indexed=selected.map(sg=>({...sg,points:sg.points.map(p=>
+    ({...p,index:number++,
+      /* 附上后端给的行程条目（开放时间 / 预约 / 周边餐饮 / 距离），卡片里要用 */
+      __itl:(((plan.timelines||[])[sg.day-1])||[]).find(it=>it.id===p.id)||null}))}));
     const cards=box.querySelector('#journeyCards');
     cards.scrollTop=0;
     const tlHtml=(idx<0?bookBanner(plan):'')+selected.map((sg,si)=>{
       const di=sg.day-1;
-      const tl=(plan.timelines&&plan.timelines[di])||[];
       const todaySpots=indexed[si].points;
-      const rows=tl.map(it=>{
-        const time=minToHHMM(it.start)+' - '+minToHHMM(it.end);
-        if(it.type==='eat'){
-          return `<li class="tl-item tl-eat"><span class="tl-time">${time}</span><div class="tl-body"><h5>🍽 ${escHtml(it.meal)} · ${escHtml(it.n)}</h5><p>${escHtml(it.note||'')}${it.price?' · 人均 '+escHtml(String(it.price)):''}</p></div></li>`;
-        }
-        const s=todaySpots.find(p=>p.id===it.id);
-        const index=s?s.index:0;
-        /* 周边餐饮 + 当天住宿：后端有高德 Key 时是真实 POI，否则是本地美食库兜底 */
-        const rests=(it.restaurants||[]).slice(0,2);
-        const restHtml=rests.length?`<div class="tl-near"><span class="tl-near-l">🍽 附近餐饮</span>${rests.map(r=>`<span class="tl-near-i">${escHtml(r.name)}${r.rating?' ⭐'+r.rating:''}${r.price?' · '+escHtml(r.price):''}${r.distance?' · '+r.distance+'m':''}</span>`).join('')}</div>`:'';
-        const hotelHtml=it.hotel?`<div class="tl-near"><span class="tl-near-l">🏨 就近住宿</span><span class="tl-near-i">${escHtml(it.hotel.name)}${it.hotel.rating?' ⭐'+it.hotel.rating:''}${it.hotel.price?' · '+escHtml(String(it.hotel.price)):''}${it.hotel.distance?' · '+it.hotel.distance+'m':''}</span></div>`:'';
-        return `<li class="tl-item" data-index="${index}"><span class="tl-time">${time}</span><div class="tl-body"><h5><span class="journey-number">${index+1}</span>${escHtml(it.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}${hotelHtml}<div class="tl-media"><img src="${IMG(P[it.id])}" alt="${escHtml(it.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${it.id}">查看景点详情</button></div></div></li>`;
-      }).join('');
-      /* 当天收尾的住宿建议：前端规划没有酒店库，按最后一个景点的位置 + 预算档给出落脚片区 */
-      const ht=(plan.hotels&&plan.hotels[di])||null;
-      const hotelRow=ht?`<li class="tl-item tl-eat"><span class="tl-time">入住</span><div class="tl-body"><h5>🏨 ${escHtml(ht.n)}</h5><p>${escHtml(ht.note||'')}${ht.price?' · 参考价 '+escHtml(String(ht.price)):''}</p></div></li>`:'';
-      const noTl=todaySpots.map(p=>`<li class="tl-item" data-index="${p.index}"><span class="tl-time">-</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}</h5><div class="tl-media"><img src="${IMG(P[p.id])}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`).join('');
+      /* 景点 / 餐饮 / 住宿统一成同一份可拖拽条目：
+       * 之前餐饮和住宿只是挂在景点卡片上的附属文字（或末尾单独一行），
+       * 用户想把「晚饭换个地方」「酒店挪到第二天」根本没法调。
+       * 同一天内的先后顺序：景点 → 餐饮 → 住宿，与 retimePlan 的重排规则一致 */
+      const eatsOfDay=(plan.eatRank||[]).filter(e=>e.day===di);
+      const hotelsOfDay=(plan.hotelRank||[]).filter(h=>h.day===di);
+      const cardsOfDay=todaySpots.map(p=>({t:'spot',p,__k:'spot:'+p.id}));
+      eatsOfDay.forEach(e=>cardsOfDay.push({t:'eat',k:e.__k,it:e}));
+      hotelsOfDay.forEach(h=>cardsOfDay.push({t:'hotel',k:h.__k,h:h.__h}));
+      cardsOfDay.forEach((c,i)=>c.__o=i);
+      const rows=cardsOfDay.map(c=>tlRowHtml(c,di,c.__o)).join('');
       /* 扇形分区说明：当天景点相对市中心的方位角区间 → 证明路线单向推进不绕回 */
       const fan=(plan.__fan||[])[di]||{};
       const ang=fan.bearing&&fan.bearing.length===2?fan.bearing:null;
       const fanTip=ang?`<p class="journey-fan">🧭 本日路线位于市中心 ${ang[0]}°–${ang[1]}° 方位扇形内 · 由近及远单向推进${fan.km?' · 约 '+fan.km+' km':''}</p>`:'';
-      return `<section class="journey-day"><h3>Day ${sg.day} · ${escHtml(dayTheme(sg.points.map(p=>p.id)))}</h3>${fanTip}<ul class="timeline">${(rows||noTl)+hotelRow}</ul></section>`;
+      const head=`<li class="tl-head"><span class="tl-time"></span><div class="tl-body"><h5>拖动可调整顺序</h5><span class="tl-hint">景点 / 餐饮 / 住宿都能移动，也能拖到后面几天</span></div></li>`;
+      return `<section class="journey-day" data-day="${di}"><h3>Day ${sg.day} · ${escHtml(dayTheme(todaySpots.map(p=>p.id)))}</h3>${fanTip}<ul class="timeline" data-day="${di}">${head+rows}</ul></section>`;
     }).join('');
     cards.innerHTML=tlHtml;
     box.querySelectorAll('[role="tab"]').forEach(b=>{const on=+b.dataset.day===idx;b.classList.toggle('on',on);b.setAttribute('aria-selected',String(on))});
@@ -1099,6 +1283,9 @@ function renderItinerary3col(plan){
       item.onclick=()=>select(index,false);
     });
     cards.querySelectorAll('[data-open]').forEach(b=>b.onclick=e=>{e.stopPropagation();openSpot(b.dataset.open)});
+    /* 时刻回填：重排后的时间写在 data-slot 对应的时间列 */
+    fillTimes(plan,cards);
+    bindDrag(plan,cards,()=>paintDay(__itinCurDay));
     const stats=rtStats(indexed,rtMode);
     box.querySelector('#journeyStats').textContent=`约 ${stats.km} km · ${stats.timeTxt} · ${stats.stops} 站`;
     const el=box.querySelector('#journeyMap');
@@ -1143,6 +1330,7 @@ function applyPrefs(plan,f){
   return plan;
 }
 function showPlan(plan,f){
+  clearPlanEdits();
   plan=applyPrefs(plan,f);
   const grid=$('#modGrid');
   disposeItineraryMap();
