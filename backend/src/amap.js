@@ -33,7 +33,7 @@ const getLastError = () => lastError;
 const clearLastError = () => { lastError = null; loggedCode = ''; };
 
 function report(path, info, code) {
-  lastError = { path, info, infocode: code, hint: ERR_HINT[code] || '' };
+  lastError = { path, info, infocode: code, hint: ERR_HINT[code] || '', at: new Date().toISOString() };
   if (loggedCode === code + info) return;
   loggedCode = code + info;
   console.warn('[amap]', path, info, code, lastError.hint);

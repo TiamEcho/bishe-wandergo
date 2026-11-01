@@ -21,11 +21,18 @@ const PLAN_SYSTEM = `你是资深旅行规划师。请为用户的目的地推�
 3) 不要输出餐厅、酒店、行政区名（如「朝阳区」）、省份名（如「西藏」）；
 4) 格式：{"spots":[{"name":"景点名","city":"所在城市"}]}`;
 
-/* ---- 站内景点库：城市匹配 ---- */
+/* ---- 站内景点库：城市匹配 ----
+ * 只认「城市 / 省份完全相等」，以及「景点库里的城市名包含查询词」这一种包含关系
+ * （查「上海」能命中库里的「上海市」）。
+ * 绝对不能反过来用 city.includes(s.city)：查「上海」时 s.city 为「北京」这类空串或
+ * 任意子串都会命中，线上实测导致成都 / 上海都返回北京的故宫博物院。 */
+function cityHit(name, city) {
+  if (!name || !city) return false;
+  return name === city || name.includes(city);
+}
 function poolOfCity(city, rg) {
   return dbx.SPOTS.filter(s => s.name && s.lng != null &&
-    ((s.city && s.city === city) || (s.province && s.province === city) ||
-      (s.city && s.city.includes(city)) || (city && city.includes(s.city || ''))) &&
+    (cityHit(s.city, city) || cityHit(s.province, city)) &&
     (!rg || !s.region || s.region === rg));
 }
 
@@ -304,6 +311,7 @@ async function attachPoi(day, idx, lastIdx, city, foodPool = [], overseas = fals
  * @param {number} want 景点总数（默认 10-12）
  */
 async function planRoute(city, days, want) {
+  amap.clearLastError();
   const d = Math.max(1, Number(days) || 2);
   /* ④ 收集景点：AI 生成（20 个）→ 去重 → 按方位角排序预分组 → 扇形分区 →
    *    某天景点偏少时从最多那天借一个 → 周边餐饮住宿 */
@@ -424,6 +432,9 @@ async function planRoute(city, days, want) {
       provider,                                  /* amap=国内高德 / osm=海外 OpenStreetMap / none */
       amap: amap.isOn(),
       ai: !!process.env.DOTS_API_KEY,
+      /* 高德最近一次报错：线上排查用（Key 失效 / 配额 / IP 白名单 / 超时），
+       * 正常时不返回，避免把内部错误塞进正常响应 */
+      amapError: amap.getLastError() || null,
       libraryHit, amapHit, osmHit, scanned
     },
     dedup: { removed: [], filled: [] },
