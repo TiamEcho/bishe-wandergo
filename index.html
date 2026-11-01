@@ -99,7 +99,7 @@
     </div>
     <figure class="shot-card" data-shot="ai" tabindex="0" role="button" aria-label="放大查看 AI 规划界面">
       <div class="shot-frame">
-        <img src="img/shots/ai-1.png" alt="AI 规划界面" loading="lazy">
+        <img src="img/shots/ai-1.webp" alt="AI 规划界面" loading="lazy">
         <span class="shot-anim"><i></i><i></i><i></i></span>
         <span class="shot-zoom">🔍 点击放大</span>
       </div>
@@ -116,7 +116,14 @@
       <p>手帐风地图点亮足迹：中国 / 世界切换、点击飞行、真实打卡攒徽章，行程自动沉淀成旅程故事。</p>
       <a class="fn-link" href="map.html">进入地图 →</a>
     </div>
-    <div class="shot-box"><span>界面预览图（待补充）</span></div>
+    <figure class="shot-card" data-shot="map" tabindex="0" role="button" aria-label="放大查看地图打卡界面">
+      <div class="shot-frame">
+        <img src="img/shots/map-1.webp" alt="手帐风地图界面" loading="lazy">
+        <span class="shot-anim fly"><i></i><i></i><i></i><i></i></span>
+        <span class="shot-zoom">🔍 点击放大</span>
+      </div>
+      <figcaption><b>手帐风地图</b><span>点亮足迹 · 点击飞行 · 航线动画</span></figcaption>
+    </figure>
   </div>
 </section>
 
@@ -128,7 +135,14 @@
       <p>B站与站内创作者的攻略视频聚合，搜索筛选、词条挂载；AI 分析视频一键生成同款行程。</p>
       <a class="fn-link" href="community.html">进入社区 →</a>
     </div>
-    <div class="shot-box"><span>界面预览图（待补充）</span></div>
+    <figure class="shot-card" data-shot="community" tabindex="0" role="button" aria-label="放大查看社区攻略界面">
+      <div class="shot-frame">
+        <img src="img/shots/community-1.webp" alt="旅行社区界面" loading="lazy">
+        <span class="shot-anim"><i></i><i></i><i></i></span>
+        <span class="shot-zoom">🔍 点击放大</span>
+      </div>
+      <figcaption><b>旅行社区</b><span>多平台攻略 · 词条挂载 · AI 同款行程</span></figcaption>
+    </figure>
   </div>
 </section>
 
@@ -230,146 +244,55 @@ const MODULES=[
     ['资料设置','昵称、头像、偏好标签随时修改。']]}
 ];
 
-/* 模块配图：复用 images 目录下的 hero + t1~t4 */
-const PHOTO=['hero','t1','t2','t3','t4'];
-const photo=(id,i)=>`images/${id}-${PHOTO[(i+5)%5]}.jpg`;
 
-/* 每个小功能对应的"界面示意"类型（直观呈现该功能在模块页里的界面形态） */
-const UI_TYPES={
-  map:['map','map','map','map','detail'],
-  ai:['feed','chart','donut','steps','album'],
-  recommend:['feed','donut','chart','feed','form'],
-  checkin:['form','album','album','detail','badges'],
-  community:['feed','form','feed','feed','feed'],
-  search:['feed','form','feed','form','feed'],
-  topic:['feed','feed','form','chart','feed'],
-  memories:['player','feed','album','detail','album'],
-  wheel:['form','wheel','wheel','form','feed'],
-  novel:['map','detail','steps','map','form'],
-  prince:['map','chart','detail','detail','detail'],
-  workbench:['album','form','chart','chart','album'],
-  me:['chart','feed','badges','steps','form']
-};
-
-/* 界面示意渲染器：返回与站点深色+金色风格一致的迷你界面 */
-function uiMock(type,label,mtitle,id,fi){
-  const stage=body=>`<div class="ui-stage"><div class="ui-title"><i></i>${mtitle} · ${label}</div><div class="ui-body">${body}</div></div>`;
-
-  if(type==='map'){
-    let grid='';
-    for(let x=40;x<=480;x+=55) grid+=`<line x1="${x}" y1="0" x2="${x}" y2="290"/>`;
-    for(let y=30;y<=270;y+=55) grid+=`<line x1="0" y1="${y}" x2="520" y2="${y}"/>`;
-    return stage(`<svg viewBox="0 0 520 290" preserveAspectRatio="xMidYMid slice">
-      <defs><linearGradient id="uig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a4a6d"/><stop offset="1" stop-color="#16293f"/></linearGradient></defs>
-      <rect width="520" height="290" fill="#0b1220"/>
-      <g stroke="#1d2b40" stroke-width="1">${grid}</g>
-      <path d="M64 92 L124 56 L200 70 L252 46 L322 68 L392 96 L432 142 L398 190 L322 218 L240 230 L160 212 L92 166 Z" fill="url(#uig)" stroke="#7ea6d9" stroke-width="1.2" opacity=".95"/>
-      <path d="M210 128 L300 156 L356 112" fill="none" stroke="#ffd76a" stroke-width="1.4" stroke-dasharray="5 6" opacity=".85"/>
-      <circle cx="210" cy="128" r="6" fill="#ffd76a"/><circle cx="210" cy="128" r="11" fill="none" stroke="#ffd76a" stroke-width="1.4" opacity=".5"/>
-      <text x="222" y="122" fill="#e8eef7" font-size="11">北京</text>
-      <circle cx="300" cy="156" r="5" fill="#ff6b57"/><text x="310" y="150" fill="#cbd6e4" font-size="11">洱海</text>
-      <circle cx="356" cy="112" r="5" fill="#ff6b57"/><text x="366" y="106" fill="#cbd6e4" font-size="11">京都</text>
-      <circle cx="124" cy="70" r="4" fill="#7ea6d9" opacity=".85"/>
-    </svg><div style="position:absolute;left:9px;bottom:7px;font-size:9.5px;color:#8fa2b8;background:rgba(11,18,32,.72);padding:2px 7px;border-radius:6px">滚轮缩放 · 点击飞行 · 金色 = 已点亮</div>
-    <div class="ui-spotcard"><img src="${photo(id,0)}" alt=""><div><b>洱海 · 已点亮</b><span>点击查看实景详情</span></div></div>`);
-  }
-
-  if(type==='feed'){
-    const items=[['洱海生态廊道 · B站 03:12',0],['故宫的六百年 · 小红书',1],['伏见稻荷的清晨 · 抖音',2]];
-    return stage(`<div class="ui-list">${items.map(([t,k])=>`
-      <div class="ui-row"><div class="ui-th"><img src="${photo(id,k)}" alt=""></div>
-        <div class="ui-lines"><div class="ui-l1" style="width:58%"></div><div class="ui-l2" style="width:90%"></div>
-          <div class="ui-tagrow"><span>${t}</span></div></div></div>`).join('')}</div>`);
-  }
-
-  if(type==='chart'){
-    const bars=[[112,'1200'],[82,'860'],[156,'1680'],[64,'640'],[132,'1420']];
-    const names=['门票','交通','住宿','餐饮','其他'];
-    return stage(`<div style="height:100%;display:flex;flex-direction:column">
-      <div class="ui-chart" style="flex:1;height:auto;align-items:flex-end;padding-bottom:4px">${bars.map(([h,v])=>`<div class="ui-bar" style="height:${h}px"><span>￥${v}</span></div>`).join('')}</div>
-      <div style="display:flex;justify-content:space-around;font-size:9.5px;color:#8fa2b8;padding-bottom:10px">${names.map(n=>`<span>${n}</span>`).join('')}</div>
-    </div>`);
-  }
-
-  if(type==='donut'){
-    return stage(`<div style="height:100%;display:flex;align-items:center;gap:16px;padding:14px 16px">
-      <div style="width:104px;height:104px;flex:none;border-radius:50%;position:relative;background:conic-gradient(#ffd76a 0 42%,#7ea6d9 42% 66%,#b23a2e 66% 84%,#3f7d5b 84% 100%)">
-        <div style="position:absolute;inset:21px;border-radius:50%;background:#0e1729;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
-          <span style="font-size:8.5px;color:#8fa2b8">预算合计</span><b style="font-size:14px;color:#ffd76a">￥3,860</b>
-        </div>
-      </div>
-      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-        ${[['#ffd76a','门票','￥1,200'],['#7ea6d9','交通','￥860'],['#b23a2e','住宿','￥1,180'],['#3f7d5b','餐饮','￥620']].map(([c,k,v])=>`
-        <div style="display:flex;align-items:center;gap:6px;font-size:9.5px;color:#cbd6e4">
-          <i style="width:8px;height:8px;border-radius:50%;background:${c};display:inline-block"></i>${k}
-          <span style="margin-left:auto;color:#8fa2b8">${v}</span></div>`).join('')}
-      </div></div>`);
-  }
-
-  if(type==='form'){
-    /* 打卡类的「攻略成册」展示真实表单要素：目的地 / 日期 / 故事 */
-    const isCk=id==='checkin';
-    const today=new Date().toISOString().slice(0,10).replace(/-/g,'/');
-    /* 按钮内的粒子：悬停时从底部升起，避免突然出现一个高亮块 */
-    const pts=Array.from({length:7},(_,k)=>`<i class="pt" style="left:${12+k*11}%;--dx:${(k%2?1:-1)*(3+k%3)*2}px;animation-delay:${(k*.13).toFixed(2)}s"></i>`).join('');
-    return stage(`<div class="ui-form">
-      <div class="ui-input">${isCk?'📍 洱海 · 云南大理':'✍ 告诉我想去哪、玩几天…'}</div>
-      ${isCk?`<div class="ui-fdate"><span>📅 哪一天</span><b>${today}</b><i>▼</i></div>`:''}
-      ${isCk?`<div class="ui-input" style="height:26px;font-size:9.5px">✍ 环海西路骑到才村码头，日出正好落在洱海上…</div>`:''}
-      <div class="ui-chips"><span>3 天</span><span>预算 ￥3000</span><span>亲子</span><span>${label}</span></div>
-      <span class="ui-btn part" data-p>${pts}<span>${isCk?'📸 一键成册':'生成规划 ✨'}</span></span>
-      <div class="ui-cards">
-        <div class="ui-mini"><img src="${photo(id,0)}" alt=""><div class="ui-l2" style="width:72%"></div><div class="ui-l2" style="width:44%"></div></div>
-        <div class="ui-mini"><img src="${photo(id,1)}" alt=""><div class="ui-l2" style="width:64%"></div><div class="ui-l2" style="width:52%"></div></div>
-      </div></div>`);
-  }
-
-  if(type==='detail'){
-    return stage(`<div class="ui-detail">
-      <div class="ui-hero"><img src="${photo(id,fi)}" alt=""></div>
-      <div class="ui-l1" style="width:52%"></div>
-      <div class="ui-meta"><span>📍 坐标已校准</span><span>🕐 建议停留 2h</span><span>⭐ 4.8 分</span></div>
-      <div style="display:flex;gap:7px;margin-top:2px">
-        <span class="ui-btn">📸 打卡</span>
-        <span class="ui-btn" style="background:rgba(255,255,255,.10);color:#cbd6e4">♡ 收藏</span>
-      </div></div>`);
-  }
-
-  if(type==='steps'){
-    const st=[['选择目的地与天数','先定范围与节奏'],['AI 拆分模块化攻略','景点 · 交通 · 预算 · 备案'],['生成比价与预算','聚合平台取最低价'],['一键加入行程','同步地图与日历']];
-    return stage(`<div class="ui-steps">${st.map(([a,b],i)=>`
-      <div class="ui-step"><b>${i+1}</b><div class="ui-lines">
-        <div style="font-size:10.5px;color:#e8eef7;line-height:1.3">${a}</div>
-        <div class="ui-l2" style="width:${70-i*8}%"></div></div></div>`).join('')}</div>`);
-  }
-
-  if(type==='badges'){
-    const bg=[['🏅','首打卡'],['🌅','日出猎人'],['🗺','3 省足迹'],['✈','首次出境'],['🏔','登山者'],['📸','摄影达人']];
-    return stage(`<div class="ui-badges">${bg.map(([e,t])=>`<div class="ui-badge"><i>${e}</i>${t}</div>`).join('')}</div>`);
-  }
-
-  if(type==='player'){
-    return stage(`<div class="ui-player">
-      <div class="ui-screen"><img src="${photo(id,3)}" alt=""><div class="ui-play">▶</div>
-        <span style="position:absolute;z-index:2;bottom:6px;right:8px;font-size:9px;color:#cbd6e4;background:rgba(0,0,0,.5);padding:1px 5px;border-radius:6px">01:24 / 03:12</span></div>
-      <div class="ui-prog"><i></i></div>
-      <div style="display:flex;justify-content:space-between;font-size:9px;color:#8fa2b8"><span>🎵 BGM 治愈</span><span>1.0×</span><span>导出 MP4</span></div>
-    </div>`);
-  }
-
-  if(type==='wheel'){
-    return stage(`<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;position:relative">
-      <div style="position:relative;display:flex;align-items:center;justify-content:center">
-        <div class="ui-disc"></div>
-        <div class="ui-pin" style="top:-6px;left:50%;transform:translateX(-50%)"></div>
-      </div>
-      <div style="font-size:11px;color:#ffd76a">🎉 结果：大理 · 洱海</div>
-    </div>`);
-  }
-
-  /* album */
-  return stage(`<div class="ui-album">${[0,1,2,3,4,0].map((k,i)=>`<div class="ui-ph"><img src="${photo(id,k)}" alt="">${i===5?'<b class="ui-more">+12</b>':''}</div>`).join('')}</div>`);
+/* ================ 大图查看器：半屏 / 全屏 ================ */
+let lbEl=null;
+function closeLightbox(){
+  if(!lbEl) return;
+  const el=lbEl; lbEl=null;
+  el.classList.remove('show');
+  setTimeout(()=>{ if(el.parentNode) el.remove(); },260);
+  if(!curModal) document.body.style.overflow='';
 }
+function openLightbox(src,cap){
+  closeLightbox();
+  const el=document.createElement('div');
+  el.className='lightbox';
+  el.innerHTML=`
+    <button class="lb-x" aria-label="关闭">✕</button>
+    <div class="lb-stage"><img src="${src}" alt="${cap||''}"></div>
+    <div class="lb-bar">
+      <span class="lb-cap">${cap||'界面预览'}</span>
+      <button type="button" class="on" data-v="half">半屏</button>
+      <button type="button" data-v="full">全屏</button>
+      <button type="button" data-v="close">关闭</button>
+    </div>`;
+  document.body.appendChild(el);
+  document.body.style.overflow='hidden';
+  lbEl=el;
+  requestAnimationFrame(()=>el.classList.add('show'));
+  const setView=v=>{
+    el.classList.toggle('full',v==='full');
+    el.querySelectorAll('.lb-bar button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  };
+  el.querySelector('.lb-x').onclick=closeLightbox;
+  el.querySelectorAll('.lb-bar button').forEach(b=>{
+    b.onclick=()=>{ const v=b.dataset.v; if(v==='close'){closeLightbox();return} setView(v); };
+  });
+  /* 点空白处关闭；点图片再点一次也可关 */
+  el.addEventListener('click',e=>{ if(e.target===el) closeLightbox(); });
+  /* 双击图片在 半屏 / 全屏 之间切换 */
+  el.querySelector('.lb-stage img').addEventListener('dblclick',()=>{
+    setView(el.classList.contains('full')?'half':'full');
+  });
+}
+document.querySelectorAll('.shot-card').forEach(card=>{
+  const img=card.querySelector('.shot-frame img');
+  const cap=card.querySelector('figcaption b');
+  const go=()=>openLightbox(img.getAttribute('src'),cap?cap.textContent:'');
+  card.addEventListener('click',go);
+  card.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
+});
 
 /* 渲染小方块（卡内含垂直小功能菜单） */
 document.getElementById('moduleGrid').innerHTML=MODULES.map((m,i)=>`
@@ -417,7 +340,6 @@ function createModal(){
 
 function renderModal(m,fi){
   const f=m.feats[fi];
-  const uiType=(UI_TYPES[m.id]||[])[fi]||'feed';
 
   /* 左：文字介绍 + 小功能切换列表 */
   const left=curModal.querySelector('#fdLeft');
@@ -438,10 +360,19 @@ function renderModal(m,fi){
   left.querySelector('#fdClose').onclick=closeFeatModal;
   left.querySelector('#fdGo').onclick=()=>WGO.go(m.url);
 
-  /* 右：该功能对应的界面示意 */
+  /* 右：该功能对应的真实页面截图（点击可半屏 / 全屏查看） */
   const right=curModal.querySelector('#fdRight');
-  right.innerHTML=uiMock(uiType,f[0],m.title,m.id,fi)
-    +`<div class="fsc-legend">界面示意：${m.title} · ${f[0]}（点击"进入该模块"可查看真实页面）</div>`;
+  const shotSrc=`img/shots/${m.id}-${fi+1}.webp`;
+  right.innerHTML=`
+    <figure class="feat-shot" role="button" tabindex="0" aria-label="放大查看 ${m.title} · ${f[0]} 界面">
+      <img src="${shotSrc}" alt="${m.title} · ${f[0]}" loading="lazy">
+      <span class="fs-zoom">🔍 点击查看大图</span>
+    </figure>
+    <div class="fsc-legend">真实页面截图：${m.title} · ${f[0]}（点击图片可半屏 / 全屏查看）</div>`;
+  const fs=right.querySelector('.feat-shot');
+  const openShot=()=>openLightbox(shotSrc,`${m.title} · ${f[0]}`);
+  fs.addEventListener('click',openShot);
+  fs.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openShot(); } });
 
   curModal.querySelector('#fdStrip').innerHTML=m.feats.map(x=>`<span>${x[0]}</span>`).join('');
 }
@@ -459,7 +390,10 @@ document.getElementById('moduleGrid').addEventListener('click',e=>{
   const card=e.target.closest('.mod-card');
   if(card) openFeature(card.dataset.id,0);
 });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape' && curModal) closeFeatModal(); });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&lbEl){ closeLightbox(); return; }
+  if(e.key==='Escape'&&curModal) closeFeatModal();
+});
 
 /* ================ 左侧时间轴锚点（5 节点 + 滚动高亮） ================ */
 (function(){
