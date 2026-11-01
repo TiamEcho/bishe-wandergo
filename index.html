@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WANDERGO · 设计理念与功能总览</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/style.css?v=1126">
+<link rel="stylesheet" href="css/style.css?v=1130">
 <link rel="stylesheet" href="css/pages.css?v=1126">
 </head>
 <body>
@@ -44,7 +44,7 @@
       <div class="hero-kicker">WANDERGO · FLY ME TO THE WORLD</div>
       <h1>Fly Me to <em>the World</em></h1>
       <p class="sub">AI 帮你规划 → 地图带你走 → 真实打卡 → 自动生成纪念册，再成为别人的真实攻略。</p>
-      <p class="loop"><b>AI</b> 模块化攻略 · <b>MAP</b> 3D 实景地图 · <b>CF</b> 协同过滤推荐 · <b>DATA</b> 数据可视化</p>
+      <p class="loop"><b>AI</b> 模块化攻略 · <b>MAP</b> 手帐风地图 · <b>CF</b> 协同过滤推荐 · <b>DATA</b> 数据可视化</p>
       <div class="hero-stats">
         <span>🌍 <b>32</b> 精选景点</span><span>🤖 <b>9</b> 套 AI 攻略</span><span>📸 <b>真实打卡</b></span><span>🎯 <b>协同过滤</b></span>
       </div>
@@ -106,7 +106,7 @@
   <div class="wrap fn-grid">
     <div class="fn-text">
       <h2>地图打卡</h2>
-      <p>五层 3D 地图点亮足迹：中国 / 世界切换、点击飞行、真实打卡攒徽章，行程自动沉淀成旅程故事。</p>
+      <p>手帐风地图点亮足迹：中国 / 世界切换、点击飞行、真实打卡攒徽章，行程自动沉淀成旅程故事。</p>
       <a class="fn-link" href="map.html">进入地图 →</a>
     </div>
     <div class="shot-box"><span>界面预览图（待补充）</span></div>
@@ -143,10 +143,10 @@
 <script>
 /* ================ 功能模块数据：每个方块含 5 个具体小功能 ================ */
 const MODULES=[
-  {id:'map',ico:'🌍',url:'map.html',title:'环球地图 · 3D 实景',sub:'五层 3D 挤出地图 + 白色省份名 + 滚轮缩放 + 点击飞行',feats:[
-    ['五层地图','中国 / 世界地图五层 3D 挤出，白色省份名浮在最上层，行政区一眼看清。'],
+  {id:'map',ico:'🌍',url:'map.html',title:'环球地图 · 手帐风',sub:'手帐风平面地图 + 手绘山脉 + 省份名 + 滚轮缩放 + 点击飞行',feats:[
+    ['手绘地图','米黄纸面 + 莫兰迪色块 + 虚线省界，西部按真实地形铺手绘雪山丘陵，东部平原留白。'],
     ['点击飞行','点击省份或国家名，镜头自动飞入对应视角，无需手动拖拽。'],
-    ['点亮打卡','打卡过的地方变成金色图标，未打卡的热门地保持红点。'],
+    ['点亮打卡','打卡过的地方变成金色印章，未打卡的热门地保持红点。'],
     ['航线动画','用浅色曲线把行程连成飞行航线，可一键关闭或打开。'],
     ['实景详情','点击地图标点弹出景点大图、坐标与真实攻略入口。']]},
   {id:'ai',ico:'🤖',url:'ai.html',title:'AI 旅行规划',sub:'模块化输出：景点 / 交通比价 / 预算 / 备案提醒',feats:[

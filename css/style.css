@@ -382,7 +382,7 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 @keyframes bob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-13px) rotate(-3deg)}}
 .plane-track svg{width:225px;height:88px;overflow:visible}
 .hero-curve{position:absolute;bottom:-2px;left:0;right:0;z-index:2;color:var(--bg);margin-top:-2px}
-/* ================= 地图 ================= */
+/* ================= 地图（手帐风平面） ================= */
 .map-card{background:var(--panel);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow)}
 .map-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .map-tabs{display:flex;gap:8px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:4px}
@@ -391,7 +391,16 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .map-legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
 .map-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
 .lg-red{background:#ff6b57}.lg-gold{background:var(--gold)}.lg-line{height:2px!important;border-radius:2px;width:16px;background:var(--gold)}
-#chinaMap,#worldMap{height:540px;width:100%;cursor:grab;background:radial-gradient(circle at 50% 44%,rgba(90,130,210,.16),transparent 68%)}
+.map-legend .lg-mt{border-radius:2px;background:#cdd9bd;box-shadow:inset 0 0 0 1px #9aa886}
+/* 地图画布：手帐纸纹（横线本 + 网格点），和 ECharts 的米黄纸面底衔接 */
+#chinaMap,#worldMap{height:540px;width:100%;cursor:grab;border-radius:14px;
+  background-color:#f7f1e3;
+  background-image:
+    linear-gradient(rgba(201,183,154,.13) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(201,183,154,.13) 1px,transparent 1px),
+    radial-gradient(circle at 30% 20%,rgba(255,255,255,.72),transparent 55%);
+  background-size:26px 26px,26px 26px,100% 100%}
+#chinaMap::after,#worldMap::after{content:'';display:none}
 @media(max-width:720px){#chinaMap,#worldMap{height:400px}}
 .map-note{padding:11px 18px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .map-note b{color:var(--gold);font-weight:700}

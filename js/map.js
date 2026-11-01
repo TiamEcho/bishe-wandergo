@@ -1,12 +1,11 @@
 /* =========================================================
- * WANDERGO PLATFORM · 3D 地图引擎 map.js
- * - 保留五层真 3D 挤出效果
- * - 修复：禁用拖拽平移（用户反馈手感奇怪），改为滚轮缩放（以鼠标为焦点）+ 点击飞行
+ * WANDERGO PLATFORM · 环球地图引擎 map.js
+ * - 手帐风（journal / scrapbook）平面地图：单层 geo，彻底去掉「伪 3D」四层堆叠
+ * - 性能：只有 1 个 geo 图层，滚轮缩放不再重绘 10 层
+ * - 手绘小山纹样按真实高程感铺在西部地形区，东部平原留白
  * - 点击标点：镜头平滑飞至该点（flyTo 补间动画）
  * - 点击空白省份：飞至该省中心（china.js 自带 centroid）
- * - 顶面显示白色省份名 / 国名
- * - 已打卡目的地：金色光环 + 发光图标点亮
- * - 支持路线层（AI 规划：按 Day 分色连线 + 起点旗标）
+ * - 已打卡目的地：金色印章 + 光环点亮
  * 依赖：echarts 4.9 + data.js + core.js
  * ========================================================= */
 const CHARTS={};let mapMode='cn';
@@ -28,22 +27,24 @@ function loadECharts(cb){
     })();
   })();
 }
-const GEO_PAL=['#f6d186','#9fc5e8','#b7e0b2','#f2b8c6','#c9b2e8','#a2ded8','#f0c890','#8fbfe0','#e8d9a0','#b0d0a8'];
+/* 手帐风配色：米黄纸张 + 低饱和的莫兰迪色块，和站点深色底 / 金色主色能共存 */
+const GEO_PAL=['#e8d5b7','#cfe0d8','#f0d8c8','#d8dcb8','#e6d6e8','#c8dce8','#f2e0b8','#d4c8b0','#cfe4d4','#e8ccc8'];
+/* 手帐风的纸面底色 */
+const PAPER={bg:'#f7f1e3',land:'#efe4cd',line:'#c9b79a',ink:'#6b5c47'};
 function hexShade(hex,amt){
   const n=parseInt(hex.slice(1),16);let r=n>>16,g=(n>>8)&255,b=n&255;
   const t=amt<0?0:255,p=Math.abs(amt);
   r=Math.round(r+(t-r)*p);g=Math.round(g+(t-g)*p);b=Math.round(b+(t-b)*p);
   return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
 }
+/* 单层平面着色：每个省一个纯色块（不用逐省渐变，重绘成本从 34 个 gradient 降到 34 个颜色） */
 function regionColors(map){
   try{
     const feats=echarts.getMap(map).geoJson.features;
     return feats.map(f=>{
       const n=f.properties.name||'';let h=0;for(let i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0;
       const base=GEO_PAL[h%GEO_PAL.length];
-      return {name:n,itemStyle:{areaColor:{type:'linear',x:0,y:0,x2:0,y2:1,
-        colorStops:[{offset:0,color:hexShade(base,.3)},{offset:.55,color:base},{offset:1,color:hexShade(base,-.24)}]},
-        borderColor:'rgba(255,255,255,.5)',borderWidth:1}};
+      return {name:n,itemStyle:{areaColor:base}};
     });
   }catch(e){return []}
 }
@@ -84,38 +85,113 @@ function lineSeries(list){
     lineStyle:{color:'#e7c76d',width:1.1,opacity:.32,curveness:.28},
     data:list.map(s=>({coords:[[116.40,39.90],[s.lng,s.lat]],id:s.id}))};
 }
+/* ================= 手帐风平面地图：单层 geo =================
+ * 旧实现用 4 个侧壁层 + 顶面叠出「纵深」，本质是平面图层上下位移（伪 3D），
+ * 且每次 georoam 要对 10 个 geo 同步 setOption，缩放必然卡。
+ * 现在只保留 1 层：纸面底色 + 莫兰迪色块 + 虚线省界 + 手写体地名。 */
 function baseGeo(map){
-  return {map:map,roam:'scale',scaleLimit:{min:.8,max:8},   /* 仅滚轮缩放，禁拖拽平移 */
+  return {map:map,roam:'scale',scaleLimit:{min:.8,max:8},
     zoom:map==='china'?1.18:1.06,center:map==='china'?[104.5,36.5]:[8,26],
     layoutCenter:['50%','50%'],layoutSize:'88%'};
 }
-/* 真 3D：4 层侧壁由深到浅向下挤出 + 顶面白色地名标注 */
 function geoLayers(map,opts){
   opts=opts||{};
-  map=map==='cn'?'china':map;   /* ECharts 注册名：china.js → 'china'，world.js → 'world' */
-  const top=baseGeo(map);
-  top.regions=regionColors(map);
-  top.itemStyle={areaColor:'rgba(126,146,200,.12)',borderColor:'rgba(255,255,255,.55)',borderWidth:1,shadowColor:'rgba(0,0,0,.4)',shadowBlur:12,shadowOffsetY:6};
-  top.emphasis={label:{show:false},itemStyle:{areaColor:'rgba(255,220,130,.45)'}};
-  /* 白色省份名 / 国名（用户需求：地图上要能看清「新疆」「山西」等） */
-  top.label={show:opts.labelShow!==false,color:'#ffffff',fontWeight:600,
-    fontSize:map==='china'?10:8,opacity:.92,
-    textBorderColor:'rgba(8,14,28,.78)',textBorderWidth:2,
-    padding:[2,4],textShadowColor:'rgba(0,0,0,.55)',textShadowBlur:4};
-  const SIDES=[{y:52.9,c:'#0c1424'},{y:52.2,c:'#111d36'},{y:51.5,c:'#182747'},{y:50.8,c:'#203154'}];
-  const arr=SIDES.map(s=>{
-    const g=JSON.parse(JSON.stringify(top));
-    g.regions=[];g.silent=true;g.emphasis={label:{show:false}};g.label={show:false};
-    g.layoutCenter=['50%',s.y+'%'];
-    g.itemStyle={areaColor:s.c,borderColor:'rgba(0,0,0,.4)',borderWidth:1,shadowColor:'rgba(0,0,0,.5)',shadowBlur:18,shadowOffsetY:12};
-    return g;
-  });
-  arr.push(top);return arr;
+  map=map==='cn'?'china':map;
+  const g=baseGeo(map);
+  g.regions=regionColors(map);
+  g.itemStyle={
+    areaColor:PAPER.land,
+    borderColor:'rgba(140,118,88,.62)',
+    borderWidth:1,
+    borderType:'dashed',
+    shadowColor:'rgba(120,98,70,.20)',
+    shadowBlur:10,
+    shadowOffsetY:3
+  };
+  g.emphasis={label:{show:false},itemStyle:{areaColor:'#f7e6b8'}};
+  /* 省份名：手写感的棕色，带纸白描边，像贴在手帐上的标签 */
+  g.label={show:opts.labelShow!==false,color:PAPER.ink,fontWeight:600,
+    fontFamily:'"Kaiti SC","STKaiti",KaiTi,"Songti SC",serif',
+    fontSize:map==='china'?10.5:8.5,opacity:.95,
+    textBorderColor:'rgba(255,252,244,.92)',textBorderWidth:2.5};
+  return [g];
 }
-/* ================= 镜头飞行（五层同步补间） ================= */
+/* ---- 手绘小山：用 geo 坐标系上的 scatter 铺点，按「西部多山、东部平原」分布 ----
+ * 参考真实地形：青藏 / 新疆 / 四川西部 / 云贵为山区，华北平原、长江中下游留白。
+ * 每个点是 SVG 小三角山，带雪顶和手绘抖动感。 */
+const MOUNTAIN_BELTS=[
+  /* [经度, 纬度, 半径(度), 数量, 类型]  类型: snow=雪山  hill=丘陵 */
+  [ 98.0, 33.5, 8.5, 26,'snow'],   /* 青藏高原 */
+  [ 88.0, 41.5, 6.0, 12,'snow'],   /* 天山 */
+  [102.5, 31.0, 4.2, 12,'snow'],   /* 川西雪山 */
+  [103.0, 26.5, 3.6, 10,'hill'],   /* 云贵高原 */
+  [111.5, 24.8, 2.6,  7,'hill'],   /* 南岭 */
+  [113.5, 37.5, 2.2,  6,'hill'],   /* 太行山 */
+  [107.5, 34.2, 2.4,  6,'hill'],   /* 秦岭 */
+  [127.5, 42.5, 3.0,  5,'hill']    /* 长白山地 */
+];
+const MT_SVG_SNOW='<svg xmlns="http://www.w3.org/2000/svg" width="40" height="34">'
+ +'<path d="M20 3 L34 30 L6 30 Z" fill="#d9c9ac" stroke="#a8906e" stroke-width="1.4" stroke-linejoin="round"/>'
+ +'<path d="M20 3 L25.5 14 L22.5 12 L19.5 15.5 L16 12.5 L14.5 14 Z" fill="#fdfaf2" stroke="#a8906e" stroke-width=".8" stroke-linejoin="round"/>'
+ +'</svg>';
+const MT_SVG_HILL='<svg xmlns="http://www.w3.org/2000/svg" width="34" height="26">'
+ +'<path d="M17 4 C22 4 30 20 30 22 L4 22 C4 20 12 4 17 4 Z" fill="#cdd9bd" stroke="#9aa886" stroke-width="1.3" stroke-linejoin="round"/>'
+ +'</svg>';
+function mtIcon(kind){
+  return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent(kind==='snow'?MT_SVG_SNOW:MT_SVG_HILL);
+}
+/* 伪随机（固定种子，保证每次渲染山的位置一样，不会刷新就换山） */
+function mtRand(seed){let s=seed>>>0;return ()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296}}
+function mountainData(){
+  const out=[];
+  let seed=20261101;
+  MOUNTAIN_BELTS.forEach(([lng,lat,r,cnt,kind])=>{
+    const rnd=mtRand(seed+=7919);
+    for(let i=0;i<cnt;i++){
+      /* 极坐标撒点 + 向内偏置，避免均匀铺满显得机械 */
+      const a=rnd()*Math.PI*2, d=Math.sqrt(rnd())*r*.92;
+      const lng2=lng+Math.cos(a)*d*1.25, lat2=lat+Math.sin(a)*d*.82;
+      out.push({value:[+lng2.toFixed(3),+lat2.toFixed(3)],kind,
+        symbolSize:kind==='snow'?14+rnd()*12:10+rnd()*8});
+    }
+  });
+  return out;
+}
+function mountainSeries(){
+  const d=mountainData();
+  return [
+    {type:'scatter',coordinateSystem:'geo',zlevel:0,silent:true,
+      symbol:(v,p)=>mtIcon(p.data.kind),
+      symbolSize:(v,p)=>p.data.symbolSize,
+      itemStyle:{opacity:.52},
+      data:d.filter(x=>x.kind==='snow')},
+    {type:'scatter',coordinateSystem:'geo',zlevel:0,silent:true,
+      symbol:(v,p)=>mtIcon(p.data.kind),
+      symbolSize:(v,p)=>p.data.symbolSize,
+      itemStyle:{opacity:.45},
+      data:d.filter(x=>x.kind==='hill')}
+  ];
+}
+/* ---- 手帐装饰：云朵 / 太阳 / 罗盘，放在海域和空白处 ---- */
+const DECOR_SVG={
+  cloud:'<svg xmlns="http://www.w3.org/2000/svg" width="54" height="30"><path d="M12 24 C4 24 4 14 12 14 C12 6 24 4 27 12 C32 8 42 12 41 20 C47 20 47 24 41 24 Z" fill="#fdfaf2" stroke="#c9b79a" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  sun:'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="9" fill="#f3d98b" stroke="#d0b05e" stroke-width="1.3"/><g stroke="#d0b05e" stroke-width="1.4" stroke-linecap="round"><line x1="20" y1="2" x2="20" y2="7"/><line x1="20" y1="33" x2="20" y2="38"/><line x1="2" y1="20" x2="7" y2="20"/><line x1="33" y1="20" x2="38" y2="20"/><line x1="7" y1="7" x2="11" y2="11"/><line x1="29" y1="29" x2="33" y2="33"/><line x1="33" y1="7" x2="29" y2="11"/><line x1="11" y1="29" x2="7" y2="33"/></g></svg>'
+};
+function decorIcon(k){return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent(DECOR_SVG[k])}
+function decorSeries(mode){
+  if(mode==='cn'){
+    return [{type:'scatter',coordinateSystem:'geo',zlevel:0,silent:true,symbolSize:30,
+      symbol:()=>decorIcon('cloud'),itemStyle:{opacity:.55},
+      data:[{value:[122.5,29.5]},{value:[88.0,45.5]},{value:[127.0,44.0]}]}];
+  }
+  return [{type:'scatter',coordinateSystem:'geo',zlevel:0,silent:true,symbolSize:24,
+    symbol:()=>decorIcon('cloud'),itemStyle:{opacity:.5},
+    data:[{value:[-30,45]},{value:[10,52]},{value:[105,10]},{value:[-45,-20]}]}];
+}
+/* ================= 镜头飞行（单层 geo 补间） ================= */
 function flyTo(chart,target,targetZoom,dur){
   dur=dur||950;
-  const o=chart.getOption(),top=o.geo&&o.geo[o.geo.length-1];if(!top)return;
+  const o=chart.getOption(),top=o.geo&&o.geo[0];if(!top)return;
   const fromC=(top.center&&top.center[0]!=null)?top.center.slice():[104.5,36.5];
   const fromZ=top.zoom||1;
   const t0=performance.now();
@@ -124,15 +200,15 @@ function flyTo(chart,target,targetZoom,dur){
     const k=Math.min(1,(now-t0)/dur),e=ease(k);
     const c=[fromC[0]+(target[0]-fromC[0])*e,fromC[1]+(target[1]-fromC[1])*e];
     const z=fromZ+(targetZoom-fromZ)*e;
-    chart.setOption({geo:o.geo.map(()=>({center:c,zoom:z}))},{notMerge:false,lazyUpdate:true});
+    chart.setOption({geo:{center:c,zoom:z}},{notMerge:false,lazyUpdate:true,silent:true});
     if(k<1)requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }
 function syncMapGeo(c){
-  if(!c)return;const o=c.getOption(),t=o.geo&&o.geo[o.geo.length-1];
+  if(!c)return;const o=c.getOption(),t=o.geo&&o.geo[0];
   c.resize();
-  if(t&&t.zoom!=null)c.setOption({geo:o.geo.map(()=>({zoom:t.zoom,center:t.center}))});
+  if(t&&t.zoom!=null)c.setOption({geo:{zoom:t.zoom,center:t.center}});
 }
 WGO.onResize(()=>Object.values(CHARTS).forEach(syncMapGeo));
 window.addEventListener('resize',()=>{clearTimeout(window.__winRzT);window.__winRzT=setTimeout(()=>Object.values(CHARTS).forEach(syncMapGeo),150)});
@@ -143,17 +219,19 @@ function createWanderMap(elId,mode,opts){
   opts=opts||{};
   const el=document.getElementById(elId);if(!el||!window.echarts)return null;
   const c=echarts.init(el);
-  const series=[];
+  /* 装饰层（小山 / 云朵）垫在最底，标点与航线在上 */
+  const series=[...(mode==='cn'||mode==='china'?mountainSeries():[]),...decorSeries(mode)];
   if(opts.flights)series.push(lineSeries(opts.flights===true?(opts.spots||[]):opts.flights));
   if(opts.route)series.push(...routeSeries(opts.route));
   if(opts.spots){series.push(spotSeries(opts.spots));series.push(iconSeries(opts.spots,opts.litIds));series.push(litSeries(opts.spots,opts.litIds))}
-  c.setOption({backgroundColor:'transparent',
-    tooltip:{trigger:'item',backgroundColor:'rgba(15,23,42,.92)',borderColor:'rgba(231,199,109,.4)',textStyle:{color:'#fff',fontSize:12},
+  c.setOption({backgroundColor:PAPER.bg,
+    tooltip:{trigger:'item',backgroundColor:'rgba(250,245,233,.97)',borderColor:'rgba(201,183,154,.9)',textStyle:{color:'#6b5c47',fontSize:12},
+      extraCssText:'box-shadow:0 8px 24px rgba(120,98,70,.24);border-radius:10px;',
       formatter:p=>p.data&&p.data.id?('<b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情'):(p.name||'')},
     geo:geoLayers(mode,opts),series});
   c.on('click',p=>{
     if(p.data&&p.data.id){ /* 标点：详情 + 镜头飞过去 */
-      flyTo(c,[p.data.value[0],p.data.value[1]],Math.max(c.getOption().geo[c.getOption().geo.length-1].zoom||1,2.6));
+      flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
       if(opts.onSpot)opts.onSpot(p.data.id);
     }else if(p.componentType==='geo'&&p.name){ /* 空白省份：飞到省中心 */
       try{
@@ -163,8 +241,8 @@ function createWanderMap(elId,mode,opts){
       }catch(e){}
     }
   });
-  c.on('georoam',()=>{const o=c.getOption(),t=o.geo&&o.geo[o.geo.length-1];if(!t)return;
-    c.setOption({geo:o.geo.map(()=>({zoom:t.zoom,center:t.center}))})});
+  /* 单层 geo 下 ECharts 自己维护 zoom / center，无需在 georoam 里再 setOption。
+     旧代码每次滚轮都同步重绘全部 geo 层，是缩放卡顿的主因。 */
   c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06}};
   return c;
 }
@@ -200,7 +278,7 @@ function routeSeries(route){
   return series;
 }
 function zoomBy(chart,factor){
-  if(!chart)return;const o=chart.getOption(),t=o.geo&&o.geo[o.geo.length-1];if(!t)return;
+  if(!chart)return;const o=chart.getOption(),t=o.geo&&o.geo[0];if(!t)return;
   const z=Math.min(8,Math.max(.8,(t.zoom||1)*factor));
   const c=chart.__wgo&&chart.__wgo.default?chart.__wgo.default.center:[104.5,36.5];
   flyTo(chart,t.center&&t.center[0]!=null?t.center:c,z,450);

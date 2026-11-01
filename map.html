@@ -12,7 +12,7 @@
 
 <section class="sec page-hero"><div class="wrap">
   <div class="kick">EXPLORE THE MAP</div>
-  <h2>实景地图 · 景点标点 · 你的点亮足迹</h2></div></section>
+  <h2>手帐风地图 · 景点标点 · 你的点亮足迹</h2></div></section>
 
 <section class="sec" style="padding-top:10px"><div class="wrap">
   <div class="map-card">
@@ -21,7 +21,7 @@
         <button class="on" data-m="cn">🇨🇳 中国地图</button>
         <button data-m="world">🌍 世界地图 · 环球航线</button>
       </div>
-      <div class="map-legend"><span><i class="lg-red"></i>热门打卡地</span><span><i class="lg-gold"></i>✨ 已点亮（我打卡过）</span><span><i class="lg-line"></i>飞行航线</span></div>
+      <div class="map-legend"><span><i class="lg-red"></i>热门打卡地</span><span><i class="lg-gold"></i>✨ 已点亮（我打卡过）</span><span><i class="lg-line"></i>飞行航线</span><span><i class="lg-mt"></i>手绘山脉</span></div>
     </div>
     <div class="map-toolbar">
       <button class="tb" onclick="resetView(cur)">🎯 重置视角</button>
@@ -37,9 +37,9 @@
       <span><i class="rdot" style="background:#ff6b57"></i>红点 = 热门打卡地</span>
       <span><i class="rdot" style="background:#ffd76a"></i>金环 = 已点亮目的地</span>
       <span><i class="rdot" style="background:#7ea6d9"></i>白字 = 省份 / 国家名（点击名字也能飞过去）</span>
-      <span>🖱 滚轮缩放 · 已禁用拖拽平移（避免镜头漂移）</span>
+      <span>🖱 滚轮缩放 · 点击省份或标点飞过去</span>
     </div>
-    <div class="map-note">📍 坐标获取方式：爬虫抓取公开地理数据 + 高德/百度<b>坐标拾取器</b>（lbs.amap.com/tools/picker）校准 · 本原型地图数据来自 ECharts 在线资源</div>
+    <div class="map-note">📍 坐标获取方式：爬虫抓取公开地理数据 + 高德/百度<b>坐标拾取器</b>（lbs.amap.com/tools/picker）校准 · 地图底图来自 ECharts 在线资源 · <b>手帐风平面</b>绘制，小山纹样按真实地形分布</div>
   </div>
 </div></section>
 
@@ -47,7 +47,7 @@
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1120"></script>
 <script src="js/core.js?v=1126"></script>
-<script src="js/map.js?v=1120"></script>
+<script src="js/map.js?v=1130"></script>
 <script>
 let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
