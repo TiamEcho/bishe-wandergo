@@ -21,6 +21,7 @@ const WGOAPI=(()=>{
   const RENDER_BACKEND='https://wandergo-backend-6i1z.onrender.com';
   const _auto=_isLocal?'http://localhost:8080'
     :_isGithubIO?RENDER_BACKEND
+    :/\.onrender\.com$/i.test(_host)?RENDER_BACKEND
     :(location.protocol==='https:'?location.origin:location.protocol+'//'+_host+':8080');
   const BASE=localStorage.getItem('wgo_api')||_auto;
   let backendUp=null; // null=未知 true=在线 false=离线
