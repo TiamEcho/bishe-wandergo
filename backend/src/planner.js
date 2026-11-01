@@ -130,4 +130,39 @@ function fanCluster(spots, center, dayCount) {
   return buckets.map(b => b.sort((x, y) => x.d - y.d).map(x => x.s));
 }
 
-module.exports = { dist, bearing, deduplicateSpots, fanCluster };
+/* 连续分块：按方位角排序后，从「最长的角度空档」处切开，
+ * 再按顺序切成 n 段，每段内部由近到远。
+ * 用于海外城市：景点是人工挑选的离散点，方位角分布不像国内那样成片，
+ * 均分扇形会出现某天景点全在 40km 外、另一天只剩 2 个的情况。 */
+function ringSplit(spots, center, dayCount) {
+  const n = Math.max(1, dayCount | 0);
+  const list = spots.filter(s => s && s.lng != null && s.lat != null)
+    .map(s => ({ s, ang: bearing(center, s), d: dist(center, s) }))
+    .sort((a, b) => a.ang - b.ang);
+
+  if (!list.length) return Array.from({ length: n }, () => []);
+  if (n === 1 || list.length <= n) {
+    return Array.from({ length: n }, (_, i) => (list[i] ? [list[i].s] : []));
+  }
+
+  /* 找最大角距，从那里断开，避免同一片区被拆到首尾两天 */
+  let cut = 0, gap = -1;
+  for (let i = 0; i < list.length; i++) {
+    const next = i === list.length - 1 ? list[0].ang + 360 : list[i + 1].ang;
+    if (next - list[i].ang > gap) { gap = next - list[i].ang; cut = (i + 1) % list.length; }
+  }
+  const ring = list.slice(cut).concat(list.slice(0, cut));
+
+  const base = Math.floor(ring.length / n);
+  const extra = ring.length % n;
+  const out = [];
+  let p = 0;
+  for (let i = 0; i < n; i++) {
+    const size = base + (i < extra ? 1 : 0);
+    out.push(ring.slice(p, p + size).sort((x, y) => x.d - y.d).map(x => x.s));
+    p += size;
+  }
+  return out;
+}
+
+module.exports = { dist, bearing, deduplicateSpots, fanCluster, ringSplit };

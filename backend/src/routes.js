@@ -308,9 +308,10 @@ router.post('/analyze-video', async (req, res) => {
   }
 });
 
-/* ⑦ POST /api/plan/route —— 景点去重 + 扇形分区 + 周边餐饮住宿
+/* ⑦ POST /api/plan/route —— 景点收集 + 分区 + 周边餐饮住宿
  * body: { city:string, days:number, want?:number }
- * 流程：AI 出 10-12 个景点 → 去重 → 按方位角扇形分天 → 每天搜周边餐厅 / 住宿 */
+ * 国内：高德检索 + AI 建议 → 扇形分区
+ * 海外：站内精编库 + AI 名单 → 按距离连续分块 */
 router.post('/plan/route', async (req, res) => {
   try {
     const b = req.body || {};

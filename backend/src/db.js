@@ -227,15 +227,39 @@ const CHECKIN_COLS = `(${impl.dialect === 'postgres' ? '"user"' : 'user'},city,s
 const SPOTS = readJson(path.join(ROOT, 'js', 'spots_crawl.json')) || [];
 const CRAWL = readJson(path.join(ROOT, 'js', 'posts_crawl.json')) || { posts: [] };
 
-/* 再读一次 data.js 的 33 个精编景点（正则取 id/n/city/tag/desc），补全「景点名 → 城市」别名与打卡种子 */
+/* 再读一次 data.js 的精编景点，补全「景点名 → 城市」别名与打卡种子。
+ * 必须解析坐标：plan.js 的 poolOfCity 会过滤掉没有 lng 的条目，
+ * 之前只取 id/n/city/tag/desc，导致东京、京都这些海外精编景点全部被丢弃 */
 const DATA_SPOTS = (() => {
   try {
     const txt = fs.readFileSync(path.join(ROOT, 'js', 'data.js'), 'utf-8');
-    const re = /\{id:'([^']+)',n:'([^']+)',city:'([^']+)'[^\n]*?tag:'([^']*)',desc:'([^']*)'/g;
+    const re = /\{id:'([^']+)',n:'([^']+)',city:'([^']+)'(?:,rg:'([^']*)')?[^\n]*?lng:(-?[\d.]+),lat:(-?[\d.]+)[^\n]*?tag:'([^']*)',desc:'([^']*)'/g;
     const out = [];
     let m;
     while ((m = re.exec(txt)) !== null) {
-      out.push({ spot_id: m[1], name: m[2], city: m[3].split('·')[0].trim(), tags: m[4], desc: m[5] });
+      /* 同一行里 addr / hrs / price / rating 的顺序固定，单独补取，缺了不影响主字段 */
+      const line = m[0];
+      const grab = key => {
+        const r = new RegExp(`,${key}:'([^']*)'`).exec(line);
+        return r ? r[1] : '';
+      };
+      out.push({
+        spot_id: m[1],
+        name: m[2],
+        city: m[3].split('·')[0].trim(),
+        lng: Number(m[5]),
+        lat: Number(m[6]),
+        address: grab('addr'),
+        hours: grab('hrs'),
+        price: grab('price'),
+        traffic: grab('traf'),
+        rating: Number(grab('rating')) || 0,
+        region: m[4] || 'cn',
+        tags: m[7],
+        desc: m[8],
+        geo_src: 'manual',
+        src: 'data.js 精编'
+      });
     }
     return out;
   } catch { return []; }
