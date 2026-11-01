@@ -140,8 +140,9 @@
 .ui-spotcard b{display:block;font-size:9.5px;color:#e8eef7}
 .ui-spotcard span{font-size:8.5px;color:#8fa2b8}
 .fsc-legend{font-size:11px;color:var(--muted);text-align:center}
-.feat-strip{display:flex;gap:6px;padding:9px 14px;border-top:1px solid rgba(255,255,255,.08);flex-wrap:wrap;background:rgba(0,0,0,.2)}
-.feat-strip span{font-size:11px;color:#c7d1df;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);padding:3px 10px;border-radius:12px}
+/* 原先这里有一条 .feat-strip{display:flex} 的旧样式，
+   会在 style.css 的网格布局之后加载并覆盖掉它，
+   导致精选 4K 卡片按内容宽度排列、右侧永远空一截。已删除，统一走 style.css 的 grid。 */
 
 @media(max-width:860px){
   .feat-layout{grid-template-columns:1fr}

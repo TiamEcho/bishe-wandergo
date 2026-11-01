@@ -86,7 +86,14 @@ function submitCk(e){
     imgs:ckImgs.filter(i=>i.type==='img').map(i=>i.url).slice(0,4),hasVideo:ckImgs.some(i=>i.type==='video')};
   const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');albums.unshift(rec);localStorage.setItem('fmw_albums',JSON.stringify(albums));
   const posts=JSON.parse(localStorage.getItem('fmw_posts')||'[]');
-  posts.unshift({id:rec.id,u:user.nick,c:'#c98a2e',loc:spot.city+' · '+spot.n,rg:spot.rg,type:ckType==='video'?'video':ckType==='plog'?'plog':'img',time:'刚刚',txt:rec.text+'（'+mood+'）',likes:0,cmts:0,imgs:[spot.id],bgm:bgm==='none'?null:bgm,plat:'go'});
+  posts.unshift({id:rec.id,u:user.nick,c:'#c98a2e',loc:spot.city+' · '+spot.n,rg:spot.rg,type:ckType==='video'?'video':ckType==='plog'?'plog':'img',time:'刚刚',txt:rec.text+'（'+mood+'）',likes:0,cmts:0,
+    /* imgs 必须是可直接访问的图片地址：这里存景点 id 会变成 <img src="lib_xxx">
+       直接裂图，所以用户没上传图时用景点图库生成一张兜底封面 */
+    imgs:[rec.imgs[0]||IMG(spot.id,'landscape_4_3')],
+    /* 用户上传的图片直接存 dataURL（downscale 已压到 760px / 0.72），
+       卡片第一张用真实照片；userImgs 保留全部上传图给详情页画廊 */
+    img:rec.imgs[0]||'',userImgs:rec.imgs.slice(0,4),spotId:spot.id,
+    bgm:bgm==='none'?null:bgm,plat:'go',real:true,createdAt:Date.now()});
   localStorage.setItem('fmw_posts',JSON.stringify(posts));
   /* 上报后端（不阻塞） */
   WGOAPI.pushCheckin({nick:user.nick,spot:spot.n,city:spot.city,date:rec.date,text:rec.text,total,mood});
@@ -99,7 +106,7 @@ function renderAlbums(){
   const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
   $('#albumsGrid').innerHTML=albums.length?albums.map(a=>`<div class="album-card" onclick='openAlbumById("${a.id}")'>
     <span class="tape"></span>
-    <img src="${a.imgs[0]||IMG(P.gugong)}">
+    <img src="${a.imgs[0]||IMG(a.spotId||a.dest)}">
     <div class="ab"><h5>${a.dest}</h5><p>${a.date} · ${a.city}</p><div class="am"><span>💰 <b>${fmt(a.total)}</b></span><span>${a.mood}</span></div></div></div>`).join('')
   :'<div class="empty-tip">还没有纪念册 · 提交一次打卡就会自动生成第一页 ✨</div>';
 }
@@ -108,9 +115,10 @@ function openAlbum(a){
   const costsHtml=a.costs.map(c=>`<div class="li"><span>${c.k}</span><span>${fmt(c.v)}</span></div>`).join('');
   const photos=(a.imgs.length?a.imgs:[IMG(P.gugong),IMG(P.erhai)]).slice(0,4);
   const spot=SPOTS.find(s=>s.n===a.dest);
+  const coverImg=a.imgs[0]||IMG(spot?spot.id:a.dest,'landscape_16_9');
   openModal(`<div class="album-modal">
     <div class="album-inner"><span class="tape"></span>
-      <div class="album-cover"><img src="${a.imgs[0]||IMG(P.gugong,'landscape_16_9')}"><div class="cap">🪄 ${a.dest} · ${a.date} · ${a.city}</div></div>
+      <div class="album-cover"><img src="${coverImg}" ><div class="cap">🪄 ${a.dest} · ${a.date} · ${a.city}</div></div>
       <div class="album-route"><span>🏠 家</span><span class="fly">✈️ - - - - -</span><span>📍 ${a.dest}</span><span class="fly">- - - - ✈️</span><span>🏠 带着故事回家</span></div>
       <div class="album-quote">“${a.text}” —— ${a.mood}</div>
       <div class="album-photos">${photos.map(u=>`<img src="${u}">`).join('')}</div>

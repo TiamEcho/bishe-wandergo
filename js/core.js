@@ -418,9 +418,10 @@ function openViewer(img,cap){
   if(!v){v=document.createElement('div');v.id='ivw';v.className='ivw';document.body.appendChild(v)}
   v.innerHTML=`<div class="ivw-box" id="ivwBox">
     <button class="ivw-x" onclick="closeViewer()">✕</button>
-    <img src="${img.src}" alt="">
+    <img class="ivw-zoom" src="${img.src}" alt="" draggable="true" title="滚轮缩放 · 拖拽移动 · 点击切换全屏">
     <div class="ivw-bar">
       <span class="ivw-cap">${cap||''}</span>
+      <button data-sz="fit">原图</button>
       <button data-sz="half">半屏</button>
       <button data-sz="mid" class="on">中屏</button>
       <button data-sz="full">全屏</button>
@@ -429,10 +430,34 @@ function openViewer(img,cap){
   v.classList.add('show');
   const box=document.getElementById('ivwBox');
   box.style.setProperty('--ivw-w',IVW_W.mid);
+  /* 「原图」= 按图片自然尺寸放开最大宽高，可 1:1 看细节 */
+  function sizeMode(sz){
+    box.classList.toggle('fit',sz==='fit');
+  }
   v.querySelectorAll('[data-sz]').forEach(b=>b.onclick=()=>{
     v.querySelectorAll('[data-sz]').forEach(x=>x.classList.toggle('on',x===b));
-    box.style.setProperty('--ivw-w',IVW_W[b.dataset.sz]);
+    box.style.setProperty('--ivw-w',IVW_W[b.dataset.sz]||IVW_W.mid);
+    sizeMode(b.dataset.sz);
   });
+  /* 滚轮缩放（以指针为中心）+ 拖拽平移，方便看 4K 图的细节 */
+  const zi=box.querySelector('.ivw-zoom');
+  let zs=1,tx=0,ty=0;
+  const apply=()=>{zi.style.transform=`translate(${tx}px,${ty}px) scale(${zs})`;zi.style.cursor=zs>1?'grab':'zoom-in'};
+  zi.style.transformOrigin='0 0';
+  zi.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const r=zi.getBoundingClientRect();
+    const px=(e.clientX-r.left)/zs,py=(e.clientY-r.top)/zs;
+    const nz=Math.min(5,Math.max(1,zs*(e.deltaY<0?1.15:1/1.15)));
+    tx-=px*(nz-zs);ty-=py*(nz-zs);zs=nz;
+    if(zs===1){tx=0;ty=0}
+    apply();
+  },{passive:false});
+  let drag=null;
+  zi.addEventListener('pointerdown',e=>{if(zs<=1)return;drag={x:e.clientX-tx,y:e.clientY-ty};zi.setPointerCapture(e.pointerId);zi.style.cursor='grabbing'});
+  zi.addEventListener('pointermove',e=>{if(!drag)return;tx=e.clientX-drag.x;ty=e.clientY-drag.y;apply()});
+  zi.addEventListener('pointerup',()=>{drag=null;apply()});
+  zi.addEventListener('dblclick',()=>{if(zs>1){zs=1;tx=ty=0}else{zs=2.2;tx=0;ty=0}apply()});
   v.onclick=e=>{if(e.target===v)closeViewer()};
 }
 function closeViewer(){const v=document.getElementById('ivw');if(v){v.classList.remove('show');v.innerHTML=''}}
@@ -880,9 +905,14 @@ const __imgTried=new WeakMap();
 function imgFallback(el){
   const chain=__imgTried.get(el)||el.__chain||[];
   const i=(el.__chainIdx==null?-1:el.__chainIdx)+1;
-  if(i>=chain.length){el.classList.add('img-fail');return}
+  if(i>=chain.length){
+    /* 降级链走完还没图：用 16:9 兜底一次性重取（4:3 卡在瀑布流里会留空白） */
+    if(!el.__lastTry){el.__lastTry=1;el.__chainIdx=null;
+      el.src=IMGAPI+encodeURIComponent(IMGFALLBACK)+'&image_size='+(el.dataset.ratio||'landscape_16_9');return}
+    el.classList.add('img-fail');return
+  }
   el.__chainIdx=i;
-  el.src=IMGAPI+encodeURIComponent(chain[i])+'&image_size='+(el.dataset.size||'landscape_4_3')+'&r='+i;
+  el.src=IMGAPI+encodeURIComponent(chain[i])+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_4_3')+'&r='+i;
 }
 /* 占位图：宽高相等（实测 1832×1832，与 landscape / portrait 的正常出图都不同） */
 function imgIsPlaceholder(el){
@@ -896,6 +926,8 @@ function watchImg(el,key,size){
   const chain=typeof imgChain==='function'
     ? imgChain(key)
     : [key,IMGFALLBACK].filter(Boolean);
+  /* 自定义打卡没有景点 id，key 本身就是用户写的地名（可能中文）或一句英文提示词 */
+  if(chain.length===1&&chain[0]&&chain[0]!==IMGFALLBACK)chain.push(IMGFALLBACK);
   __imgTried.set(el,chain);
   if(size)el.dataset.size=size;
   el.addEventListener('error',()=>imgFallback(el));
@@ -916,7 +948,8 @@ function watchImgs(root){
       const m=(el.getAttribute('src')||'').match(/[?&]prompt=([^&]*)/);
       const base=m?decodeURIComponent(m[1]):'';
       if(base&&typeof imgChain==='function'){
-        const guess=imgChain(base);
+        /* 已经是英文提示词，按原文透传；中文的走拼音兜底 */
+        const guess=imgChain(/[\u4e00-\u9fa5]/.test(base)?base:{__raw:base});
         el.__watching=1;
         __imgTried.set(el,guess);
         el.addEventListener('error',()=>imgFallback(el));

@@ -5,6 +5,7 @@
  * ========================================================= */
 let srState={kw:'',form:'all',plat:'',rg:'',time:'all',sort:'new'};
 let srPool=[],srBundle=null,srPage=1,SR_PAGE=18;
+let srReady=null;   /* 离线池加载完成的 Promise，后端结果要等它回来再合并 */
 
 /* ---------- 后端接入（backend/ 里的 Express + SQLite） ----------
  * 只做增量：接口可用则用后端数据，不可用则完全沿用原有离线数据，页面结构不变。
@@ -23,8 +24,12 @@ async function srSearchApi(kw){
     const d=await r.json();
     if(!d||!Array.isArray(d.items)||!d.items.length)return null;
     srAi={city:d.city,entities:d.entities||[],stats:d.stats||{},engine:d.engine||'',ai:d.ai||null};
-    const local=srPool.filter(p=>p._local);           // 保留本地发布内容
-    srPool=[...d.items.map(srNormalizeApi),...local];
+    /* 这里是「合并」而不是「替换」：后端只抓到 B 站/站内帖，
+       一替换就会把离线包里的 小红书 / Instagram / YouTube 全删掉，
+       表现就是搜什么平台都只剩几条、国外平台一条都没有。按 id 去重，后端优先。 */
+    const seen=new Set(d.items.map(x=>String(x.id)));
+    const keep=srPool.filter(p=>!seen.has(String(p.id)));
+    srPool=[...d.items.map(srNormalizeApi),...keep];
     srPage=1;srPaint();
     return d;
   }catch(e){return null}
@@ -63,7 +68,9 @@ function srFallbackCover(p){
             (typeof SPOTS!=='undefined'?SPOTS:[]).find(x=>x.city&&probe.includes(x.city));
     id=s?s.id:'erhai';
   }
-  return (typeof P!=='undefined'&&P[id]&&typeof IMG==='function')?IMG(P[id],'landscape_4_3'):'';
+  /* IMG 现在接受景点 id / 中文名，内部按「英文地名 + 场景」生成提示词；
+     旧写法 IMG(P[id]) 在 id 不在 P 里时会退化成 prompt=undefined */
+  return typeof IMG==='function'?IMG(id,'landscape_4_3'):'';
 }
 /* 地点收录：关键词命中景点库 / 全国地点库时单独列一排，避免「巴黎」这种没有帖子就显示无结果 */
 function srPlaceHits(q){
@@ -87,7 +94,7 @@ function srFmtTime(p){
   return (d.getMonth()+1)+'月'+d.getDate()+'日';
 }
 function srPlatLabel(p){
-  const m={bilibili:'📺 B站',douyin:'🎵 抖音',xhs:'📕 小红书',kuaishou:'⚡ 快手',ins:'📸 IG',yt:'▶️ YouTube',go:'🧭 站内'};
+  const m={bilibili:'📺 B站',bili:'📺 B站',douyin:'🎵 抖音',xhs:'📕 小红书',xiaohongshu:'📕 小红书',kuaishou:'⚡ 快手',ins:'📸 IG',instagram:'📸 IG',yt:'▶️ YouTube',youtube:'▶️ YouTube',go:'🧭 站内',web:'🧭 站内'};
   return m[p.source||p.plat]||'🧭 站内';
 }
 function srTypeOf(p){
@@ -107,8 +114,8 @@ function srNormalizeApi(p){
     cover:p.cover||'',videoUrl:p.videoUrl||'',sourceUrl:p.sourceUrl||'',
     nick:p.nick||p.u||'',location:p.location||p.loc||'',topics:p.topics||'',
     likeCount:+p.likeCount||+p.likes||0,commentCount:+p.commentCount||+p.cmts||0,
-    createdAt:p.createdAt||'',source:p.source||'go',type:p.type||'post',bgm:p.bgm||'',
-    srcId:p.srcId||''
+    createdAt:p.createdAt||'',source:p.source||p.client||'go',type:p.type||'post',bgm:p.bgm||'',
+    srcId:p.srcId||'',spotId:p.spotId||''
   };
 }
 async function srLoad(){
@@ -118,17 +125,26 @@ async function srLoad(){
     const rows=(r.data&&(r.data.rows||r.data.data||r.data.list))||[];
     rows.forEach(p=>out.push(srNormalizeApi(p)));
   }catch(e){}
-  if(!out.length&&!srBundle){
+  /* 离线包始终并入（去重）：后端可能只入库了 B 站，抖音 / 小红书 / IG / YouTube
+     的抓取结果只在数据包里，否则这些平台永远搜不到 */
+  if(!srBundle){
     try{
-      const r=await fetch('js/posts_crawl.json?v=1118');srBundle=await r.json();
-      (srBundle.posts||[]).forEach(p=>out.push(srNormalizeApi(p)));
+      const r=await fetch('js/posts_crawl.json?v=1125');
+      if(r&&r.ok)srBundle=await r.json();
     }catch(e){}
+  }
+  if(srBundle){
+    const seen=new Set(out.map(x=>String(x.id)));
+    (srBundle.posts||[]).forEach(p=>{
+      const n=srNormalizeApi(p);
+      if(!seen.has(n.id)){seen.add(n.id);out.push(n)}
+    });
   }
   /* 站内本地发布内容也纳入搜索 */
   try{
     JSON.parse(localStorage.getItem('fmw_posts')||'[]').forEach(p=>out.push({
-      id:p.id,title:p.txt||'',content:p.txt||'',txt:p.txt||'',cover:'',nick:p.u,
-      location:p.loc||'',topics:'',likeCount:p.likes||0,commentCount:p.cmts||0,
+      id:p.id,title:p.txt||'',content:p.txt||'',txt:p.txt||'',cover:p.img||(p.imgs&&p.imgs[0])||'',nick:p.u,
+      location:p.loc||'',topics:'',likeCount:p.likes||0,commentCount:p.cmts||0,spotId:p.spotId||'',
       createdAt:'',source:'go',type:p.type==='video'?'video':p.type==='plog'?'plog':'post',_ts:Date.now()-1000,bgm:p.bgm,_local:true
     }));
   }catch(e){}
@@ -173,7 +189,7 @@ function srCard(p){
   const badge=t==='video'?'🎬 视频':t==='plog'?'📷 图文':'📝 攻略';
   const style=fb?` style="background-image:url('${fb}');background-size:cover;background-position:center"`:'';
   const coverHtml=cov
-    ?`<img src="${cov}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+    ?`<img src="${cov}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`
     :'';
   const tags=(p.topics||'').split(',').filter(Boolean).slice(0,3).map(x=>`<span>#${srEsc(x)}</span>`).join('')
     +(p.location?`<span>📍${srEsc(p.location)}</span>`:'');
@@ -250,6 +266,8 @@ function srPaint(){
   grid.innerHTML=show.length?show.map(srCard).join('')
     :`<div class="sr-empty-box">没有匹配的内容 😢<br><span>换个关键词，或把「平台 / 地区 / 时间」筛选放宽试试；也可以直接去 <a href="ai.html?dest=${encodeURIComponent(srState.kw)}">AI 规划</a> 生成一份行程</span></div>`;
   if(more)more.style.display=rows.length>show.length?'inline-flex':'none';
+  /* 图片兜底：外站封面挂了就用本地景点图顶上，不留白 */
+  if(typeof watchImgs==='function')watchImgs(grid);
 }
 function srOpen(id){
   const p=srPool.find(x=>String(x.id)===String(id));
@@ -275,7 +293,9 @@ function srSearch(kw){
   srState.kw=kw||'';srPage=1;srAi=null;
   history.replaceState(null,'',location.pathname+'?kw='+encodeURIComponent(srState.kw));
   srRenderTopics();srPaint();
-  srSearchApi(srState.kw);      // 有后端就用后端数据（打卡记录 + 攻略 + AI 实体）
+  /* 必须等离线池加载完再合并后端结果：早一点返回时 srPool 还是空的，
+     合并等于没合，小红书 / Instagram / YouTube 的内容会整批丢掉 */
+  Promise.resolve(srReady).then(()=>srSearchApi(srState.kw));
 }
 function srBind(){
   const inp=document.getElementById('srKw');
@@ -304,7 +324,8 @@ function srBind(){
 }
 document.addEventListener('DOMContentLoaded',async()=>{
   srRenderHots();srBind();
-  srPool=await srLoad();
+  srReady=srLoad().then(rows=>{srPool=rows;return rows});
+  srPool=await srReady;
   srRenderTopics();srPaint();
   srSearchApi(srState.kw);      // 首屏若带 ?kw= 也走一次后端搜索
 });

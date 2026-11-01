@@ -20,9 +20,11 @@ const TW = {
   },
   /* 封面兜底：爬虫帖有 cover，站内帖只有 spotId，就用景点图库里的图 */
   cover(p) {
-    if (p.cover) return p.cover;
-    if (p.spotId && typeof P !== 'undefined' && P[p.spotId]) return IMG(P[p.spotId]);
-    if (typeof P !== 'undefined' && P.erhai) return IMG(P.erhai);
+    const c = p.cover || p.img || (p.images && p.images[0]) || '';
+    if (/^(https?:|data:)/.test(c)) return c;
+    if (p.spotId) return IMG(p.spotId);
+    if (c) return IMG(c);
+    if (typeof P !== 'undefined' && P.erhai) return IMG('erhai');
     return '';
   },
   bgmName(code) {
@@ -72,7 +74,7 @@ let __twLocal = null;
 async function twLocalData() {
   if (__twLocal) return __twLocal;
   try {
-    const r = await fetch('js/posts_crawl.json?v=1120');
+    const r = await fetch('js/posts_crawl.json?v=1125');
     __twLocal = await r.json();
   } catch (e) { __twLocal = { topics: [], posts: [], comments: {} }; }
   return __twLocal;
@@ -86,16 +88,57 @@ function saveLocalCmt(id, cmt) {
   localStorage.setItem('fmw_pcmts', JSON.stringify(all));
 }
 
+/* ---------------- 站内发布帖读回（community.js 发布时写这里） ----------------
+ * 打卡攻略发布后只是 localStorage 里的一条记录，没有入库，
+ * 所以点开必然「帖子加载失败」。这里把本地数据包补成后端返回的同构结构。 */
+function localPostStruct(raw) {
+  const me = TW.me() || {};
+  return {
+    id: raw.id, title: raw.title || '', content: raw.text || raw.content || '',
+    cover: raw.cover || raw.img || '', images: raw.imgs || raw.images || [],
+    location: raw.loc || raw.spot || raw.city || '',
+    topics: raw.topic || '', type: raw.type || 'plog', client: 'go',
+    bgm: raw.bgm || '', nick: raw.nick || me.nick || '旅行者',
+    avatar: raw.avatar || '', createdAt: raw.at || raw.createdAt || Date.now(),
+    likeCount: 0, commentCount: 0, videoUrl: raw.video || '', spotId: raw.spotId || ''
+  };
+}
+function findLocalPost(id) {
+  /* ① 站内发布（含打卡攻略成册）走 fmw_posts  */
+  try {
+    const p = JSON.parse(localStorage.getItem('fmw_posts') || '[]').find(x => String(x.id) === String(id));
+    if (p) return localPostStruct(p);
+  } catch (e) { }
+  /* ② 离线数据包（异步之前已经加载过才走这里） */
+  try {
+    const b = __twLocal;
+    if (b) { const q = (b.posts || []).find(x => String(x.id) === String(id)); if (q) return q }
+  } catch (e) { }
+  return null;
+}
 /* ---------------- 帖子详情弹窗 ---------------- */
 async function openDbPost(id) {
   const me = TW.me();
   const nick = me ? me.nick : '';
-  const r = await WGOAPI.postDetail(id, nick);
+  /* 重试一次：Render 免费实例冷启动第一次请求常 502/超时，
+     api.js 的 req 会把失败吞成 null，直接判「离线」就永远点不开 */
+  let r = await WGOAPI.postDetail(id, nick);
+  if (!r || !r.ok) r = await WGOAPI.postDetail(id, nick);
   if (r && r.ok) return renderDbPostModal(r.post, r.comments || [], !!r.liked, true);
-  /* 后端离线：从本地爬虫数据包降级渲染，互动走 localStorage */
+  /* 后端离线 / 未入库：站内发布的帖子从 localStorage 读回 */
+  const mine = findLocalPost(id);
+  if (mine) return renderDbPostModal(mine, localCmts(mine.id), !!localLikes()[mine.id], false);
+  /* 再降级到爬虫数据包 */
   const b = await twLocalData();
   const lp = (b.posts || []).find(x => String(x.id) === String(id));
-  if (!lp) { toast((r && r.msg) || '帖子加载失败，请确认后端已启动'); return; }
+  if (!lp) {
+    /* 最后一层：内置 POSTS（data.js）里也找不到才提示；
+       以前这里直接报「帖子加载失败」，本地发布 / 后端冷启动时会频繁误报 */
+    const fb = (typeof POSTS !== 'undefined' ? POSTS : []).find(x => String(x.id) === String(id));
+    if (fb) return renderDbPostModal(localPostStruct(Object.assign({}, fb, { loc: fb.loc, text: fb.txt })), [], false, false);
+    toast('帖子加载失败：后端未入库，本地也没有这条记录');
+    return;
+  }
   const cmts = [].concat(localCmts(lp.id), (b.comments || {})[lp.id] || []);
   renderDbPostModal(lp, cmts, !!localLikes()[lp.id], false);
 }

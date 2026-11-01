@@ -125,6 +125,8 @@ function imgPrompt(key){
   /* 允许直接传提示词（含空格的长句），也允许传 P 的 key */
   if(!key)return IMGFALLBACK;
   if(P[key])return P[key];
+  /* 调用方显式传了英文提示词键，直接透传（imgChain 补第三级时用） */
+  if(key.__raw)return String(key.__raw);
   /* 含空格且全是英文（P 里的自定义提示词）直接当提示词用；含中文的仍按景点名走映射 */
   if(/^[A-Za-z0-9 ,.'&-]+$/.test(String(key)))return String(key);
   const s = typeof spotById==='function' ? spotById(key) : null;
@@ -152,6 +154,14 @@ function imgPrompt(key){
  * 前端 <img> 按这个顺序自动换源：接口出不了图只会返回占位图（正方形），
  * 检测到就换下一级，所以最终绝不会停在占位图或一张完全无关的图上。 */
 function imgChain(key){
+  /* 中文地名（用户打卡 / 后端帖子只有中文 location）：直接拼一条英文短句当主提示词，
+   * 不要让 imgPrompt 把整句当成景点名。例如「张家界 · 袁家界」→ Zhangjiajie Yuanjiajie China travel photography */
+  const cnLoc=typeof key==='string'&&/[\u4e00-\u9fa5]/.test(key)&&!/^[\u4e00-\u9fa5]{2,6}( · |$)/.test(key);
+  if(cnLoc){
+    const py=pinyin(String(key).replace(/[^\u4e00-\u9fa5]/g,' '));
+    const first=py?py+' China travel photography':IMGFALLBACK;
+    return [...new Set([first,py?py+' city scenery':IMGFALLBACK,IMGFALLBACK])];
+  }
   const first=imgPrompt(key);
   const head=first.split(' ').slice(0,3).join(' ');
   const s = typeof spotById==='function' ? spotById(key) : null;

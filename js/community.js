@@ -62,17 +62,23 @@ function regionOf(spotId,loc){
   if(loc&&AB_HINTS.some(k=>String(loc).includes(k)))return 'ab';
   return 'cn';
 }
-/* 后端 Post → 社区卡片字段，和静态帖保持同一套渲染契约 */
+/* 后端 / 离线包 Post → 社区卡片字段，和静态帖保持同一套渲染契约 */
+const PLAT_ALIAS={bilibili:'bili',bili:'bili',xiaohongshu:'xhs',redbook:'xhs',youtube:'yt',instagram:'ins',douyin:'douyin',kuaishou:'kuaishou',user:'go',go:'go',web:'go'};
+function normPlat(p){
+  const k=p.client||p.source||'go';
+  return PLAT_ALIAS[k]||k;
+}
 function mapApiPost(p){
   const codes=(p.topics||'').split(',').filter(Boolean);
   return {
     id:p.id,db:true,type:p.type,spotId:p.spotId||'',
-    plat:p.source==='bilibili'?'bili':(p.client||'go'),
+    plat:normPlat(p),
     rg:regionOf(p.spotId,p.location),
     img:TW.cover(p),u:p.nick||'旅行者',c:'linear-gradient(135deg,#e7c76d,#cfa24a)',
-    time:(p.createdAt||'').slice(5,16),createdAt:p.createdAt||'',loc:p.location||'',
+    time:(p.createdAt||'').replace('T',' ').slice(5,16),createdAt:(p.createdAt||'').replace('T',' '),
+    loc:p.location||'',
     txt:p.title||'',content:p.content||'',topics:codes,bgm:p.bgm||'',
-    likes:p.likeCount||0,cmts:p.commentCount||0,real:p.source==='user',liked:false,
+    likes:p.likeCount||0,cmts:p.commentCount||0,real:p.source==='user'||p.source==='go',liked:false,
     sourceUrl:p.sourceUrl||''
   };
 }
@@ -82,7 +88,8 @@ function decoratePost(p){
   const pl=PLAT[p.plat||'go']||PLAT.go;
   const names=window.TW_TOPIC_NAMES||{};
   return Object.assign({},p,{
-    img:p.img||(p.imgs&&p.imgs[0]?IMG(P[p.imgs[0]]):''),
+    /* 与 renderFeed 保持同一套封面规则：dataURL / http(s) 直接用，否则当景点 id 交给 IMG() */
+    img:(()=>{const r=p.img||(p.imgs&&p.imgs[0])||'';return /^(https?:|data:)/.test(r)?r:(r?IMG(r):'')})(),
     platName:pl.n,platIcon:pl.i,platKey:p.plat||'go',
     bgmLabel:p.bgm?(p._bgmName||(typeof TW!=='undefined'?TW.bgmName(p.bgm):'')||BGMI(p.bgm)):'',
     chips:(p.topics||[]).filter(t=>topicById(t)||names[t]).map(t=>({id:t,name:(topicById(t)||{}).name||names[t]})),
@@ -153,7 +160,12 @@ async function renderFeed(){
     const typeTag=p.type==='video'?'<span class="tagpill ab">🎬 打卡视频</span>':p.type==='plog'?'<span class="tagpill cn">📷 Plog</span>':'';
     const realTag=p.real?'<span class="tagpill real">真实攻略</span>':'';
     const chips=(p.topics||[]).map(t=>(topicById(t)||names[t])?`<span class="topic-chip" onclick="event.stopPropagation();openTopic('${t}')"># ${(topicById(t)||{}).name||names[t]}</span>`:'').join('');
-    const img=p.img||IMG(P[p.imgs&&p.imgs[0]?p.imgs[0]:'erhai']);
+    /* 封面优先级：用户上传的真实照片 > imgs 里的图（可能是 URL 也可能是景点 id）> 宠物图兜底。
+       imgs 里若是景点 id，交给 IMG(id) 按名字出图；直接拼 IMG(P[id]) 会得到 prompt=undefined */
+    const rawImg=p.img||(p.imgs&&p.imgs[0])||'';
+    const img=/^(https?:|data:)/.test(rawImg)
+      ?rawImg
+      :IMG(rawImg||'erhai');
     const act=p.db?`onclick="event.stopPropagation();twToggleLike(${p.id},this)"`:`onclick="event.stopPropagation();likePost(this,'${p.id}')"`;
     return `<div class="post" onclick="${p.db?'openDbPost('+p.id+')':'openPost(\''+p.id+'\')'}" style="cursor:pointer">
       <div class="pimg">
@@ -195,11 +207,13 @@ if($('#twSearchGo')){
 function likePost(el,id){el.classList.toggle('liked');const n=el.querySelector('.ln');n.textContent=+n.textContent+(el.classList.contains('liked')?1:-1);el.firstChild.textContent=el.classList.contains('liked')?'♥ ':'♡ '}
 /* ---- 精选 4K 摄影 ---- */
 function renderFeatured(){
-  $('#featStrip').innerHTML=FEATURED.map((f,i)=>`<div class="feat-card" onclick="openFeat(${i})"><img src="${IMG(P[f.img],'landscape_16_9')}" loading="lazy"><span class="plat pb-${f.plat}">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fourk">4K</span><div class="fc-info"><h5>${f.t}</h5><p>📍 ${f.loc} · 📷 ${f.by}</p></div></div>`).join('');
+  $('#featStrip').innerHTML=FEATURED.map((f,i)=>`<div class="feat-card" onclick="openFeat(${i})"><img src="${IMG(P[f.img],'landscape_16_9')}" loading="lazy" style="cursor:zoom-in" onclick="event.stopPropagation();openViewer(this,'${f.t.replace(/'/g,'')} · ${f.loc.replace(/'/g,'')}')"><span class="plat pb-${f.plat}">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fourk">4K</span><div class="fc-info"><h5>${f.t}</h5><p>📍 ${f.loc} · 📷 ${f.by}</p></div></div>`).join('');
+  if(typeof watchImgs==='function')watchImgs($('#featStrip'));
 }
 function openFeat(i){
   const f=FEATURED[i];if(!f)return;
-  openModal(`<div class="fd-img big"><img src="${IMG(P[f.img],'landscape_16_9')}"><span class="fourk">4K ULTRA HD</span><span class="plat pb-${f.plat}" style="position:absolute;top:10px;right:44px">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span></div>
+  const src=IMG(P[f.img],'landscape_16_9');
+  openModal(`<div class="fd-img big" onclick="openViewer(this.querySelector('img'),'${f.t.replace(/'/g,'')} · ${f.loc.replace(/'/g,'')}')"><img src="${src}" style="cursor:zoom-in"><span class="fourk">4K ULTRA HD</span><span class="plat pb-${f.plat}" style="position:absolute;top:10px;right:44px">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fd-zoom">🔍 点击看大图</span></div>
     <div class="dbody"><h3 style="font-size:18px;font-weight:900">${f.t}</h3>
     <div class="fd-meta">📍 ${f.loc} · 📷 ${f.by}</div>
     <p class="fd-body">这张入选「精选 4K 摄影」的作品由 AI 图片引擎按 4K 超清规格渲染，完整保留了拍摄现场的光影与色彩层次。</p>
@@ -228,9 +242,11 @@ function openPost(pid){
   const p=(JSON.parse(localStorage.getItem('fmw_posts')||'[]').find(x=>x.id===pid))||POSTS.find(x=>x.id===pid);if(!p)return;
   const pl=PLAT[p.plat||'go']||PLAT.go;
   const chips=(p.topics||[]).map(t=>topicById(t)?`<span class="topic-chip" onclick="event.stopPropagation();openTopic('${t}')"># ${topicById(t).name}</span>`:'').join('');
-  const gal=(p.imgs||['erhai']).map(k=>`<img src="${IMG(P[k])}" onclick="openImgLightbox('${k}')">`).join('');
+  const rawImgs=p.userImgs&&p.userImgs.length?p.userImgs:(p.imgs||['erhai']);
+  const imgSrc=k=>p.userImgs&&p.userImgs.length?k:(P[k]?IMG(P[k]):IMG(k));
+  const gal=rawImgs.map(k=>`<img src="${imgSrc(k)}" onclick="openImgLightbox('${k}')">`).join('');
   const videoBtn=p.type==='video'?`<button class="btn gold" style="width:100%;margin:10px 0" onclick="openVideo({t:'${(p.txt||'').slice(0,16)}…',loc:'${p.loc}',imgs:['${(p.imgs||['erhai']).join("','")}'],bgm:'${p.bgm||'fresh'}'})">▶ 播放打卡视频（${BGMI(p.bgm)}）</button>`:'';
-  openModal(`<div class="fd-img big"><img src="${IMG(P[(p.imgs||['erhai'])[0]])}">${p.type==='video'?'<span class="vbadge"><i>▶</i></span>':''}<span class="plat pb-${p.plat||'go'}" style="position:absolute;top:10px;right:10px">${pl.i} ${pl.n}</span></div>
+  openModal(`<div class="fd-img big"><img src="${imgSrc(rawImgs[0])}" style="cursor:zoom-in" onclick="openViewer(this,'${(p.loc||'').replace(/'/g,'')}')">${p.type==='video'?'<span class="vbadge"><i>▶</i></span>':''}<span class="plat pb-${p.plat||'go'}" style="position:absolute;top:10px;right:10px">${pl.i} ${pl.n}</span></div>
     <div class="dbody">
     <div class="pu"><span class="av" style="background:${p.c}">${p.u[0]}</span><div><h5>${p.u}</h5><p>${p.time} · 📍 ${p.loc}</p></div></div>
     <p class="fd-body">${p.txt}</p>
