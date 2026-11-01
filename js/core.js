@@ -388,7 +388,7 @@ function openVideo(d){
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
   <div class="vplayer">
     <div class="vmain">
-      <div class="vstage" id="vStage" onclick="openViewer(this.querySelector('img.on')||this.querySelector('img'),'${(d.t||'').replace(/'/g,'')}')">${d.imgs.map(k=>`<img src="${IMG(P[k],'landscape_16_9')}">`).join('')}
+      <div class="vstage" id="vStage" onclick="openViewer(this.querySelector('img.on')||this.querySelector('img'),'${(d.t||'').replace(/'/g,'')}')">${d.imgs.map(k=>`<img src="${IMG(k,'landscape_16_9')}">`).join('')}
         <div class="vtitle"><h4>${d.t}</h4><p>📍 ${d.loc} · AI 精选打卡视频 · 点击画面可放大</p></div></div>
       <div class="vctl">
         <button id="vPlay" title="播放/暂停">⏸</button>
@@ -455,7 +455,7 @@ function toggleVSlide(){
 function stopVSlide(){clearInterval(vTimer);vTimer=null;clearInterval(vProgTimer);vProgTimer=null;stopBgm()}
 function openPlog(t,loc,img,txtEnc){
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div><div class="dhero" style="height:250px"><img class="zoomable" src="${IMG(P[img],'landscape_16_9')}" onclick="openViewer(this,'${t.replace(/'/g,'')}')"><div class="dc"><h3>📷 ${t}</h3><div class="meta"><span>📍 ${loc}</span><span>AI 精选 Plog</span></div></div></div>
+  <div><div class="dhero" style="height:250px"><img class="zoomable" src="${IMG(img,'landscape_16_9')}" onclick="openViewer(this,'${t.replace(/'/g,'')}')"><div class="dc"><h3>📷 ${t}</h3><div class="meta"><span>📍 ${loc}</span><span>AI 精选 Plog</span></div></div></div>
   <div class="dbody"><p class="desc" style="font-style:italic">${decodeURIComponent(txtEnc)}</p>
   <div class="dbtns"><button class="btn line" onclick="WGO.go('checkin.html')">📸 我也要写 Plog</button><button class="btn gold" onclick="WGO.go('community.html')">看更多真实 Plog</button></div></div></div>`,true);
 }
@@ -470,7 +470,7 @@ function openSpot(id){
   const s=spotById(id);if(!s)return;
   const lit=litSet().has(id);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div class="dhero"><img class="zoomable" src="${IMG(P[s.id])}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
+  <div class="dhero"><img class="zoomable" src="${IMG(s.id)}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
     <h3>${s.n} <span class="tagpill ${s.rg}" style="vertical-align:3px">${s.rg==='cn'?'国内':'国外'}</span>${lit?'<span class="tagpill lit">✨ 已点亮</span>':''}</h3>
     <div class="meta"><span>📍 ${s.city}</span><span>${s.tag}</span><span>⭐ ${s.rating}</span></div></div></div>
   <div class="dbody">
@@ -874,5 +874,5 @@ function initChrome(){
 document.addEventListener('DOMContentLoaded',()=>{
   initChrome();
   initTheme();initTopnav();initUser();initSearch();initAIChat();
-  $$('[data-img]').forEach(el=>el.src=IMG(P[el.dataset.img],el.dataset.size||'landscape_4_3'));
+  $$('[data-img]').forEach(el=>el.src=IMG(el.dataset.img,el.dataset.size||'landscape_4_3'));
 });

@@ -17,12 +17,24 @@
 </div></section>
 
 <section class="sec" style="padding-top:10px"><div class="wrap">
-  <div class="ana-grid">
-    <div class="stat-card wide2"><h4>🏆 全站评分 TOP 10</h4><div id="aTop" class="chartbox tall"></div></div>
-    <div class="stat-card"><h4>🗺 国内 / 国外占比</h4><div id="aRg" class="chartbox"></div></div>
-    <div class="stat-card"><h4>🏷 热门标签 TOP 10</h4><div id="aTag" class="chartbox"></div></div>
-    <div class="stat-card"><h4>💰 人均花费区间</h4><div id="aPrice" class="chartbox"></div></div>
-    <div class="stat-card"><h4>⭐ 评分 × 花费 散点</h4><div id="aScatter" class="chartbox"></div></div>
+  <div class="ana-layout">
+    <div class="ana-main">
+      <div class="ana-grid">
+        <div class="stat-card wide2"><h4>🏆 全站评分 TOP 10</h4><div id="aTop" class="chartbox tall"></div></div>
+        <div class="stat-card"><h4>🗺 国内 / 国外占比</h4><div id="aRg" class="chartbox"></div></div>
+        <div class="stat-card"><h4>🏷 热门标签 TOP 10</h4><div id="aTag" class="chartbox"></div></div>
+        <div class="stat-card"><h4>💰 人均花费区间</h4><div id="aPrice" class="chartbox"></div></div>
+        <div class="stat-card"><h4>⭐ 评分 × 花费 散点</h4><div id="aScatter" class="chartbox"></div></div>
+      </div>
+    </div>
+    <!-- 右侧空位：AI 规划给出的景点 / 打卡点，点一条就在下面实时出分析 -->
+    <aside class="ana-side">
+      <div class="stat-card">
+        <h4>🤖 AI 规划景点 · 打卡点<select id="anaDest" class="ana-dest"></select></h4>
+        <div class="ana-chips" id="anaChips"></div>
+        <div class="ana-live" id="anaLive"></div>
+      </div>
+    </aside>
   </div>
   <p class="map-note" id="anaNote" style="display:none">图表资源加载失败，请检查网络后刷新。</p>
 </div></section>
@@ -86,6 +98,77 @@
         itemStyle:{color:'rgba(255,215,106,.75)',borderColor:'#b98a2f',borderWidth:1}}]});
     addEventListener('resize',()=>document.querySelectorAll('.chartbox').forEach(el=>{const c=echarts.getInstanceByDom(el);if(c)c.resize()}));
   });
+})();
+/* ================= 右侧：AI 规划景点 · 点一条实时出分析 =================
+ * 候选来源不用另造：直接取站点自己的景点库 SPOTS，按城市分组，
+ * 选中的那条在下面用「实时」摘要 + 分项说明的方式展开。 */
+(function(){
+  const citySel=document.getElementById('anaDest');
+  const chipsBox=document.getElementById('anaChips');
+  const liveBox=document.getElementById('anaLive');
+  if(!chipsBox)return;
+  /* 一座城市至少 3 个点位才值得单独成组，其余城市统一并入「全国热门」 */
+  const byCity={};
+  SPOTS.forEach(s=>{(byCity[s.city]=byCity[s.city]||[]).push(s)});
+  const cities=Object.keys(byCity).filter(c=>byCity[c].length>=3)
+    .sort((a,b)=>byCity[b].length-byCity[a].length);
+  const cur=cities[0]||'';
+  citySel.innerHTML=cities.map(c=>`<option value="${c}">${c} · ${byCity[c].length} 个点位</option>`).join('');
+  const money=s=>{const m=/\d+/.exec(s.price||'');return m?+m[0]:0};
+  /* 按价格档、时长、评分几个维度算一个「综合推荐度」，用于实时排序 */
+  const scoreOf=s=>+( (s.rating||4.5)*1.2 - money(s)/300 + (String(s.hrs).includes('天')?0.3:0) ).toFixed(2);
+  function chipsOf(city){
+    const list=(byCity[city]||[]).slice().sort((a,b)=>scoreOf(b)-scoreOf(a));
+    chipsBox.innerHTML=list.map((s,i)=>`<button class="ana-chip${i===0?' on':''}" data-id="${s.id}">
+      <b>${s.n}</b><span>⭐ ${s.rating} · ${s.price}</span></button>`).join('');
+    chipsBox.querySelectorAll('.ana-chip').forEach(b=>b.onclick=()=>{
+      chipsBox.querySelectorAll('.ana-chip').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      render(b.dataset.id);
+    });
+    render(list[0]&&list[0].id);
+  }
+  function render(id){
+    const s=SPOTS.find(x=>x.id===id);if(!s)return;
+    const sc=scoreOf(s);
+    const hr=s.hrs||'2-3 小时';
+    /* 时长 → 建议留出的时间块 */
+    const blocks=String(hr).includes('天')?'建议整块半天到一天，别再叠加远处点位':
+      (String(hr).includes('半天')?'建议留 4 小时，含进出与排队':'建议留 2-3 小时，周边还能再排 1 个点');
+    const fee=money(s);
+    const free=fee===0;
+    const needBook=/预约|提前|限流|实名/.test((s.traf||'')+(s.desc||''));
+    liveBox.innerHTML=`
+      <div class="ana-now">
+        <img src="${IMG(s.id,'landscape_4_3')}" alt="${s.n}" loading="lazy">
+        <div class="ana-now-t"><h5>${s.n}</h5><p>${s.city} · ${s.tag}</p>
+          <div class="ana-bars">
+            <span title="综合推荐度">推荐度 <i style="width:${Math.min(100,sc*18)}%"></i></span>
+            <span title="花费友好度">省心度 <i style="width:${free?96:Math.max(18,100-fee/2)}%"></i></span>
+          </div>
+        </div>
+      </div>
+      <div class="ana-kv">
+        <div><em>📍 位置</em><b>${s.addr}</b></div>
+        <div><em>⏱ 游玩时长</em><b>${hr} · ${blocks}</b></div>
+        <div><em>💰 门票</em><b>${s.price}</b></div>
+        <div><em>🚄 怎么去</em><b>${s.traf}</b></div>
+        <div><em>⭐ 用户评分</em><b>${s.rating} / 5.0</b></div>
+        <div><em>🧭 适合人群</em><b>${/历史|遗迹|遗产|宫廷/.test(s.tag)?'历史爱好者、文化向旅行者':(/夜景|都市/.test(s.tag)?'夜景拍摄、城市漫步':'家庭 / 朋友结伴均可')}</b></div>
+      </div>
+      <p class="ana-desc">${s.desc}</p>
+      <div class="ana-tags">
+        <span class="${free?'ok':''}">${free?'✅ 免门票':'🎫 需购票 ¥'+fee}</span>
+        <span class="${needBook?'warn':''}">${needBook?'⚠️ 建议提前预约':'🕘 现场可直接进入'}</span>
+        <span>${blocks}</span>
+      </div>
+      <div class="ana-acts">
+        <button onclick="openSpot('${s.id}')">查看景点详情</button>
+        <button onclick="WGO.go('map.html',{spot:'${s.id}'})">🗺 地图定位</button>
+      </div>`;
+  }
+  citySel.onchange=()=>chipsOf(citySel.value);
+  chipsOf(cur);
 })();
 </script>
 </body>

@@ -3,9 +3,26 @@
  * 图片 AI 生成参数 / 景点图标与清单（含坐标） / 社区动态 / AI 方案
  * ========================================================= */
 
-/* ================= 图片助手 ================= */
+/* ================= 图片助手 =================
+ * 全站图片都是 AI 文生图按提示词实时生成，没有真实照片。
+ * P 字典只覆盖 64 个手工精编景点，而行程里的打卡点来自站内景点库（id 形如
+ * lib_xxx / 城市|景点名），P 里没有 key，IMG(P[id]) 会拼出 prompt=undefined，
+ * 接口直接返回空 —— 这就是打卡视频 / Plog 卡片一片空白的原因。
+ * 这里统一兜底：P 里找不到就用景点名拼一句英文提示词。 */
 const IMGAPI='https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=';
-const IMG=(p,s)=>IMGAPI+encodeURIComponent(p)+'&image_size='+(s||'landscape_4_3');
+const IMGFALLBACK='travel destination scenery, landmark, natural light, high quality travel photography';
+function imgPrompt(key){
+  /* 允许直接传提示词（含空格的长句），也允许传 P 的 key */
+  if(!key)return IMGFALLBACK;
+  if(P[key])return P[key];
+  if(String(key).includes(' '))return key;
+  /* 传进来的是景点 id：优先去景点库里查中文名，拼成「故宫博物院 Beijing China」 */
+  const s = typeof spotById==='function' ? spotById(key) : null;
+  const name = s ? s.n : String(key).split('|').pop();
+  const city = s && s.city ? ' '+s.city : '';
+  return name+city+' China, landmark travel photography, natural light, high quality';
+}
+const IMG=(p,s)=>IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
 const P={
  hero:'starry night sky over sea of clouds with glowing golden flight routes and aurora, crescent moon, dreamy fairy tale travel illustration, deep navy and gold',
  gugong:'Forbidden City Beijing red walls and golden roofs under clear blue sky, imperial palace travel photography',
