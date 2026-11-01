@@ -895,6 +895,43 @@ function initChrome(){
     <div class="toast" id="toast"></div>`);
   }
 }
+/* ================= 出图并发闸门 =================
+ * 出图接口对「一次性几十张并发」会直接返回 net::ERR_FAILED（不报 429，也不报 CORS）。
+ * 实测同一 URL 单发能正常 onload（1216×912），说明是突发并发被限流。
+ * 所以页面渲染出来的图片不立刻赋 src，而是先进队列，最多 3 张并发、每张间隔 250ms 慢慢取。 */
+const __imgQueue=[];
+let __imgBusy=0;
+const IMG_CONCURRENCY=3;
+function imgQueuePush(el,url){
+  el.dataset.qsrc=url;
+  __imgQueue.push(el);
+  imgQueuePump();
+}
+function imgQueuePump(){
+  while(__imgBusy<IMG_CONCURRENCY&&__imgQueue.length){
+    const el=__imgQueue.shift();
+    const url=el.dataset.qsrc;
+    if(!el.isConnected||!url){continue}
+    __imgBusy++;
+    /* 用临时 Image 预加载，成功再把地址交给真实 <img>（直接赋 src 失败时浏览器会同时发起降级链，重复打接口） */
+    const probe=new Image();
+    probe.onload=()=>{__imgBusy--;el.src=url;setTimeout(imgQueuePump,250)};
+    probe.onerror=()=>{__imgBusy--;el.dataset.qfail='1';imgQueueRetry(el);setTimeout(imgQueuePump,600)};
+    probe.src=url;
+  }
+}
+/* 失败重试：同一地址最多重试 2 次，仍失败才交给 imgFallback 换提示词 */
+function imgQueueRetry(el){
+  const n=+(el.dataset.qtry||0);
+  if(n<2){
+    el.dataset.qtry=n+1;
+    setTimeout(()=>{__imgQueue.push(el);imgQueuePump()},800*(n+1));
+  }else if(typeof imgFallback==='function'){
+    delete el.dataset.qfail;
+    el.__chainIdx=null;
+    el.src=el.dataset.qsrc;   /* 先赋 src 让 error 事件触发降级链 */
+  }
+}
 /* ================= AI 出图兜底 =================
  * 出图接口在提示词过长 / 地名生僻时不报错，而是返回一张
  * 「The image is generating…」的占位图（约 176KB、1:1），
@@ -955,6 +992,9 @@ function watchImgs(root){
         el.addEventListener('error',()=>imgFallback(el));
         el.addEventListener('load',()=>{if(imgIsPlaceholder(el))imgFallback(el)});
         if(el.complete&&el.naturalWidth&&imgIsPlaceholder(el))imgFallback(el);
+        /* 关键：不保留原始 src 让浏览器并发抢，改由队列限流后再赋 */
+        imgQueuePush(el,el.getAttribute('src'));
+        el.removeAttribute('src');
       }else el.addEventListener('error',()=>el.classList.add('img-fail'),{once:true});
     }
   });
