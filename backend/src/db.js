@@ -266,7 +266,16 @@ const DATA_SPOTS = (() => {
     return out;
   } catch { return []; }
 })();
-const ALL_SPOTS = [...SPOTS, ...DATA_SPOTS];
+/* 两个库合并去重：spots_crawl.json 与 data.js 收录了大量同一景点，
+ * 「武侯祠 / 武侯祠·锦里」「成都大熊猫繁育研究基地 / 成都大熊猫繁育基地」
+ * 这种名称互相包含的，保留 crawl 版（有评分 / 热度 / 人工坐标），
+ * 否则同一天会出现两个几乎一样的景点 */
+const sameSpot = (a, b) => a === b ||
+  (a.length >= 3 && b.length >= 3 && (a.includes(b) || b.includes(a)));
+const ALL_SPOTS = [
+  ...SPOTS,
+  ...DATA_SPOTS.filter(d => !SPOTS.some(s => s.city === d.city && sameSpot(s.name, d.name)))
+];
 const CITY_NAMES = [...new Set(ALL_SPOTS.map(s => s.city).filter(Boolean))];
 const SPOT_NAMES = ALL_SPOTS.map(s => s.name).filter(Boolean);
 

@@ -40,7 +40,7 @@ function poolOfCity(city, rg) {
  * 线上 Render 拿不到高德坐标时，这批景点是保证「行程像这个城市」的最后一道兜底；
  * 之前 db.js 只取到 id/n/city/tag/desc，坐标为空被 s.lng != null 全部过滤掉。 */
 function namesOfCity(city) {
-  const has = new Set(dbx.SPOTS.filter(s => s.lng != null).map(s => s.name));
+  const has = new Set(dbx.SPOTS.filter(s => s.lng != null && cityHit(s.city, city)).map(s => s.name));
   /* 去重按「名称互相包含」判定：库里已有「武侯祠」「锦里古街」时，
    * data.js 的「武侯祠·锦里」不再重复进场 */
   const dup = n => [...has].some(x => x && (x.includes(n) || n.includes(x)));
@@ -140,7 +140,7 @@ async function collectSpots(city, want) {
     /* 只比完全同名挡不住「武侯祠 / 武侯祠·锦里」「成都大熊猫繁育基地 /
      * 成都大熊猫繁育研究基地」这类近义重复，改成名称互相包含 */
     const dup = c => c.name === s.name ||
-      (c.name.length >= 3 && s.name.length >= 3 &&
+      (c.name.length >= 2 && s.name.length >= 2 &&
         (c.name.includes(s.name) || s.name.includes(c.name)));
     if (chosen.some(dup)) return;
     chosen.push(s);
