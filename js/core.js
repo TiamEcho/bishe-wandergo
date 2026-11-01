@@ -712,7 +712,7 @@ function initAIChat(){
     if(!list.length){ vidList.innerHTML='<div class="ai-vid-empty">暂无视频数据</div>'; return; }
     vidList.innerHTML=list.map(v=>`
       <button class="ai-vid-item" data-id="${v.id}" type="button">
-        <span class="ai-vid-cover" style="${v.cover?`background-image:url(${typeof IMG==='function'&&P?IMG(P[v.cover],'square'):v.cover})`:'background:var(--panel-2)'}">▶</span>
+        <span class="ai-vid-cover" style="${v.cover?`background-image:url(${typeof IMG==='function'?IMG(v.cover,'square'):v.cover})`:'background:var(--panel-2)'}">▶</span>
         <span class="ai-vid-info">
           <b>${(v.title||'').slice(0,28)}</b>
           <i>${v.city||'未知城市'} · ${v.source||''}</i>
@@ -965,9 +965,19 @@ function imgFallback(el){
   const chain=__imgTried.get(el)||el.__chain||[];
   const i=(el.__chainIdx==null?-1:el.__chainIdx)+1;
   if(i>=chain.length){
-    /* 降级链走完还没图：用 16:9 兜底一次性重取（4:3 卡在瀑布流里会留空白） */
-    if(!el.__lastTry){el.__lastTry=1;el.__chainIdx=null;
-      el.src=IMGAPI+encodeURIComponent(IMGFALLBACK)+'&image_size='+(el.dataset.ratio||'landscape_16_9');return}
+    /* 降级链走完还没图：用 16:9 兜底一次性重取（4:3 卡在瀑布流里会留空白）。
+     * 这里不能用通用的 IMGFALLBACK——它是全站固定的一句提示词，所有景点都会
+     * 落到同一张图上，表现为「推荐卡片图片重复」。改为取链尾的场景提示词，
+     * 至少山、湖、宫等类型之间不会互相重复。 */
+    if(!el.__lastTry){
+      el.__lastTry=1;el.__chainIdx=null;
+      const scene=chain.slice().reverse().find(p=>p&&p!==IMGFALLBACK)||IMGFALLBACK;
+      el.src=IMGAPI+encodeURIComponent(scene)+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_16_9');
+      return
+    }
+    /* 降级链与重试全部失败：不再留一个空 <img>（页面会显示裂图），
+     * 换成按景点类型着色的占位块，至少每个景点颜色不同、能看出是哪张卡。 */
+    el.removeAttribute('src');
     el.classList.add('img-fail');return
   }
   el.__chainIdx=i;
@@ -1028,7 +1038,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   $$('[data-img]').forEach(el=>{
     const size=el.dataset.size||'landscape_4_3';
     watchImg(el,el.dataset.img,size);
-    el.src=IMG(el.dataset.img,size);
+    /* 和历史写法 IMG(P[id]) 一样：id 不在 P 里时给出 undefined，提示词会退化成占位图。
+     * 这里直接放进队列限流，由 imgFallback 逐级换提示词，避免一屏几十张图同时打接口。 */
+    imgQueuePush(el,IMG(el.dataset.img,size));
   });
   /* 其余页面写的 <img src> 没有 data-img，也统一挂上失败兜底 */
   watchImgs();

@@ -85,7 +85,7 @@ function mountRecVue(){
     methods:{open(id){openSpot(id)}},
     template:`
       <div class="rec-card" v-for="(x,i) in store.items" :key="x.id" :style="{animationDelay:(i*0.05)+'s'}" @click="open(x.id)">
-        <div class="rc-img"><img :src="x.img" loading="lazy">
+        <div class="rc-img"><img :src="x.img" :data-key="x.id" loading="lazy">
           <span class="match">🎯 匹配 {{x.match}}%</span>
           <span class="src">{{x.srcLabel}}</span></div>
         <div class="rc-body"><h5>{{x.name}} <span style="font-size:11px;color:var(--muted)">· {{x.city}}</span></h5>
@@ -103,7 +103,7 @@ function renderRates(){
   const checkedIds=albums.map(a=>SPOTS.find(s=>s.n===a.dest)).filter(Boolean).map(s=>s.id);
   const pool=(checkedIds.length?checkedIds:['erhai','gugong','ylw','ice','chiangmai','zjj','paris','inari']).slice(0,8);
   $('#rateStrip').innerHTML=pool.map(id=>{const s=spotById(id);if(!s)return'';const cur=myRates[id]||0;
-    return `<div class="rate-item"><img src="${IMG(P[id])}"><b>${s.n}</b>
+    return `<div class="rate-item"><img src="${IMG(id)}"><b>${s.n}</b>
     <div class="stars">${[1,2,3,4,5].map(v=>`<button class="${v<=cur?'on':''}" data-id="${id}" data-v="${v}">★</button>`).join('')}</div></div>`}).join('');
   $$('#rateStrip .stars button').forEach(b=>b.onclick=async()=>{
     setRate(b.dataset.id,+b.dataset.v);
@@ -122,16 +122,30 @@ function renderRec(apiList,apiMode){
   $('#recMode').textContent='🧮 当前算法：'+mode+(WGOAPI.status()===false?'（后端离线 · 本地演示数据）':'');
   const vm=list.map((x,i)=>{const s=spotById(x.id);if(!s)return null;const src=recSrcOf(x.id);
     return {id:x.id,match:x.match,why:x.why,name:s.n,city:s.city,rating:s.rating,price:s.price,tag:s.tag,
-      img:IMG(P[x.id],'landscape_16_9'),
+      img:IMG(x.id,'landscape_16_9'),
       srcLabel:src.p==='WANDERGO 站内'?'🧭 站内精选':(PLAT_LBL[src.p]||'📷 '+src.p)+' '+src.by}}).filter(Boolean);
-  if(mountRecVue()){recStore.items=vm;return}
+  if(mountRecVue()){
+    recStore.items=vm;
+    /* Vue 渲染是异步的，等 DOM 真正插入后再挂降级监听，
+     * 否则出图接口返回占位图时推荐卡片会全部显示同一张图 */
+    recShopWatch();
+    return
+  }
   /* Vue 未加载时的兜底渲染 */
   box.innerHTML=vm.map((x,i)=>`<div class="rec-card" style="animation-delay:${i*.05}s" onclick="openSpot('${x.id}')">
-      <div class="rc-img"><img src="${x.img}" loading="lazy">
+      <div class="rc-img"><img src="${x.img}" data-key="${x.id}" loading="lazy">
         <span class="match">🎯 匹配 ${x.match}%</span><span class="src">${x.srcLabel}</span></div>
       <div class="rc-body"><h5>${x.name} <span style="font-size:11px;color:var(--muted)">· ${x.city}</span></h5>
       <div class="why">${x.why}</div>
       <div class="rc-meta"><span>⭐ ${x.rating}</span><span>💰 ${x.price}</span><span>${x.tag}</span></div></div></div>`).join('')||'<div class="empty-tip">暂无推荐</div>';
+  recShopWatch();
+}
+/* 推荐卡片出图兜底：让推荐页也走 imgChain 降级链 + 并发队列。
+ * 这一步之前漏了，导致接口返回占位图时整页推荐显示同一张无关图。
+ * Vue 的 DOM 更新在微任务后，所以用 setTimeout(0) 等一帧再挂。 */
+function recShopWatch(){
+  const run=()=>{if(typeof watchImgs==='function')watchImgs($('#recGrid'))};
+  if(window.Vue)setTimeout(run,0); else run();
 }
 async function refreshRec(){
   if(user){

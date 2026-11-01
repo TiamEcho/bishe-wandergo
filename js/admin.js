@@ -109,6 +109,8 @@ createApp({
     setTip(m, bad) { this.tip = m; this.tipBad = !!bad; },
     async loadAll() {
       await Promise.all([this.loadSpots(), this.loadUsers(), this.loadAudit(), this.loadStats()]);
+      /* 登录后首屏表格已渲染，立刻重算一次列宽，避免列被压成竖排 */
+      this.$nextTick(() => this.relayout());
     },
     onTab(name) {
       /* 切到「爬虫实时数据」时才拉统计，避免登录后一次性打太多接口；
@@ -116,6 +118,17 @@ createApp({
       if (name === 'crawl') { this.loadCrawlStats(); this.loadSpots(); }
       /* 社区数据：统计 + 帖子表一起拉，表格里 sourceUrl 可点开原视频 */
       if (name === 'community') { this.loadCommunityStats(); this.loadCommunityList(); }
+      /* Element Plus 的 el-table 在 display:none 的标签页里渲染时拿不到容器宽度，
+         colgroup 会塌成两列（表头竖排、数据只露两列）。切到可见后再重算一次列宽。 */
+      this.$nextTick(() => this.relayout());
+    },
+    /* 重新计算所有已渲染表格的列宽；ref 名为 tableRef 的 el-table 都参与 */
+    relayout() {
+      const refs = this.$refs || {};
+      Object.keys(refs).forEach(k => {
+        const list = Array.isArray(refs[k]) ? refs[k] : [refs[k]];
+        list.forEach(t => { if (t && typeof t.doLayout === 'function') t.doLayout(); });
+      });
     },
     /* 社区统计（帖子 / 站内发布 / B 站抓取 / 评论 / 词条数） */
     async loadCommunityStats() {
@@ -187,7 +200,8 @@ createApp({
     async loadUsers() {
       if (this.offline) return;
       const r = await WGOAPI.adminUsers();
-      this.users = (r && r.ok) ? r.list : [];
+      /* 后端字段是 created_at，表格列绑的是 createdAt，这里做一次驼峰映射 */
+      this.users = (r && r.ok) ? r.list.map(u => ({ ...u, createdAt: u.createdAt || u.created_at || '' })) : [];
     },
     async loadAudit() {
       if (this.offline) {

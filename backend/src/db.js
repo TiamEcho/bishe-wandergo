@@ -245,6 +245,14 @@ CREATE TABLE IF NOT EXISTS app_comment(
   content    TEXT NOT NULL,
   created_at TEXT
 );
+/* 点赞记录表：靠唯一约束保证「同一用户对同一帖子只能点一次」 */
+CREATE TABLE IF NOT EXISTS post_like(
+  id         SERIAL PRIMARY KEY,
+  post_key   TEXT NOT NULL,
+  nick       TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(post_key, nick)
+);
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(id);
 CREATE INDEX IF NOT EXISTS idx_cmt_post     ON app_comment(post_key);
 CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
@@ -380,6 +388,14 @@ CREATE TABLE IF NOT EXISTS app_comment(
   nick       TEXT,
   content    TEXT NOT NULL,
   created_at TEXT
+);
+/* 点赞记录表：靠唯一约束保证「同一用户对同一帖子只能点一次」 */
+CREATE TABLE IF NOT EXISTS post_like(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_key   TEXT NOT NULL,
+  nick       TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(post_key, nick)
 );
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(id);
 CREATE INDEX IF NOT EXISTS idx_cmt_post     ON app_comment(post_key);
@@ -644,6 +660,16 @@ async function seed() {
     } catch (e) { /* 列已存在 */ }
   }
   await seedSpots();
+  /* 内置管理员账号：管理端接口需要 role='admin'，没有则补一个，已存在则不动 */
+  try {
+    const adm = await impl.get("SELECT id FROM app_user WHERE username = 'admin'");
+    if (!adm) {
+      await impl.run(
+        'INSERT INTO app_user (username,password,nick,city,role,created_at) VALUES (?,?,?,?,?,?)',
+        ['admin', hashPwd('admin123'), '管理员', '', 'admin', now()]
+      );
+    }
+  } catch (e) { /* 表结构异常时忽略，不影响主流程 */ }
   /* 爬虫帖单独灌，且每次都跑：新抓的数据能立刻进来，不受 guide 表是否已初始化影响 */
   const nCrawl = await seedCrawlPosts();
 
@@ -936,22 +962,61 @@ async function listTopics() {
   return list.sort((a, b) => rank(a.code) - rank(b.code) || b.postCount - a.postCount);
 }
 
-/* 单帖详情（在线/离线一致）：id 依次匹配 post_key、数字主键、爬虫 ext_id */
+/* 单帖详情（在线/离线一致）：id 依次匹配 post_key、数字主键、爬虫 ext_id
+ *
+ * 注意 id 的「前缀 + 自增主键」约定由 toItem() 生成：
+ *   g{guide.id}   → 攻略（guide 表，ext_id 是 crawl-{原始爬虫id}，与自增 id 不同源）
+ *   c{checkin.id} → 打卡（checkin 表）
+ * 所以 g12 必须按 guide.id=12 查，不能简单拼成 crawl-12，否则全部 404。 */
 async function getPost(id) {
   const key = String(id || '').trim();
   if (!key) return null;
   let row = await impl.get('SELECT * FROM post WHERE post_key = ?', [key]);
   if (!row && /^\d+$/.test(key)) row = await impl.get('SELECT * FROM post WHERE id = ?', [Number(key)]);
   if (row) return postRow(row);
+
+  /* 前端卡片 id 形如 g1 / c63，拆出前缀与表内自增主键 */
+  const m = key.match(/^([gc])(\d+)$/);
+  if (m) {
+    const numId = Number(m[2]);
+    if (m[1] === 'g') {
+      const g = await impl.get('SELECT * FROM guide WHERE id = ?', [numId]);
+      if (g) return postRow(guideToPost(g, key));
+    } else {
+      const c = await impl.get('SELECT * FROM checkin WHERE id = ?', [numId]);
+      if (c) return postRow(checkinToPost(c, key));
+    }
+  }
+
+  /* 兼容旧链接：可能是纯数字主键或 crawl-xx 形式的 ext_id */
   const g = await impl.get('SELECT * FROM guide WHERE ext_id = ? OR ext_id = ?', [key, 'crawl-' + key]);
   if (!g) return null;
-  return postRow({
-    post_key: key, title: g.title, content: g.content, cover: g.cover,
+  return postRow(guideToPost(g, key));
+}
+
+/* guide 行 → post 结构。用固定前缀保证同一篇攻略的详情 id 与列表 id 一致 */
+function guideToPost(g, id) {
+  return {
+    post_key: id || ('g' + g.id), title: g.title, content: g.content, cover: g.cover,
     images: '[]', location: g.city, topics: g.city, type: g.type || 'note',
     nick: g.source || '公开网络', source: g.source, source_url: g.source_url,
     video_url: (g.type === 'video' ? g.source_url : ''), like_count: g.like_count,
     comment_count: g.comment_count, created_at: g.created_at
-  });
+  };
+}
+
+/* checkin 行 → post 结构。checkin 表只有基础字段，缺失的用默认值补齐 */
+function checkinToPost(c, id) {
+  return {
+    post_key: id || ('c' + c.id),
+    title: `${c.city || ''} · ${c.spot || '打卡记录'}`,
+    content: c.text || '', cover: c.cover || '',
+    images: '[]',
+    location: c.city || '', topics: c.city || '', type: 'checkin',
+    nick: c.user || '旅行者', source: 'checkin', source_url: '',
+    video_url: '', like_count: 0,
+    comment_count: 0, created_at: c.created_at || ''
+  };
 }
 
 /* 发帖入库：post_key 若已存在则复用（前端重试不产生重复） */
@@ -997,10 +1062,42 @@ async function addPostComment(postKey, nick, content) {
   return { id: r.lastId };
 }
 
-async function addPostLike(postKey) {
-  await impl.run('UPDATE post SET like_count = like_count + 1 WHERE post_key = ?', [String(postKey)]);
-  const row = await impl.get('SELECT like_count FROM post WHERE post_key = ?', [String(postKey)]);
-  return Number(row ? row.like_count : 0);
+/* 点赞开关：按「帖子 + 用户」去重，同一用户重复点赞不会重复累加。
+ * 传了 nick（已登录用户）时做真正的 toggle：已点过则取消，没点过则累加；
+ * 没传时（老调用方 / 游客）保留原来的直接 +1 行为，避免破坏现有调用。 */
+async function addPostLike(postKey, nick) {
+  const key = String(postKey || '').trim();
+  const who = String(nick || '').trim();
+  const cur = async () => {
+    const row = await impl.get('SELECT like_count FROM post WHERE post_key = ?', [key]);
+    return Number(row ? row.like_count : 0);
+  };
+  if (!who) {
+    await impl.run('UPDATE post SET like_count = like_count + 1 WHERE post_key = ?', [key]);
+    return { liked: true, likeCount: await cur() };
+  }
+  /* 已点过 → 取消点赞，计数减一（不会减到负数） */
+  const hit = await impl.get('SELECT id FROM post_like WHERE post_key = ? AND nick = ?', [key, who]);
+  if (hit) {
+    await impl.run('DELETE FROM post_like WHERE post_key = ? AND nick = ?', [key, who]);
+    await impl.run('UPDATE post SET like_count = CASE WHEN like_count > 0 THEN like_count - 1 ELSE 0 END WHERE post_key = ?', [key]);
+    return { liked: false, likeCount: await cur() };
+  }
+  /* 没点过 → 记录这次点赞并累加；唯一约束兜住并发重复插入 */
+  try {
+    await impl.run('INSERT INTO post_like (post_key, nick, created_at) VALUES (?,?,?)', [key, who, now()]);
+  } catch { /* 已被并发请求插入，视为已点赞 */ }
+  await impl.run('UPDATE post SET like_count = like_count + 1 WHERE post_key = ?', [key]);
+  return { liked: true, likeCount: await cur() };
+}
+
+/* 查询某用户是否点过赞，用于详情页回显已赞状态 */
+async function hasPostLike(postKey, nick) {
+  const key = String(postKey || '').trim();
+  const who = String(nick || '').trim();
+  if (!key || !who) return false;
+  const row = await impl.get('SELECT id FROM post_like WHERE post_key = ? AND nick = ?', [key, who]);
+  return !!row;
 }
 
 
@@ -1102,7 +1199,7 @@ module.exports = {
   addCheckin, addGuide, addEntities, crawlCandidates,
   hashPwd, findUser, findUserById, createUser, verifyUser,
   addRating, toggleFavorite, logBehavior, allBehaviors,
-  listPosts, getPost, addPost, listPostComments, addPostComment, addPostLike,
+  listPosts, getPost, addPost, listPostComments, addPostComment, addPostLike, hasPostLike,
   listTopics, seedCrawlPosts, TOPIC_NAMES,
   listSpots, getSpot, rankSpots, seedSpots,
   SPOTS: ALL_SPOTS, DATA_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,

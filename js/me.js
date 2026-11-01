@@ -58,7 +58,7 @@ function renderMeRates(rates){
   const vm=Object.entries(rates).map(([id,v])=>{
     const s=spotById(id);if(!s)return null;
     return {id,name:s.n,city:s.city,rating:s.rating,
-      img:IMG(P[id]),stars:'★'.repeat(v)+'☆'.repeat(5-v)};
+      img:IMG(id),stars:'★'.repeat(v)+'☆'.repeat(5-v)};
   }).filter(Boolean);
   const app=mountMeVue('rate','#meRates',`
       <div class="rate-row" v-for="r in store.list" :key="r.id">
@@ -96,7 +96,7 @@ function refreshMe(){
   const rates=(typeof getRates==='function')?getRates():{};
   if(!renderMeRates(rates)){
     const entries=Object.entries(rates);
-    $('#meRates').innerHTML=entries.length?entries.map(([id,v])=>{const s=spotById(id);return s?`<div class="rate-row"><img src="${IMG(P[id])}"><div><b>${s.n}</b><p>${s.city} · ⭐${s.rating}</p></div><span class="stars">${'★'.repeat(v)}${'☆'.repeat(5-v)}</span><button class="btn line" style="padding:4px 10px;font-size:11px" onclick="delRate('${id}')">删除</button></div>`:''}).join('')
+    $('#meRates').innerHTML=entries.length?entries.map(([id,v])=>{const s=spotById(id);return s?`<div class="rate-row"><img src="${IMG(id)}"><div><b>${s.n}</b><p>${s.city} · ⭐${s.rating}</p></div><span class="stars">${'★'.repeat(v)}${'☆'.repeat(5-v)}</span><button class="btn line" style="padding:4px 10px;font-size:11px" onclick="delRate('${id}')">删除</button></div>`:''}).join('')
     :'<div class="empty-tip" style="padding:14px">暂无评分 · 去「为你推荐」给景点打星，协同过滤会越来越懂你 🎯</div>';
   }
 }

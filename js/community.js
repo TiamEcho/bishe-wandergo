@@ -292,7 +292,7 @@ function openPost(pid){
 }
 function openImgLightbox(k){
   const s=spotById(k);
-  openModal(`<div class="fd-img big"><img src="${IMG(P[k],'landscape_16_9')}"><span class="fourk">4K ULTRA HD</span></div>
+  openModal(`<div class="fd-img big"><img src="${IMG(k,'landscape_16_9')}"><span class="fourk">4K ULTRA HD</span></div>
     <div class="dbody"><h3 style="font-size:16px;font-weight:900">${s?s.n:'旅行瞬间'}</h3><div class="fd-meta">${s?'📍 '+s.city+' · '+s.tag:'📷 现场花絮'}</div>
     ${s?`<p class="fd-body">${s.desc}</p><div class="dbtns"><button class="btn gold" onclick="closeModal();setTimeout(()=>openSpot('${s.id}'),200)">📍 查看景点攻略</button></div>`:''}</div>`,true);
 }

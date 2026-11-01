@@ -172,7 +172,7 @@ function showResult(c){
   if(spot){
     box.innerHTML=`
       <div class="wk-rcard show">
-        <div class="wk-rimg"><img src="${IMG(P[spot.id],'landscape_16_9')}" alt="${spot.n}">
+        <div class="wk-rimg"><img src="${IMG(spot.id,'landscape_16_9')}" alt="${spot.n}">
           <span class="wk-tagpin">📍 ${c.label}</span></div>
         <div class="wk-rbody">
           <h4>${spot.n}</h4>
@@ -229,7 +229,7 @@ function readHist(){try{return JSON.parse(localStorage.getItem(HIST_KEY)||'[]')}
 function syncHist(){if(histStore)histStore.items=readHist().map(decorateHist)}
 function decorateHist(h){
   const s=h.spotId?spotById(h.spotId):null;
-  return Object.assign({},h,{img:s?IMG(P[s.id],'landscape_4_3'):null,rating:s?s.rating:null,tag:s?s.tag:'未收录景点'});
+  return Object.assign({},h,{img:s?IMG(s.id,'landscape_4_3'):null,rating:s?s.rating:null,tag:s?s.tag:'未收录景点'});
 }
 function mountHistVue(){
   if(histApp||!window.Vue||!$('#wHist'))return histApp;
@@ -262,7 +262,7 @@ function openHistModal(h){
   const s=h.spotId?spotById(h.spotId):null;
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
     <div class="dbody">
-      <div class="wk-hm-img">${s?`<img src="${IMG(P[s.id],'landscape_16_9')}" alt="${s.n}">`:`<div class="wk-hph big"><span>🧭 ${h.label}</span></div>`}</div>
+      <div class="wk-hm-img">${s?`<img src="${IMG(s.id,'landscape_16_9')}" alt="${s.n}">`:`<div class="wk-hph big"><span>🧭 ${h.label}</span></div>`}</div>
       <h3 style="font-size:19px;font-weight:900;margin:6px 0 4px">🎡 ${s?s.n:h.label}</h3>
       <p class="wk-rsub">${h.sub} · 转盘时间 ${h.t}</p>
       ${s?`<div class="wk-rmeta" style="margin:10px 0"><span>⭐ ${s.rating}</span><span>💰 ${s.price}</span><span>⏱ ${s.hrs}</span><span>🚌 ${s.traf}</span></div>

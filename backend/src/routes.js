@@ -152,7 +152,27 @@ router.get('/post/detail', async (req, res, next) => {
     const p = await dbx.getPost(req.query.id);
     if (!p) return res.status(404).json({ ok: false, message: '帖子不存在' });
     const comments = await dbx.listPostComments(p.id);
-    res.json({ ok: true, post: p, comments, liked: false });
+    /* liked 回显：优先用 token 里的用户，其次用查询串里的 nick */
+    let nick = req.query.nick ? String(req.query.nick) : '';
+    const uid = userOf(req);
+    if (uid) nick = nick || String(uid);
+    const liked = nick ? await dbx.hasPostLike(p.id, nick) : false;
+    res.json({ ok: true, post: p, comments, liked });
+  } catch (e) { next(e); }
+});
+
+/* 点赞开关：api.js 的 postLike() 调用这个地址，返回 {ok, liked, count}。
+   身份取 token → body.nick 的顺序，保证同一用户重复点击不会重复计数。 */
+router.post('/post/like/toggle', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const postId = String(b.postId || b.id || '').trim();
+    if (!postId) return res.status(400).json({ ok: false, message: '缺少 postId' });
+    const uid = userOf(req);
+    const who = uid ? String(uid) : String(b.nick || '').trim();
+    if (!who) return res.status(401).json({ ok: false, message: '请先登录后再点赞' });
+    const r = await dbx.addPostLike(postId, who);
+    res.json({ ok: true, liked: r.liked, count: r.likeCount });
   } catch (e) { next(e); }
 });
 
@@ -191,9 +211,11 @@ router.post('/posts/:id/comments', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* 点赞：带上用户昵称做去重，同一用户重复点击不会重复累加 */
 router.post('/posts/:id/like', async (req, res, next) => {
   try {
-    res.json({ ok: true, likeCount: await dbx.addPostLike(req.params.id) });
+    const nick = String((req.body && req.body.nick) || '').trim();
+    res.json({ ok: true, ...(await dbx.addPostLike(req.params.id, nick)) });
   } catch (e) { next(e); }
 });
 
@@ -335,11 +357,62 @@ async function resolveBili(url) {
   return mp4;
 }
 
+/* 代理限流：防止有人拿这个接口当免费 CDN 刷外站视频流量。
+ * 1) 单 IP 每分钟最多 30 次请求；
+ * 2) 同一 IP + 同一视频最多 3 个并发连接（播放器拖动进度条会并发开多个 Range 请求，留足余量）；
+ * 3) 全局同时转发上限 20 路，超出直接 429，避免把 Render 免费实例的带宽打满。 */
+const _RL_WINDOW = 60000, _RL_MAX_PER_IP = 30, _RL_MAX_CONN_PER_IP = 3, _RL_MAX_CONN_ALL = 20;
+const _rlHits = new Map();   // ip -> [时间戳]
+const _rlConns = new Map();  // ip -> 当前并发数
+let _rlConnsAll = 0;
+
+function _rlClientIp(req) { return req.ip || req.socket.remoteAddress || 'unknown'; }
+
+/* 每分钟固定窗口计数，窗口过期清理，Map 不会无限增长 */
+function _rlAllowHit(ip) {
+  const now = Date.now();
+  const arr = (_rlHits.get(ip) || []).filter(t => now - t < _RL_WINDOW);
+  if (arr.length >= _RL_MAX_PER_IP) { _rlHits.set(ip, arr); return false; }
+  arr.push(now); _rlHits.set(ip, arr);
+  return true;
+}
+
+/* 每 10 分钟清理一次长期未活动的 IP 记录 */
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, arr] of _rlHits) {
+    const keep = arr.filter(t => now - t < _RL_WINDOW);
+    if (keep.length) _rlHits.set(ip, keep); else _rlHits.delete(ip);
+  }
+}, 600000).unref?.();
+
 router.get('/video/stream', async (req, res) => {
   let src = String(req.query.src || '');
   if (!/^https?:\/\//i.test(src)) return res.status(400).send('src 必须是 http(s) 直链');
   let u; try { u = new URL(src) } catch { return res.status(400).send('src 非法') }
   if (!_VIDEO_HOSTS.test(u.hostname)) return res.status(403).send('仅代理已接入的视频平台域名');
+
+  /* 进入限流判定：任一条件不满足就拒绝，并且不占用并发计数 */
+  const ip = _rlClientIp(req);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!_rlAllowHit(ip)) return res.status(429).send('请求过于频繁，请稍后再试');
+  const conn = _rlConns.get(ip) || 0;
+  if (conn >= _RL_MAX_CONN_PER_IP || _rlConnsAll >= _RL_MAX_CONN_ALL) {
+    return res.status(429).send('视频并发连接过多，请稍后再试');
+  }
+  _rlConns.set(ip, conn + 1); _rlConnsAll++;
+  /* 无论正常结束、客户端中断还是异常，都要把并发计数还回去 */
+  let _rlReleased = false;
+  const releaseSlot = () => {
+    if (_rlReleased) return;
+    _rlReleased = true;
+    const c = (_rlConns.get(ip) || 1) - 1;
+    if (c > 0) _rlConns.set(ip, c); else _rlConns.delete(ip);
+    _rlConnsAll = Math.max(0, _rlConnsAll - 1);
+  };
+  res.on('close', releaseSlot);
+  res.on('finish', releaseSlot);
+
   try {
     /* 网页地址（非直链）先解析成真实视频流地址 */
     if (!/\.(mp4|m3u8|flv|webm)(\?|$)/i.test(u.pathname) && /bilibili\.com$/i.test(u.hostname)) {
@@ -504,20 +577,38 @@ router.get('/plan/spots', async (req, res) => {
  * 用户 / 评分 / 收藏 / 推荐（论文第 4 章：协同过滤模块）
  * ========================================================= */
 
-/* 简单的无状态 token：base64(userId:username)，够本地与演示用 */
+/* JWT（HS256）签名：载荷只放 uid / username / role，不含任何敏感信息。
+   密钥优先取环境变量 JWT_SECRET，未配置时用固定的开发默认值（仅本地演示）。 */
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'wandergo-dev-secret-change-me';
+const JWT_EXPIRES = '7d';
+
 function makeToken(u) {
-  return Buffer.from(`${u.id}:${u.username}`).toString('base64');
+  return jwt.sign(
+    { uid: u.id, username: u.username, role: u.role || 'user' },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES }
+  );
 }
+
+/* 从 Authorization: Bearer <jwt> 中验签并取出 user_id；签名错误或过期返回 null */
 function userOf(req) {
   const auth = String(req.headers.authorization || '');
-  if (auth.startsWith('Bearer ')) {
-    try {
-      const raw = Buffer.from(auth.slice(7), 'base64').toString('utf-8');
-      const id = Number(raw.split(':')[0]);
-      if (id) return id;
-    } catch { /* ignore */ }
+  if (!auth.startsWith('Bearer ')) return null;
+  try {
+    const p = jwt.verify(auth.slice(7), JWT_SECRET);
+    const id = Number(p && p.uid);
+    return id || null;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+/* 取当前登录用户整行（需要 role 判断时用） */
+async function currentUser(req) {
+  const id = userOf(req);
+  if (!id) return null;
+  return dbx.findUserById(id);
 }
 /* 昵称 → user_id：前端很多接口只传 nick，这里做一次解析 */
 async function resolveUser(nick) {
@@ -548,7 +639,7 @@ router.post('/user/login', async (req, res, next) => {
     const { username, password } = req.body || {};
     const u = await dbx.verifyUser(username, password);
     if (!u) return res.status(401).json({ ok: false, message: '用户名或密码错误' });
-    res.json({ ok: true, uid: u.id, nick: u.nick || u.username, token: makeToken(u) });
+    res.json({ ok: true, uid: u.id, nick: u.nick || u.username, role: u.role || 'user', token: makeToken(u) });
   } catch (e) { next(e); }
 });
 
@@ -625,4 +716,71 @@ router.get('/rank', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* =========================================================
+ * 管理端（论文 3.x 后台管理模块）
+ * 权限：需携带有效 JWT 且 role = 'admin'，否则 403
+ * ========================================================= */
+async function requireAdmin(req, res) {
+  const u = await currentUser(req);
+  if (!u) { res.status(401).json({ ok: false, message: '未登录或登录已过期' }); return null; }
+  if (u.role !== 'admin') { res.status(403).json({ ok: false, message: '需要管理员权限' }); return null; }
+  return u;
+}
+
+/* GET /api/admin/overview —— 后台首页四块统计卡 */
+router.get('/admin/overview', async (req, res, next) => {
+  try {
+    if (!await requireAdmin(req, res)) return;
+    const s = await dbx.stats();
+    const spot = await dbx.get('SELECT COUNT(*) AS c FROM scenic_spot');
+    const user = await dbx.get('SELECT COUNT(*) AS c FROM app_user');
+    const post = await dbx.get('SELECT COUNT(*) AS c FROM post');
+    const rating = await dbx.get('SELECT COUNT(*) AS c FROM rating_record');
+    const comment = await dbx.get('SELECT COUNT(*) AS c FROM comment');
+    /* 前端 admin.js 的统计卡直接读顶层字段，这里保持扁平结构；
+       comment 表当前没有审核状态列，待审核数先按 0 返回 */
+    res.json({
+      ok: true,
+      users: Number(user.c),
+      spots: Number(spot.c),
+      posts: Number(post.c),
+      ratings: Number(rating.c),
+      comments: Number(comment.c),
+      pending: 0,
+      guides: s.guides, checkins: s.checkins, entities: s.entities, cities: s.cities
+    });
+  } catch (e) { next(e); }
+});
+
+/* GET /api/admin/spot/list?kw= —— 景点维护列表 */
+router.get('/admin/spot/list', async (req, res, next) => {
+  try {
+    if (!await requireAdmin(req, res)) return;
+    const kw = String(req.query.kw || '').trim().toLowerCase();
+    const limit = Math.min(Number(req.query.limit) || 200, 1000);
+    let rows = await dbx.listSpots(limit);
+    if (kw) rows = rows.filter(s => `${s.name} ${s.city} ${s.tags}`.toLowerCase().includes(kw));
+    /* 数据库字段是 spot_key，管理端表格绑定的是 spotId，这里做一次映射；
+       scenic_spot 表没有 region 列，按有没有 province 判断国内/国外 */
+    const list = rows.map(s => ({
+      ...s,
+      spotId: s.spot_key,
+      region: s.province ? 'cn' : 'ab'
+    }));
+    res.json({ ok: true, total: list.length, list });
+  } catch (e) { next(e); }
+});
+
+/* GET /api/admin/user/list —— 用户管理列表（不返回密码散列） */
+router.get('/admin/user/list', async (req, res, next) => {
+  try {
+    if (!await requireAdmin(req, res)) return;
+    const rows = await dbx.all(
+      'SELECT id, username, nick, city, role, created_at FROM app_user ORDER BY id ASC'
+    );
+    res.json({ ok: true, total: rows.length, list: rows });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
+module.exports.makeToken = makeToken;
