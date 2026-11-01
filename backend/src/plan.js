@@ -83,6 +83,7 @@ function fromAmap(p) {
 async function collectSpots(city, want) {
   const libPool = poolOfCity(city).map(toSpot);
   const byName = new Map(libPool.map(s => [s.name, s]));
+  let aiNames = [];
 
   /* 中心点：站内库均值 → 高德地理编码 → 已知海外城市表 → 默认北京
    * 必须先于检索确定：路由层要靠它判定走国内高德还是海外 OSM */
@@ -99,11 +100,13 @@ async function collectSpots(city, want) {
 
   const overseas = isOverseas(city, center);
 
-  /* 按目的地自动选源，返回结构一致（places 已带 category 与 source） */
-  const skipOsm = overseas && libPool.length >= Math.max(want, 8);
-  const found = skipOsm
+  /* 按目的地自动选源，返回结构一致（places 已带 category 与 source）。
+   * 站内库已凑满就不再检索：既省一次高德请求，也避免把人工整理的地标
+   * 换成检索出来的无名公园 */
+  const skipSearch = libPool.length >= want;
+  const found = skipSearch
     ? { places: [], provider: 'skip' }
-    : await searchPlaces(city, { center, limit: 200, skipOsm });
+    : await searchPlaces(city, { center, limit: 200, skipOsm: skipSearch });
   const poiPool = (found.places || []).map(fromAmap);
 
   const chosen = [];
@@ -157,12 +160,18 @@ async function collectSpots(city, want) {
         .forEach(push);
     }
   } else {
-    /* --- 国内：AI 建议 → 高德检索池 → 站内库 → 近邻 --- */
-    let aiNames = [];
-    const j = await chatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
-    if (j && Array.isArray(j.spots)) {
-      aiNames = j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean);
+    /* --- 国内：站点覆盖度优先，不足再让大模型补名单 ---
+     * 之前一律先调大模型，站内库的「东方明珠 / 上海迪士尼 / 和平饭店」这类
+     * 高热度打卡点根本没机会进场，12 个名额全被 AI 报的地名占满。 */
+    if (libPool.length < want) {
+      const j = await chatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
+      if (j && Array.isArray(j.spots)) {
+        aiNames = j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean);
+      }
     }
+
+    /* 0) 站内库高热度景点优先（东方明珠 / 迪士尼 / 和平饭店这类必打卡点） */
+    libPool.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0)).forEach(push);
 
     /* 1) AI 点名的景点优先：站内库 → 检索池 → 地理编码 */
     for (const name of aiNames) {
@@ -180,22 +189,24 @@ async function collectSpots(city, want) {
     }
 
     /* 2) 检索池：按「类别均衡 + 评分 + 距中心由近及远」排序后补入，
-     *    保证购物 / 文创 / 美食 / 休闲 / 文化都有机会进入行程，而不是清一色风景名胜 */
-    const cats = ['景点', '购物', '文创', '美食', '休闲', '文化'];
-    const buckets = {};
-    poiPool.forEach(s => (buckets[s.category || '景点'] = buckets[s.category || '景点'] || []).push(s));
-    Object.keys(buckets).forEach(k => buckets[k].sort((a, b) =>
-      (b.rating - a.rating) || (dist(center, a) - dist(center, b))));
-    let guard = 0;
-    while (chosen.length < want && guard++ < poiPool.length * 2) {
-      cats.forEach(k => {
-        const s = (buckets[k] || []).shift();
-        if (s) push(s);
-      });
+     *    保证购物 / 文创 / 美食 / 休闲 / 文化都有机会进入行程，而不是清一色风景名胜；
+     *    站内库已凑满时整段跳过，否则每次都要白等一遍高德检索 */
+    if (chosen.length < want) {
+      const cats = ['景点', '购物', '文创', '美食', '休闲', '文化'];
+      const buckets = {};
+      poiPool.forEach(s => (buckets[s.category || '景点'] = buckets[s.category || '景点'] || []).push(s));
+      Object.keys(buckets).forEach(k => buckets[k].sort((a, b) =>
+        (b.rating - a.rating) || (dist(center, a) - dist(center, b))));
+      let guard = 0;
+      while (chosen.length < want && guard++ < poiPool.length * 2) {
+        cats.forEach(k => {
+          const s = (buckets[k] || []).shift();
+          if (s) push(s);
+        });
+      }
     }
 
-    /* 3) 站内库补足：同城优先（扩充后单城已有 8-11 个），再 60km 内同省近邻 */
-    libPool.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0)).forEach(push);
+    /* 3) 近邻补位：同城库已全部入场后仍不足，才补 60km 内同省景点 */
     if (chosen.length < want) nearPool(center, libPool, 30).map(toSpot).forEach(push);
   }
 

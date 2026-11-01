@@ -107,6 +107,42 @@ function geoSpot(name,city,prov,lng,lat,rg){
 function realSpots(ids){
   return ids.map(id=>spotById(id)).filter(s=>s&&!s.__virtual);
 }
+/* ================= 站内景点库（js/spots_crawl.json）接入前端候选池 =================
+ * data.js 的 SPOTS 每个城市只手工精编 1-2 个，上海只有外滩、东京只有浅草寺，
+ * 而 570 条人工整理坐标的景点库只喂给了后端，所以前端本地匹配出来的行程
+ * 永远是「1 个景点」。这里把整库转成 SPOTS 结构补进候选池：
+ *   ① 按需加载，失败（file:// 直开 / 网络异常）静默跳过，退回原有行为
+ *   ② 同城已有同名精编景点时不重复插入，精编数据（描述/开放时间）优先
+ *   ③ id 加 lib_ 前缀，避免与 data.js 的 id 冲突 */
+let __libReady=null;
+function loadSpotLib(){
+  if(__libReady)return __libReady;
+  __libReady=new Promise(res=>{
+    if(typeof fetch!=='function'||!location.protocol.startsWith('http'))return res(0);
+    fetch('js/spots_crawl.json').then(r=>r.ok?r.json():[]).then(list=>{
+      if(!Array.isArray(list))return res(0);
+      const key=s=>s.city+'|'+s.n;
+      const has=new Set(SPOTS.map(key));
+      let added=0;
+      list.forEach(it=>{
+        if(!it||!it.name||it.lng==null||it.lat==null)return;
+        const k=it.city+'|'+it.name;
+        if(has.has(k))return;
+        has.add(k);added++;
+        SPOTS.push({
+          id:'lib_'+it.spot_id,n:it.name,city:it.city||'',rg:it.region==='ab'?'ab':'cn',
+          addr:it.address||((it.city||'')+' · '+it.name),lng:+it.lng,lat:+it.lat,
+          hrs:it.hours||'2-3 小时',traf:it.traffic||'当地交通可达',
+          price:it.price||'以景区公示为准',rating:+(it.rating||4.5),
+          openHrs:'以景区公告为准',bestTime:'day',needBook:false,dur:180,
+          tag:it.tags||'景点',desc:it.desc||'',__lib:true
+        });
+      });
+      res(added);
+    }).catch(()=>res(0));
+  });
+  return __libReady;
+}
 function geoMatch(q){
   let best=null;
   for(const e of GEO_DB){
@@ -766,6 +802,8 @@ function runAI(){
 /* 收尾：先本地算出基础行程，再请求后端「去重 + 扇形分区 + 周边餐饮住宿」；
  * 后端不可用（未部署 / 超时 / 无 Key）时用前端本地扇形分区兜底，结果结构一致 */
 async function finishPlan(f,pipe,tip){
+  /* 站内景点库必须先就位再匹配：否则「上海」只能匹配到 data.js 里的外滩 1 个点 */
+  await loadSpotLib();
   let plan=matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref});
   const reqD=Math.max(1,f.days||2);
   if(plan){

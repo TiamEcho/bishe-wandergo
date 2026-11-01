@@ -111,8 +111,7 @@ async function searchPlaces(city, opts = {}) {
   const center = resolveCenter(cityArg, opts.center);
   const inChina = knownOverseas ? false : isInChina(center);
 
-  /* 海外：走 OSM（先查预抓缓存，未命中才实时请求）
-   * opts.skipOsm 用于「本地美食库已命中」时直接跳过，省掉 60-120s 的 Overpass 等待 */
+  /* opts.skipOsm 用于「站内精编库已凑满」时直接跳过，省掉 60-120s 的 Overpass 等待 */
   if (inChina === false) {
     if (opts.skipOsm) {
       return { ok: true, total: 0, byCategory: {}, places: [], source: 'skip', city: cityArg, provider: 'osm' };
