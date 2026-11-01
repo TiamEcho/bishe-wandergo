@@ -9,11 +9,15 @@
  * 依赖：echarts 4.9 + data.js + core.js
  * ========================================================= */
 const CHARTS={};let mapMode='cn';
+/* 底图与 ECharts 本体已内置到 js/lib/。
+ * 远端 CDN 在部分网络环境（含国内直连 / 代理异常）会长时间挂起，此时
+ * 原来的「只试远端」逻辑会让 createWanderMap 永远拿不到 echarts，
+ * 地图画布保持空白。现在本地优先，CDN 只作为兜底。 */
 function loadECharts(cb){
   const urls=[
-   ['https://cdn.jsdelivr.net/npm/echarts@4.9.0/dist/echarts.min.js','https://unpkg.com/echarts@4.9.0/dist/echarts.min.js','https://registry.npmmirror.com/echarts/4.9.0/files/dist/echarts.min.js'],
-   ['https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/china.js','https://unpkg.com/echarts@4.9.0/map/js/china.js','https://registry.npmmirror.com/echarts/4.9.0/files/map/js/china.js'],
-   ['https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js','https://unpkg.com/echarts@4.9.0/map/js/world.js','https://registry.npmmirror.com/echarts/4.9.0/files/map/js/world.js']
+   ['js/lib/echarts.min.js','https://cdn.jsdelivr.net/npm/echarts@4.9.0/dist/echarts.min.js','https://unpkg.com/echarts@4.9.0/dist/echarts.min.js'],
+   ['js/lib/china.js','https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/china.js','https://unpkg.com/echarts@4.9.0/map/js/china.js'],
+   ['js/lib/world.js','https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js','https://unpkg.com/echarts@4.9.0/map/js/world.js']
   ];
   let i=0;
   (function next(){
@@ -21,8 +25,13 @@ function loadECharts(cb){
     const list=urls[i];let j=0;
     (function tryOne(){
       if(j>=list.length){ if(i===0){cb(false);return} i++;next();return }
-      const s=document.createElement('script');s.src=list[j++];
-      s.onload=()=>{i++;next()};s.onerror=()=>{s.remove();tryOne()};
+      const src=list[j++];
+      const s=document.createElement('script');
+      /* 单个源挂起 8 秒就换下一个，避免代理卡死时整页空白 */
+      const timer=setTimeout(()=>{s.onload=null;s.onerror=null;s.remove();tryOne()},8000);
+      s.src=src;
+      s.onload=()=>{clearTimeout(timer);i++;next()};
+      s.onerror=()=>{clearTimeout(timer);s.remove();tryOne()};
       document.head.appendChild(s);
     })();
   })();

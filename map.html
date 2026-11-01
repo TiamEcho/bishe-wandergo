@@ -47,7 +47,7 @@
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1120"></script>
 <script src="js/core.js?v=1126"></script>
-<script src="js/map.js?v=1130"></script>
+<script src="js/map.js?v=1131"></script>
 <script>
 let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
@@ -68,8 +68,10 @@ function buildMaps(){
   ensureSeedLit();
   const lit=litSet();
   $('#litChip').textContent='✨ 已点亮 '+lit.size+' 处';
+  /* 两张图分别初始化：世界图失败不能连带中国图一起白屏 */
   cur=createWanderMap('chinaMap','cn',{spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openSpot});
-  world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openSpot});
+  try{world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openSpot})}
+  catch(e){console.warn('[map] 世界地图初始化失败',e);world=null}
 }
 function toggleLabels(btn){
   labelsOn=!labelsOn;
@@ -87,8 +89,16 @@ $$('#mapTabs button').forEach(b=>b.onclick=()=>{
 });
 let world=null;
 loadECharts(ok=>{
-  if(!ok){$('#mapFallback').style.display='grid';toast('在线地图资源加载失败，请检查网络');return}
-  try{buildMaps()}catch(e){console.warn(e)}
+  if(!ok){$('#mapFallback').style.display='grid';toast('地图资源加载失败，请检查网络后刷新','err');return}
+  try{buildMaps()}catch(e){
+    console.error('[map] 初始化失败',e);
+    $('#mapFallback').style.display='grid';
+    $('#mapFallback').innerHTML='<div style="grid-column:1/-1;padding:24px;text-align:center;color:#c9553f;font-size:13px;line-height:1.9">'
+      +'<b>地图初始化失败</b><br>'+String(e&&e.message||e)
+      +'<br><span style="color:#8a7a63;font-size:12px">请按 F12 打开控制台查看详细堆栈</span></div>';
+    toast('地图初始化失败：'+(e&&e.message||e),'err');
+    return;
+  }
   /* 深度链接：map.html?spot=xxx 自动打开详情 */
   const sid=WGO.q('spot');
   if(sid&&spotById(sid)){
