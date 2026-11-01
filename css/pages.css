@@ -79,6 +79,26 @@
 .ui-chips{display:flex;flex-wrap:wrap;gap:5px}
 .ui-chips span{font-size:9.5px;color:#cbd6e4;background:rgba(126,166,217,.16);border:1px solid rgba(126,166,217,.3);border-radius:9px;padding:2px 8px}
 .ui-btn{align-self:flex-end;background:linear-gradient(135deg,#ffd76a,#e2b455);color:#22303f;font-size:10.5px;font-weight:800;padding:6px 15px;border-radius:9px}
+/* 打卡日期：与正式页同款金色高亮 + 12px 圆角 */
+.ui-fdate{position:relative;display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;
+  border-radius:12px;border:1.5px solid #ffd76a;background:linear-gradient(180deg,#ffe7a6,#e2b455);
+  color:#22303f;font-size:10px;box-shadow:0 6px 16px -8px rgba(255,215,106,.85);overflow:hidden}
+.ui-fdate b{font-size:11.5px;font-weight:900;letter-spacing:.02em}
+.ui-fdate i{position:absolute;right:32px;font-size:8px;font-style:normal;opacity:.7}
+/* 一键成册按钮：悬停时金色粒子升起 */
+.ui-btn.part{position:relative;overflow:hidden;cursor:default;isolation:isolate}
+.ui-btn.part::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .25s;
+  background:radial-gradient(circle at 50% 120%,rgba(255,255,255,.55),transparent 65%)}
+.ui-btn.part:hover::before{opacity:1}
+.ui-btn.part .pt{position:absolute;bottom:2px;width:3px;height:3px;border-radius:50%;background:#fff8dc;
+  box-shadow:0 0 5px #ffe9a8;opacity:0;pointer-events:none;z-index:0}
+.ui-btn.part:hover .pt{animation:uiPt 1.15s ease-out infinite}
+.ui-btn.part span{position:relative;z-index:2}
+@keyframes uiPt{
+  0%{opacity:0;transform:translate(0,0) scale(.5)}
+  18%{opacity:1}
+  100%{opacity:0;transform:translate(var(--dx,0),-22px) scale(1.1)}
+}
 .ui-cards{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .ui-mini{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px}
 .ui-mini img{width:100%;height:40px;object-fit:cover;border-radius:5px;display:block;margin-bottom:6px}

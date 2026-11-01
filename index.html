@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WANDERGO · 设计理念与功能总览</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/pages.css">
+<link rel="stylesheet" href="css/style.css?v=1125">
+<link rel="stylesheet" href="css/pages.css?v=1125">
 </head>
 <body>
 
@@ -300,10 +300,17 @@ function uiMock(type,label,mtitle,id,fi){
   }
 
   if(type==='form'){
+    /* 打卡类的「攻略成册」展示真实表单要素：目的地 / 日期 / 故事 */
+    const isCk=id==='checkin';
+    const today=new Date().toISOString().slice(0,10).replace(/-/g,'/');
+    /* 按钮内的粒子：悬停时从底部升起，避免突然出现一个高亮块 */
+    const pts=Array.from({length:7},(_,k)=>`<i class="pt" style="left:${12+k*11}%;--dx:${(k%2?1:-1)*(3+k%3)*2}px;animation-delay:${(k*.13).toFixed(2)}s"></i>`).join('');
     return stage(`<div class="ui-form">
-      <div class="ui-input">✍ 告诉我想去哪、玩几天…</div>
+      <div class="ui-input">${isCk?'📍 洱海 · 云南大理':'✍ 告诉我想去哪、玩几天…'}</div>
+      ${isCk?`<div class="ui-fdate"><span>📅 哪一天</span><b>${today}</b><i>▼</i></div>`:''}
+      ${isCk?`<div class="ui-input" style="height:26px;font-size:9.5px">✍ 环海西路骑到才村码头，日出正好落在洱海上…</div>`:''}
       <div class="ui-chips"><span>3 天</span><span>预算 ￥3000</span><span>亲子</span><span>${label}</span></div>
-      <span class="ui-btn">生成规划 ✨</span>
+      <span class="ui-btn part" data-p>${pts}<span>${isCk?'📸 一键成册':'生成规划 ✨'}</span></span>
       <div class="ui-cards">
         <div class="ui-mini"><img src="${photo(id,0)}" alt=""><div class="ui-l2" style="width:72%"></div><div class="ui-l2" style="width:44%"></div></div>
         <div class="ui-mini"><img src="${photo(id,1)}" alt=""><div class="ui-l2" style="width:64%"></div><div class="ui-l2" style="width:52%"></div></div>
@@ -476,4 +483,5 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape' && curModal) closeF
 </script>
 </body>
 </html>
+
 

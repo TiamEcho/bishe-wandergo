@@ -1081,6 +1081,30 @@ select optgroup{background:var(--panel);color:var(--muted);font-style:normal;fon
   border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:12.5px;outline:none;transition:.2s}
 .plan-q:focus,.ck-q:focus{border-color:var(--line-gold);box-shadow:0 0 0 3px var(--glass)}
 
+/* ================= 打卡表单：分栏 / 字段 / 日期高亮 ================= */
+.ck-l,.ck-r{display:flex;flex-direction:column;gap:2px;min-width:0}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+@media(max-width:560px){.frow{grid-template-columns:1fr}}
+.fcol{min-width:0}
+.fcol label,.ck-l>label{display:block;font-size:12.5px;font-weight:800;color:var(--ink-2);margin:12px 0 6px}
+.fcol label .hint,.ck-l>label .hint{font-weight:500;font-size:11px;color:var(--muted);margin-left:4px}
+.ck-l select{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:10px 13px;
+  font-size:13px;color:var(--ink);outline:none;transition:.2s}
+.ck-l select:focus,.ck-l textarea:focus{border-color:var(--line-gold);box-shadow:0 0 0 3px var(--glass)}
+.ck-l textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:10px 13px;
+  font-size:13px;color:var(--ink);outline:none;resize:vertical;transition:.2s}
+/* 日期框：与「去了哪儿」同一套 12px 圆角，但用金色描边 + 渐变底做视觉强突出 */
+.fdate{position:relative}
+.fdate input[type=date]{width:100%;background:var(--gold-grad);color:var(--accent-ink);font-weight:900;
+  border:1.5px solid var(--gold);border-radius:12px;padding:10px 13px;font-size:13.5px;outline:none;
+  letter-spacing:.02em;box-shadow:0 6px 18px -8px rgba(231,199,109,.65);transition:.2s;cursor:pointer;
+  -webkit-appearance:none;appearance:none}
+.fdate input[type=date]:hover{transform:translateY(-1px);box-shadow:0 10px 22px -8px rgba(231,199,109,.85)}
+.fdate input[type=date]:focus{box-shadow:0 0 0 3px var(--glass),0 10px 22px -8px rgba(231,199,109,.85)}
+.fdate input[type=date]::-webkit-calendar-picker-indicator{opacity:.85;cursor:pointer;filter:none}
+.fdate::after{content:'▼';position:absolute;right:34px;top:50%;transform:translateY(-50%);
+  font-size:9px;color:var(--accent-ink);opacity:.7;pointer-events:none}
+
 /* 美食推荐 */
 .food-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:10px;margin-top:6px}
 .food-card{padding:12px 14px;border-radius:16px;background:var(--panel-2);border:1px solid var(--line);transition:.2s}
