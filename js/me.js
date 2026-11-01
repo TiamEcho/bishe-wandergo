@@ -11,12 +11,17 @@ const meStores={
 };
 const meApps={ck:null,badge:null,rate:null};
 
-function mountMeVue(key,sel,template,methods){
+function mountMeVue(key,sel,template,methods,initial){
   const el=$(sel);
   if(!el||!window.Vue)return null;
+  /* 每次刷新都把最新数据写进已有的响应式 store，保证内容会更新 */
+  meStores[key].list=initial||[];
   if(meApps[key])return meApps[key];
   const st=Vue.reactive(meStores[key]);
   meApps[key]=Vue.createApp({setup(){return{store:st}},methods:methods||{},template}).mount(sel);
+  /* 挂载后再同步一次：部分浏览器首帧会读到挂载前的空数组 */
+  meStores[key].list=initial||[];
+  Vue.nextTick(()=>{meStores[key].list=initial||[]});
   return meApps[key];
 }
 
@@ -33,9 +38,8 @@ function renderMyChecks(albums){
         <span class="cost">{{a.costTxt}}</span>
       </div>
       <div class="empty-tip" style="padding:18px" v-if="!store.list.length">暂无打卡记录 · 去「我的打卡」创建第一条 ✨</div>`,
-    {open(id){openAlbumById(id)}});
-  if(app){meStores.ck.list=vm;return true}
-  return false;
+    {open(id){openAlbumById(id)}},vm);
+  return !!app;
 }
 
 /* ---------- 徽章墙 ---------- */
@@ -45,9 +49,8 @@ function renderMeBadges(albums){
   const app=mountMeVue('badge','#meBadges',`
       <span class="badge-pill" :class="{got:b.got}" :title="b.desc" v-for="b in store.list" :key="b.id">
         {{b.icon}} {{b.name}}{{b.got?' ✔':''}}
-      </span>`,null);
-  if(app){meStores.badge.list=vm;return true}
-  return false;
+      </span>`,null,vm);
+  return !!app;
 }
 
 /* ---------- 评分列表 ---------- */
@@ -65,9 +68,8 @@ function renderMeRates(rates){
         <button class="btn line" style="padding:4px 10px;font-size:11px" @click="del(r.id)">删除</button>
       </div>
       <div class="empty-tip" style="padding:14px" v-if="!store.list.length">暂无评分 · 去「猜你喜欢」给景点打星，协同过滤会越来越懂你 🎯</div>`,
-    {del(id){delRate(id)}});
-  if(app){meStores.rate.list=vm;return true}
-  return false;
+    {del(id){delRate(id)}},vm);
+  return !!app;
 }
 
 function refreshMe(){

@@ -1745,9 +1745,13 @@ function hotelModHtml(plan){
 /* ================= 侧边模块导航 ================= */
 /* ---- 模块导航：Vue 3 岛屿（列表与高亮状态数据驱动） ---- */
 let railStore=null,railApp=null;
-function mountRailVue(){
-  if(railApp||!window.Vue||!document.getElementById('railList'))return railApp;
-  railStore=Vue.reactive({items:[]});
+function mountRailVue(items){
+  const el=document.getElementById('railList');
+  if(!el||!window.Vue)return null;
+  /* 先写入数据再挂载，避免挂载时读到空数组导致列表不渲染 */
+  if(railStore)railStore.items=items;
+  if(railApp)return railApp;
+  railStore=Vue.reactive({items});
   railApp=Vue.createApp({
     setup(){return{store:railStore}},
     methods:{jump(i){const m=document.querySelectorAll('#modGrid .mod')[i];if(!m)return;
@@ -1757,7 +1761,9 @@ function mountRailVue(){
       <button class="rail-item" v-for="(x,i) in store.items" :key="i" @click="jump(i)">
         <span>{{x.icon}}</span>{{x.name}}
       </button>`
-  }).mount('#railList');
+  }).mount(el);
+  railStore.items=items;
+  Vue.nextTick(()=>{railStore.items=items});
   return railApp;
 }
 function buildRail(plan){
@@ -1771,7 +1777,7 @@ function buildRail(plan){
     let name=t?t.textContent.replace(icon,'').replace(/查看详情.*|看评价.*|🔄 刷新/,'').trim():('模块 '+(i+1));
     return {icon,name:name.slice(0,9)};
   });
-  if(mountRailVue()){railStore.items=vm;rail.classList.add('show');return}
+  if(mountRailVue(vm)){rail.classList.add('show');return}
   /* Vue 未加载时的兜底渲染 */
   list.innerHTML=vm.map((x,i)=>`<button class="rail-item" data-i="${i}"><span>${x.icon}</span>${x.name}</button>`).join('');
   list.querySelectorAll('.rail-item').forEach(b=>b.onclick=()=>{
