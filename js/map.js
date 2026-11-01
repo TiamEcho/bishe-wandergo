@@ -69,13 +69,13 @@ function litIconURL(ch){
   return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
 }
 function spotSeries(list,litIds){
-  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:4,rippleEffect:{brushType:'stroke',scale:3.4},
+  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,rippleEffect:{brushType:'stroke',scale:3.4},
     symbolSize:9,itemStyle:{color:'#ff6b57',shadowBlur:12,shadowColor:'rgba(255,107,87,.7)'},
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id})),zlevel:2};
 }
 function iconSeries(list,litIds){
   litIds=litIds||new Set();
-  return {type:'scatter',coordinateSystem:'geo',geoIndex:4,zlevel:3,symbolSize:27,cursor:'pointer',
+  return {type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:27,cursor:'pointer',
     emphasis:{scale:1.35},
     symbol:(v,p)=>litIds.has(p.data.id)?litIconURL(ICO[p.data.id]||'📍'):mkIcon(ICO[p.data.id]||'📍'),
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))};
@@ -84,12 +84,12 @@ function iconSeries(list,litIds){
 function litSeries(list,litIds){
   litIds=litIds||new Set();
   const data=list.filter(s=>litIds.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}));
-  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:4,zlevel:2.5,rippleEffect:{brushType:'stroke',scale:5.2,period:3.2},
+  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:2.5,rippleEffect:{brushType:'stroke',scale:5.2,period:3.2},
     symbolSize:16,itemStyle:{color:'#ffd76a',shadowBlur:22,shadowColor:'rgba(255,205,88,.9)'},
     data,z:5};
 }
 function lineSeries(list){
-  return {type:'lines',coordinateSystem:'geo',geoIndex:4,zlevel:1,
+  return {type:'lines',coordinateSystem:'geo',geoIndex:0,zlevel:1,
     effect:{show:true,period:4.2,trailLength:.55,symbol:'arrow',symbolSize:5,color:'#f0d488'},
     lineStyle:{color:'#e7c76d',width:1.1,opacity:.32,curveness:.28},
     data:list.map(s=>({coords:[[116.40,39.90],[s.lng,s.lat]],id:s.id}))};
@@ -266,17 +266,17 @@ function routeSeries(route){
     const coords=seg.points.map(p=>[p.lng,p.lat]);
     seg.points.forEach(p=>allPts.push({...p,day:seg.day,color:col,idx:allPts.length+1}));
     if(coords.length>=2){
-      series.push({type:'lines',coordinateSystem:'geo',geoIndex:4,zlevel:4,
+      series.push({type:'lines',coordinateSystem:'geo',geoIndex:0,zlevel:4,
         effect:{show:true,period:3.6,trailLength:.4,symbol:'arrow',symbolSize:6,color:col},
         lineStyle:{color:col,width:2.6,opacity:.85,curveness:.15},
         data:[{coords}]});
     }
   });
   if(allPts.length){
-    series.push({type:'scatter',coordinateSystem:'geo',geoIndex:4,zlevel:6,symbolSize:30,cursor:'pointer',
+    series.push({type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:6,symbolSize:30,cursor:'pointer',
       symbol:(v,p)=>mkIcon(ICO[p.data.id]||'📍'),
       data:allPts.map(p=>({name:p.n,value:[p.lng,p.lat],id:p.id}))});
-    series.push({type:'effectScatter',coordinateSystem:'geo',geoIndex:4,zlevel:5,
+    series.push({type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:5,
       rippleEffect:{brushType:'fill',scale:2.6,period:3},
       symbolSize:7,
       itemStyle:{color:allPts[0].color},

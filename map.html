@@ -47,7 +47,7 @@
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1120"></script>
 <script src="js/core.js?v=1126"></script>
-<script src="js/map.js?v=1131"></script>
+<script src="js/map.js?v=1132"></script>
 <script>
 let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
@@ -68,8 +68,13 @@ function buildMaps(){
   ensureSeedLit();
   const lit=litSet();
   $('#litChip').textContent='✨ 已点亮 '+lit.size+' 处';
+  const opt={spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openSpot};
   /* 两张图分别初始化：世界图失败不能连带中国图一起白屏 */
-  cur=createWanderMap('chinaMap','cn',{spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openSpot});
+  cur=createWanderMap('chinaMap','cn',opt);
+  /* createWanderMap 在 echarts 尚未就绪时会返回 null，这里再试一次并报错，
+     避免画布只剩纸纹背景、地图整块空白 */
+  if(!cur&&window.echarts)cur=createWanderMap('chinaMap','cn',opt);
+  if(!cur)throw new Error('中国地图初始化失败：echarts 或 china.js 未就绪');
   try{world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openSpot})}
   catch(e){console.warn('[map] 世界地图初始化失败',e);world=null}
 }
@@ -88,6 +93,9 @@ $$('#mapTabs button').forEach(b=>b.onclick=()=>{
   if(target){requestAnimationFrame(()=>requestAnimationFrame(()=>syncMapGeo(target)))}
 });
 let world=null;
+/* 首页预览截图钩子（无头浏览器用，交互中不会触发） */
+window.__spotHover=id=>{const s=spotById(id);if(s){flyTo(s.rg==='cn'?cur:world,[s.lng,s.lat],2.6);openSpot(id)}};
+window.__groundClick=()=>{try{cur&&cur.dispatchAction({type:'geoRoam',zoom:1.12})}catch(e){}};
 loadECharts(ok=>{
   if(!ok){$('#mapFallback').style.display='grid';toast('地图资源加载失败，请检查网络后刷新','err');return}
   try{buildMaps()}catch(e){
