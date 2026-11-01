@@ -7,7 +7,27 @@ AI 行程规划 · 地图点亮足迹 · 旅行转盘 · 社区攻略 · 打卡�
 
 [**在线体验**](https://tiamecho.github.io/bishe-wandergo/) · [后端接口](https://wandergo-backend-6i1z.onrender.com/api/health) · [设计总览](https://tiamecho.github.io/bishe-wandergo/index.html)
 
+![前端框架](https://img.shields.io/badge/Frontend-HTML%2FCSS%2FJS%20%2B%20ECharts%205-1f6feb?style=flat-square)
+![后端框架](https://img.shields.io/badge/Backend-Node.js%2018%2B%20%2B%20Express%204-339933?style=flat-square)
+![数据库](https://img.shields.io/badge/Database-PostgreSQL%20%7C%20SQLite-336791?style=flat-square)
+![AI](https://img.shields.io/badge/AI-GLM--4--Flash-e8b64c?style=flat-square)
+![部署](https://img.shields.io/badge/Deploy-GitHub%20Pages%20%2B%20Render-8957e5?style=flat-square)
+
 </div>
+
+---
+
+## 界面预览
+
+| 手帐风地图 · 足迹点亮 | AI 行程规划 |
+|---|---|
+| ![手帐风地图](https://raw.githubusercontent.com/TiamEcho/bishe-wandergo/deploy-1029/img/shots/map-1.webp) | ![AI 行程规划](https://raw.githubusercontent.com/TiamEcho/bishe-wandergo/deploy-1029/img/shots/ai-4.webp) |
+
+| 旅行大转盘 | 旅行社区 |
+|---|---|
+| ![旅行大转盘](https://raw.githubusercontent.com/TiamEcho/bishe-wandergo/deploy-1029/img/shots/wheel-2.webp) | ![旅行社区](https://raw.githubusercontent.com/TiamEcho/bishe-wandergo/deploy-1029/img/shots/community-1.webp) |
+
+> 以上截图为线上真实运行效果，非设计稿。
 
 ---
 
@@ -30,6 +50,7 @@ WANDERGO 是一个面向自由行用户的**旅行规划 + 攻略社区**一体�
 | 手帐地图 | https://tiamecho.github.io/bishe-wandergo/map.html | 中国地图 / 世界环球航线 |
 | 旅行转盘 | https://tiamecho.github.io/bishe-wandergo/wheel.html | 选择恐惧症友好 |
 | 旅行社区 | https://tiamecho.github.io/bishe-wandergo/community.html | 多平台攻略聚合 |
+| 源码仓库 | https://github.com/TiamEcho/bishe-wandergo | 开发主线分支 `deploy-1029` |
 | 后端 API | https://wandergo-backend-6i1z.onrender.com/api/health | Express + PostgreSQL（Render 托管） |
 
 > 后端为 Render 免费实例，冷启动约 30–50 秒，首次请求健康检查较慢属正常现象。
@@ -101,7 +122,7 @@ graph TB
     S1 --> D3
 ```
 
-### 3.2 核心业务链路
+### 3.2 核心业务链路（时序）
 
 ```mermaid
 sequenceDiagram
