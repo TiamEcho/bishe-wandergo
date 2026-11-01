@@ -18,6 +18,12 @@ const TW = {
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   },
+  /* src 属性专用转义：dataURL 里含 + / =，再经过 &amp; 之类的实体替换一旦被
+     浏览器还原失败，整张 base64 就废了，所以 data: 开头的原样输出 */
+  srcAttr(u) {
+    const s = String(u == null ? '' : u);
+    return /^data:/.test(s) ? s : this.esc(s);
+  },
   /* 封面兜底：爬虫帖有 cover，站内帖只有 spotId，就用景点图库里的图 */
   cover(p) {
     const c = p.cover || p.img || (p.images && p.images[0]) || '';
@@ -26,6 +32,16 @@ const TW = {
     if (c) return IMG(c);
     if (typeof P !== 'undefined' && P.erhai) return IMG('erhai');
     return '';
+  },
+  /* 外站 CDN 有防盗链（bilibili / 抖音封面常见），加载失败时按标题里的
+     景点名或城市反查景点库，用 IMG(id) 出一张图顶上，卡片不留白 */
+  coverFallback(p) {
+    const probe = (p.title || '') + ' ' + (p.content || '') + ' ' + (p.location || '');
+    const list = (typeof SPOTS !== 'undefined' ? SPOTS : []);
+    let s = p.spotId ? list.find(x => x.id === p.spotId) : null;
+    if (!s) s = list.find(x => x.n && probe.includes(x.n));
+    if (!s) s = list.find(x => x.city && probe.includes(x.city));
+    return typeof IMG === 'function' ? IMG(s ? s.id : 'erhai') : '';
   },
   bgmName(code) {
     if (!code) return '';
@@ -93,13 +109,18 @@ function saveLocalCmt(id, cmt) {
  * 所以点开必然「帖子加载失败」。这里把本地数据包补成后端返回的同构结构。 */
 function localPostStruct(raw) {
   const me = TW.me() || {};
+  /* 打卡页存了两套图：img 是卡片封面（可能是上传照 dataURL，也可能是生成图），
+     userImgs 是用户真正上传的原始照片；优先用真实上传的，保证列表与详情同一张 */
+  const up = (raw.userImgs && raw.userImgs.length ? raw.userImgs : (raw.imgs || [])).filter(Boolean);
+  const cover = raw.img || up[0] || '';
   return {
     id: raw.id, title: raw.title || '', content: raw.text || raw.content || '',
-    cover: raw.cover || raw.img || '', images: raw.imgs || raw.images || [],
+    cover, images: up,
     location: raw.loc || raw.spot || raw.city || '',
     topics: raw.topic || '', type: raw.type || 'plog', client: 'go',
     bgm: raw.bgm || '', nick: raw.nick || me.nick || '旅行者',
-    avatar: raw.avatar || '', createdAt: raw.at || raw.createdAt || Date.now(),
+    avatar: raw.avatar || '',
+    createdAt: raw.createdAt || raw.at || Date.now(),
     likeCount: 0, commentCount: 0, videoUrl: raw.video || '', spotId: raw.spotId || ''
   };
 }
@@ -166,7 +187,8 @@ function renderDbPostModal(p, comments, liked, online) {
 
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
     <div class="tw-detail-cover">
-      <img src="${TW.esc(cover)}" referrerpolicy="no-referrer" alt="">
+      <img src="${TW.srcAttr(cover)}" referrerpolicy="no-referrer" alt=""
+        onerror="this.onerror=null;this.src='${TW.coverFallback(p).replace(/'/g, '&#39;')}'">
       <span class="badge">${pl.i} ${pl.n} · ${TW.typeLabel(p)}</span>
     </div>
     <div class="tw-detail-body">

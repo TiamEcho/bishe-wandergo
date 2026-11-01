@@ -90,6 +90,8 @@ function decoratePost(p){
   return Object.assign({},p,{
     /* 与 renderFeed 保持同一套封面规则：dataURL / http(s) 直接用，否则当景点 id 交给 IMG() */
     img:(()=>{const r=p.img||(p.imgs&&p.imgs[0])||'';return /^(https?:|data:)/.test(r)?r:(r?IMG(r):'')})(),
+    /* 外站 CDN 防盗链导致 onerror 时，Vue 模版绑定这个兜底图 */
+    imgFb:(()=>{const f=typeof TW!=='undefined'&&TW.coverFallback?TW.coverFallback({title:p.txt||p.title||'',location:p.loc||'',spotId:p.spotId||''}):IMG(p.spotId||'erhai');return String(f||'').replace(/'/g,'&#39;')})(),
     platName:pl.n,platIcon:pl.i,platKey:p.plat||'go',
     bgmLabel:p.bgm?(p._bgmName||(typeof TW!=='undefined'?TW.bgmName(p.bgm):'')||BGMI(p.bgm)):'',
     chips:(p.topics||[]).filter(t=>topicById(t)||names[t]).map(t=>({id:t,name:(topicById(t)||{}).name||names[t]})),
@@ -113,7 +115,7 @@ function mountFeedVue(){
         p.liked=r.liked;p.likes=r.count;
       },
       topic(t,e){e.stopPropagation();openTopic(t.id)},
-      imgErr(p,e){e.target.onerror=null;if(p.spotId&&P[p.spotId])e.target.src=IMG(P[p.spotId])}
+      imgErr(p,e){e.target.onerror=null;const f=p.imgFb||(p.spotId?IMG(p.spotId):IMG('erhai'));if(f&&f!==e.target.src)e.target.src=f}
     },
     template:`
       <div class="post" v-for="p in store.items" :key="p.id" @click="openFeedPost(p)" style="cursor:pointer">
@@ -166,10 +168,15 @@ async function renderFeed(){
     const img=/^(https?:|data:)/.test(rawImg)
       ?rawImg
       :IMG(rawImg||'erhai');
+    /* 外站 CDN 有防盗链，onerror 时换一张按名字生成的图，而不是留白 */
+    const imgFb=typeof TW!=='undefined'&&TW.coverFallback
+      ?TW.coverFallback({title:p.txt||p.title||'',location:p.loc||'',spotId:p.spotId||''})
+      :IMG(p.spotId||'erhai');
+    const onErr=/^data:/.test(img)?'':'this.onerror=null;this.src=\''+imgFb.replace(/'/g,'&#39;')+'\'';
     const act=p.db?`onclick="event.stopPropagation();twToggleLike(${p.id},this)"`:`onclick="event.stopPropagation();likePost(this,'${p.id}')"`;
     return `<div class="post" onclick="${p.db?'openDbPost('+p.id+')':'openPost(\''+p.id+'\')'}" style="cursor:pointer">
       <div class="pimg">
-        <img src="${img}" loading="lazy" referrerpolicy="no-referrer">
+        <img src="${img}" loading="lazy" referrerpolicy="no-referrer" onerror="${onErr}">
         ${p.type==='video'?'<span class="vbadge"><i>▶</i></span><span class="moren">'+(p.db?(TW.bgmName(p.bgm)||''):BGMI(p.bgm))+'</span>':''}
         ${p.type==='plog'?'<span class="moren">📷 Plog</span>':''}
         <span class="plat pb-${p.plat||'go'}" style="position:absolute;top:9px;right:9px">${pl.i} ${pl.n}</span>
