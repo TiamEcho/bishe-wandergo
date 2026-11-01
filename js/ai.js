@@ -1743,17 +1743,37 @@ function hotelModHtml(plan){
   </div>`;
 }
 /* ================= 侧边模块导航 ================= */
+/* ---- 模块导航：Vue 3 岛屿（列表与高亮状态数据驱动） ---- */
+let railStore=null,railApp=null;
+function mountRailVue(){
+  if(railApp||!window.Vue||!document.getElementById('railList'))return railApp;
+  railStore=Vue.reactive({items:[]});
+  railApp=Vue.createApp({
+    setup(){return{store:railStore}},
+    methods:{jump(i){const m=document.querySelectorAll('#modGrid .mod')[i];if(!m)return;
+      m.scrollIntoView({behavior:'smooth',block:'center'});
+      m.classList.add('flash');setTimeout(()=>m.classList.remove('flash'),900)}},
+    template:`
+      <button class="rail-item" v-for="(x,i) in store.items" :key="i" @click="jump(i)">
+        <span>{{x.icon}}</span>{{x.name}}
+      </button>`
+  }).mount('#railList');
+  return railApp;
+}
 function buildRail(plan){
   const rail=document.getElementById('modRail'),list=document.getElementById('railList');
   const grid=document.getElementById('modGrid');
   if(!rail||!list||!grid)return;
   const mods=[...grid.querySelectorAll('.mod')];
-  list.innerHTML=mods.map((m,i)=>{
+  const vm=mods.map((m,i)=>{
     const t=m.querySelector('h4');
     const icon=t&&t.querySelector('.mi')?t.querySelector('.mi').textContent:'🧩';
     let name=t?t.textContent.replace(icon,'').replace(/查看详情.*|看评价.*|🔄 刷新/,'').trim():('模块 '+(i+1));
-    return `<button class="rail-item" data-i="${i}"><span>${icon}</span>${name.slice(0,9)}</button>`;
-  }).join('');
+    return {icon,name:name.slice(0,9)};
+  });
+  if(mountRailVue()){railStore.items=vm;rail.classList.add('show');return}
+  /* Vue 未加载时的兜底渲染 */
+  list.innerHTML=vm.map((x,i)=>`<button class="rail-item" data-i="${i}"><span>${x.icon}</span>${x.name}</button>`).join('');
   list.querySelectorAll('.rail-item').forEach(b=>b.onclick=()=>{
     const m=mods[+b.dataset.i];if(!m)return;
     m.scrollIntoView({behavior:'smooth',block:'center'});

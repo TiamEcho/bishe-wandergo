@@ -10,6 +10,7 @@ const { aiStatus, extractEntities, chat } = require('./dots');
 const { localExtract } = require('./extract');
 const { planRoute } = require('./plan');
 const { searchCitySpots } = require('./services/scenicSpotSearch');
+const { recommend } = require('./recommend');
 
 const router = express.Router();
 
@@ -338,6 +339,131 @@ router.get('/plan/spots', async (req, res) => {
     console.error('[plan/spots]', e);
     res.status(500).json({ ok: false, message: '检索失败', error: String(e.message || e) });
   }
+});
+
+/* =========================================================
+ * 用户 / 评分 / 收藏 / 推荐（论文第 4 章：协同过滤模块）
+ * ========================================================= */
+
+/* 简单的无状态 token：base64(userId:username)，够本地与演示用 */
+function makeToken(u) {
+  return Buffer.from(`${u.id}:${u.username}`).toString('base64');
+}
+function userOf(req) {
+  const auth = String(req.headers.authorization || '');
+  if (auth.startsWith('Bearer ')) {
+    try {
+      const raw = Buffer.from(auth.slice(7), 'base64').toString('utf-8');
+      const id = Number(raw.split(':')[0]);
+      if (id) return id;
+    } catch { /* ignore */ }
+  }
+  return null;
+}
+/* 昵称 → user_id：前端很多接口只传 nick，这里做一次解析 */
+async function resolveUser(nick) {
+  const name = String(nick || '').trim();
+  if (!name) return null;
+  const u = await dbx.findUser(name);
+  return u ? u.id : null;
+}
+
+/* ⑨ POST /api/user/register */
+router.post('/user/register', async (req, res, next) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ ok: false, message: '用户名和密码不能为空' });
+    }
+    const r = await dbx.createUser(username, password, username);
+    res.json({
+      ok: true, created: r.created, uid: r.user.id,
+      nick: r.user.nick || r.user.username, token: makeToken(r.user)
+    });
+  } catch (e) { next(e); }
+});
+
+/* ⑩ POST /api/user/login */
+router.post('/user/login', async (req, res, next) => {
+  try {
+    const { username, password } = req.body || {};
+    const u = await dbx.verifyUser(username, password);
+    if (!u) return res.status(401).json({ ok: false, message: '用户名或密码错误' });
+    res.json({ ok: true, uid: u.id, nick: u.nick || u.username, token: makeToken(u) });
+  } catch (e) { next(e); }
+});
+
+/* ⑪ POST /api/rating/add —— 评分入库并刷新偏好矩阵 */
+router.post('/rating/add', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const uid = userOf(req) || await resolveUser(b.nick || b.username);
+    if (!uid) return res.status(401).json({ ok: false, message: '请先登录' });
+    const spotId = String(b.spotId || b.spot_key || '').trim();
+    if (!spotId) return res.status(400).json({ ok: false, message: 'spotId 不能为空' });
+    const out = await dbx.addRating(uid, spotId, b.score);
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
+/* ⑫ POST /api/favorite/toggle */
+router.post('/favorite/toggle', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const uid = userOf(req) || await resolveUser(b.nick);
+    if (!uid) return res.status(401).json({ ok: false, message: '请先登录' });
+    const spotId = String(b.spotId || b.spot_key || '').trim();
+    if (!spotId) return res.status(400).json({ ok: false, message: 'spotId 不能为空' });
+    res.json(await dbx.toggleFavorite(uid, spotId));
+  } catch (e) { next(e); }
+});
+
+/* ⑬ GET /api/recommend?nick=&n= —— UserCF + ItemCF 融合推荐 */
+router.get('/recommend', async (req, res, next) => {
+  try {
+    const n = Math.min(Number(req.query.n) || 8, 50);
+    const uid = userOf(req) || await resolveUser(req.query.nick);
+    /* 游客：直接给热门榜，前端按同一结构渲染 */
+    if (!uid) {
+      const spots = await dbx.rankSpots('hot', req.query.city, n);
+      return res.json({
+        ok: true, mode: 'popular', algo: 'popular',
+        list: spots.map(s => ({
+          id: s.spot_key, name: s.name, city: s.city,
+          score: Number(s.rating) || 0, match: Math.round((s.rating || 4) * 20),
+          why: '热门兜底 · 未登录用户', algo: 'popular',
+          rating: Number(s.rating) || 0, price: s.price || '', tags: s.tags || '', cover: s.cover || ''
+        }))
+      });
+    }
+    const out = await recommend(uid, { topN: n });
+    res.json({ ok: true, mode: out.mode, ...out.stats, list: out.list });
+  } catch (e) { next(e); }
+});
+
+/* ⑭ GET /api/spot/list —— 景点全集（供推荐页、地图、管理端复用） */
+router.get('/spot/list', async (req, res, next) => {
+  try {
+    const kw = String(req.query.kw || '').trim();
+    const limit = Math.min(Number(req.query.limit) || 500, 2000);
+    let rows = await dbx.listSpots(limit);
+    if (kw) {
+      const k = kw.toLowerCase();
+      rows = rows.filter(s => `${s.name} ${s.city} ${s.tags}`.toLowerCase().includes(k));
+    }
+    res.json({ ok: true, total: rows.length, list: rows });
+  } catch (e) { next(e); }
+});
+
+/* ⑮ GET /api/rank?scope=hot|rating&city= */
+router.get('/rank', async (req, res, next) => {
+  try {
+    const scope = req.query.scope === 'rating' ? 'rating' : 'hot';
+    const city = String(req.query.city || '').trim();
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const rows = await dbx.rankSpots(scope, city, limit);
+    res.json({ ok: true, scope, city: city || null, list: rows });
+  } catch (e) { next(e); }
 });
 
 module.exports = router;

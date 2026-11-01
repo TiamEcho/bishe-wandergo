@@ -160,9 +160,68 @@ CREATE TABLE IF NOT EXISTS entity(
   created_at TEXT,
   UNIQUE(guide_id, type, name)
 );
+CREATE TABLE IF NOT EXISTS app_user(
+  id         SERIAL PRIMARY KEY,
+  username   TEXT UNIQUE NOT NULL,
+  password   TEXT NOT NULL,
+  nick       TEXT,
+  city       TEXT,
+  role       TEXT DEFAULT 'user',
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS scenic_spot(
+  id        SERIAL PRIMARY KEY,
+  spot_key  TEXT UNIQUE,
+  name      TEXT NOT NULL,
+  city      TEXT,
+  province  TEXT,
+  lng       DOUBLE PRECISION,
+  lat       DOUBLE PRECISION,
+  rating    DOUBLE PRECISION DEFAULT 0,
+  heat      INTEGER DEFAULT 0,
+  price     TEXT,
+  tags      TEXT,
+  cover     TEXT,
+  intro     TEXT
+);
+CREATE TABLE IF NOT EXISTS rating_record(
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL,
+  spot_key   TEXT NOT NULL,
+  score      DOUBLE PRECISION NOT NULL,
+  created_at TEXT,
+  UNIQUE(user_id, spot_key)
+);
+CREATE TABLE IF NOT EXISTS favorite_record(
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL,
+  spot_key   TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(user_id, spot_key)
+);
+CREATE TABLE IF NOT EXISTS comment(
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER,
+  spot_key   TEXT,
+  content    TEXT,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS user_behavior(
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL,
+  spot_key   TEXT NOT NULL,
+  action     TEXT NOT NULL,
+  weight     DOUBLE PRECISION DEFAULT 1,
+  created_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
 CREATE INDEX IF NOT EXISTS idx_check_city  ON checkin(city);
 CREATE INDEX IF NOT EXISTS idx_entity_name ON entity(name);
+CREATE INDEX IF NOT EXISTS idx_rating_user ON rating_record(user_id);
+CREATE INDEX IF NOT EXISTS idx_rating_spot ON rating_record(spot_key);
+CREATE INDEX IF NOT EXISTS idx_fav_user    ON favorite_record(user_id);
+CREATE INDEX IF NOT EXISTS idx_behav_user  ON user_behavior(user_id);
+CREATE INDEX IF NOT EXISTS idx_spot_key    ON scenic_spot(spot_key);
 `
   : `
 CREATE TABLE IF NOT EXISTS guide(
@@ -202,9 +261,68 @@ CREATE TABLE IF NOT EXISTS entity(
   created_at TEXT,
   UNIQUE(guide_id, type, name)
 );
+CREATE TABLE IF NOT EXISTS app_user(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  username   TEXT UNIQUE NOT NULL,
+  password   TEXT NOT NULL,
+  nick       TEXT,
+  city       TEXT,
+  role       TEXT DEFAULT 'user',
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS scenic_spot(
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  spot_key  TEXT UNIQUE,
+  name      TEXT NOT NULL,
+  city      TEXT,
+  province  TEXT,
+  lng       REAL,
+  lat       REAL,
+  rating    REAL DEFAULT 0,
+  heat      INTEGER DEFAULT 0,
+  price     TEXT,
+  tags      TEXT,
+  cover     TEXT,
+  intro     TEXT
+);
+CREATE TABLE IF NOT EXISTS rating_record(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL,
+  spot_key   TEXT NOT NULL,
+  score      REAL NOT NULL,
+  created_at TEXT,
+  UNIQUE(user_id, spot_key)
+);
+CREATE TABLE IF NOT EXISTS favorite_record(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL,
+  spot_key   TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(user_id, spot_key)
+);
+CREATE TABLE IF NOT EXISTS comment(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER,
+  spot_key   TEXT,
+  content    TEXT,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS user_behavior(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL,
+  spot_key   TEXT NOT NULL,
+  action     TEXT NOT NULL,
+  weight     REAL DEFAULT 1,
+  created_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
 CREATE INDEX IF NOT EXISTS idx_check_city  ON checkin(city);
 CREATE INDEX IF NOT EXISTS idx_entity_name ON entity(name);
+CREATE INDEX IF NOT EXISTS idx_rating_user ON rating_record(user_id);
+CREATE INDEX IF NOT EXISTS idx_rating_spot ON rating_record(spot_key);
+CREATE INDEX IF NOT EXISTS idx_fav_user    ON favorite_record(user_id);
+CREATE INDEX IF NOT EXISTS idx_behav_user  ON user_behavior(user_id);
+CREATE INDEX IF NOT EXISTS idx_spot_key    ON scenic_spot(spot_key);
 `;
 
 /* ---------------- 种子数据 ---------------- */
@@ -356,8 +474,34 @@ const now = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 
+/* 景点入库：把 ALL_SPOTS 同步进 scenic_spot，作为推荐算法的物品全集 */
+async function seedSpots() {
+  const cnt = await impl.get('SELECT COUNT(*) AS c FROM scenic_spot');
+  if (Number(cnt.c) > 0) return Number(cnt.c);
+  const sql = impl.dialect === 'postgres'
+    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
+    : `INSERT OR IGNORE INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
+  let n = 0;
+  for (const s of ALL_SPOTS) {
+    if (!s.name || !s.city) continue;
+    const r = await impl.run(sql, [
+      String(s.spot_id || s.name), s.name, s.city, s.province || '',
+      Number.isFinite(Number(s.lng)) ? Number(s.lng) : null,
+      Number.isFinite(Number(s.lat)) ? Number(s.lat) : null,
+      Number(s.rating) || 0, Number(s.heat) || 0,
+      String(s.price == null ? '' : s.price), String(s.tags || s.cat || ''),
+      s.img || s.cover || '', String(s.desc || '').slice(0, 500)
+    ]);
+    n += r.changes;
+  }
+  return n;
+}
+
 async function seed() {
   await impl.exec(DDL);
+  await seedSpots();
 
   const g = await impl.get('SELECT COUNT(*) AS c FROM guide');
   const guideCount = Number(g ? g.c : 0);
@@ -557,12 +701,106 @@ function crawlCandidates(keyword, limit = 8) {
   }).slice(0, limit);
 }
 
+/* ---------------- 用户 / 评分 / 收藏 / 行为（推荐模块数据） ---------------- */
+
+/* 密码散列：等同论文 4.5 的 MD5(SHA1(pwd))，不引入新依赖 */
+function hashPwd(pwd) {
+  const crypto = require('crypto');
+  return crypto.createHash('md5').update(crypto.createHash('sha1').update(String(pwd)).digest('hex')).digest('hex');
+}
+
+async function findUser(username) {
+  return impl.get('SELECT * FROM app_user WHERE username = ?', [String(username || '')]);
+}
+
+async function findUserById(id) {
+  return impl.get('SELECT * FROM app_user WHERE id = ?', [Number(id)]);
+}
+
+/* 注册：用户名已存在则直接返回该用户（前端幂等） */
+async function createUser(username, password, nick, city) {
+  const name = String(username || '').trim();
+  if (!name) throw new Error('用户名不能为空');
+  const old = await findUser(name);
+  if (old) return { created: false, user: old };
+  const info = await impl.run(
+    'INSERT INTO app_user (username,password,nick,city,role,created_at) VALUES (?,?,?,?,?,?)',
+    [name, hashPwd(password), nick || name, city || '', 'user', now()]
+  );
+  return { created: true, user: await findUserById(info.lastId) };
+}
+
+/* 登录：校验密码，返回用户或 null */
+async function verifyUser(username, password) {
+  const u = await findUser(username);
+  if (!u || u.password !== hashPwd(password)) return null;
+  return u;
+}
+
+/* 评分写入：同一用户同一景点覆盖（UNIQUE 约束），并同步一条加权行为 */
+async function addRating(userId, spotKey, score) {
+  const s = Math.max(1, Math.min(5, Number(score) || 0));
+  const sql = impl.dialect === 'postgres'
+    ? `INSERT INTO rating_record (user_id,spot_key,score,created_at) VALUES (?,?,?,?)
+       ON CONFLICT (user_id,spot_key) DO UPDATE SET score = EXCLUDED.score, created_at = EXCLUDED.created_at`
+    : `INSERT INTO rating_record (user_id,spot_key,score,created_at) VALUES (?,?,?,?)
+       ON CONFLICT(user_id,spot_key) DO UPDATE SET score = excluded.score, created_at = excluded.created_at`;
+  await impl.run(sql, [userId, spotKey, s, now()]);
+  await logBehavior(userId, spotKey, 'rating', s);
+  return { ok: true, score: s };
+}
+
+/* 收藏切换：存在则删，不存在则加 */
+async function toggleFavorite(userId, spotKey) {
+  const old = await impl.get('SELECT id FROM favorite_record WHERE user_id = ? AND spot_key = ?', [userId, spotKey]);
+  if (old) {
+    await impl.run('DELETE FROM favorite_record WHERE id = ?', [old.id]);
+    return { ok: true, on: false };
+  }
+  await impl.run('INSERT INTO favorite_record (user_id,spot_key,created_at) VALUES (?,?,?)', [userId, spotKey, now()]);
+  await logBehavior(userId, spotKey, 'favorite', 3);
+  return { ok: true, on: true };
+}
+
+/* 行为流水：供推荐算法按权重构建偏好矩阵 */
+async function logBehavior(userId, spotKey, action, weight) {
+  await impl.run(
+    'INSERT INTO user_behavior (user_id,spot_key,action,weight,created_at) VALUES (?,?,?,?,?)',
+    [userId, spotKey, action, Number(weight) || 1, now()]
+  );
+}
+
+/* 全量行为：推荐算法一次读入内存，避免 N+1 查询 */
+async function allBehaviors() {
+  return impl.all('SELECT user_id, spot_key, action, weight FROM user_behavior');
+}
+
+async function listSpots(limit = 500) {
+  return impl.all('SELECT * FROM scenic_spot ORDER BY heat DESC, rating DESC LIMIT ?', [limit]);
+}
+
+async function getSpot(spotKey) {
+  return impl.get('SELECT * FROM scenic_spot WHERE spot_key = ?', [spotKey]);
+}
+
+/* 热门榜：按热度 / 评分排序，用于冷启动兜底与排行榜 */
+async function rankSpots(scope, city, limit = 20) {
+  const order = scope === 'rating' ? 'rating DESC, heat DESC' : 'heat DESC, rating DESC';
+  if (city) {
+    return impl.all(`SELECT * FROM scenic_spot WHERE city = ? ORDER BY ${order} LIMIT ?`, [city, limit]);
+  }
+  return impl.all(`SELECT * FROM scenic_spot ORDER BY ${order} LIMIT ?`, [limit]);
+}
+
 module.exports = {
   dialect: impl.dialect,
   raw: impl.raw,
   all: impl.all, get: impl.get, run: impl.run,
   seed, stats, searchGuides, searchCheckins, searchEntities,
   addCheckin, addGuide, addEntities, crawlCandidates,
+  hashPwd, findUser, findUserById, createUser, verifyUser,
+  addRating, toggleFavorite, logBehavior, allBehaviors,
+  listSpots, getSpot, rankSpots, seedSpots,
   SPOTS: ALL_SPOTS, DATA_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,
   cityOf: term => ALIAS.get(String(term || '').trim()) || null
 };

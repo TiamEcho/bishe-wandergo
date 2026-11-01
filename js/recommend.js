@@ -96,6 +96,24 @@ function mountRecVue(){
   }).mount('#recGrid');
   return recApp;
 }
+function renderRates(){
+  if(!$('#rateStrip'))return;
+  const myRates=getRates();
+  const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
+  const checkedIds=albums.map(a=>SPOTS.find(s=>s.n===a.dest)).filter(Boolean).map(s=>s.id);
+  const pool=(checkedIds.length?checkedIds:['erhai','gugong','ylw','ice','chiangmai','zjj','paris','inari']).slice(0,8);
+  $('#rateStrip').innerHTML=pool.map(id=>{const s=spotById(id);if(!s)return'';const cur=myRates[id]||0;
+    return `<div class="rate-item"><img src="${IMG(P[id])}"><b>${s.n}</b>
+    <div class="stars">${[1,2,3,4,5].map(v=>`<button class="${v<=cur?'on':''}" data-id="${id}" data-v="${v}">★</button>`).join('')}</div></div>`}).join('');
+  $$('#rateStrip .stars button').forEach(b=>b.onclick=async()=>{
+    setRate(b.dataset.id,+b.dataset.v);
+    renderRates();
+    toast('⭐ 已评分 '+b.dataset.v+' 星，推荐已刷新');
+    /* 评分上报后端，反哺协同过滤；失败不影响本地体验 */
+    if(user){const r=await WGOAPI.rate(b.dataset.id,+b.dataset.v);if(r&&r.ok)await refreshRec()}
+    else renderRec();
+  });
+}
 function renderRec(apiList,apiMode){
   const box=$('#recGrid');
   let list,mode;
@@ -115,35 +133,15 @@ function renderRec(apiList,apiMode){
       <div class="why">${x.why}</div>
       <div class="rc-meta"><span>⭐ ${x.rating}</span><span>💰 ${x.price}</span><span>${x.tag}</span></div></div></div>`).join('')||'<div class="empty-tip">暂无推荐</div>';
 }
-function renderRates(){
-  const myRates=getRates();
-  const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
-  const checkedIds=albums.map(a=>SPOTS.find(s=>s.n===a.dest)).filter(Boolean).map(s=>s.id);
-  const pool=(checkedIds.length?checkedIds:['erhai','gugong','ylw','ice','chiangmai','zjj','paris','inari']).slice(0,8);
-  $('#rateStrip').innerHTML=pool.map(id=>{const s=spotById(id);if(!s)return'';const cur=myRates[id]||0;
-    return `<div class="rate-item"><img src="${IMG(P[id])}"><b>${s.n}</b>
-    <div class="stars">${[1,2,3,4,5].map(v=>`<button class="${v<=cur?'on':''}" data-id="${id}" data-v="${v}">★</button>`).join('')}</div></div>`}).join('');
-  $$('#rateStrip .stars button').forEach(b=>b.onclick=()=>{setRate(b.dataset.id,+b.dataset.v);renderRates();renderRec();toast('⭐ 已评分 '+b.dataset.v+' 星，推荐已刷新')});
-}
-function renderRec(apiList,apiMode){
-  const box=$('#recGrid');
-  let list,mode;
-  if(apiList&&apiList.length){mode=apiMode;list=apiList.map(x=>({id:x.id,match:x.match||Math.round((x.score||4)*20),why:x.why||'后端协同过滤推荐',score:x.score||4}))}
-  else{const r=localRecommend(8);list=r.list;mode=r.mode}
-  $('#recMode').textContent='🧮 当前算法：'+mode+(WGOAPI.status()===false?'（后端离线 · 本地演示数据）':'');
-  box.innerHTML=list.map((x,i)=>{const s=spotById(x.id);if(!s)return'';const src=recSrcOf(x.id);
-    return `<div class="rec-card" style="animation-delay:${i*.05}s" onclick="openSpot('${x.id}')">
-      <div class="rc-img"><img src="${IMG(P[x.id],'landscape_16_9')}" loading="lazy">
-        <span class="match">🎯 匹配 ${x.match}%</span>
-        <span class="src">${src.p==='WANDERGO 站内'?'🧭 站内精选':(PLAT_LBL[src.p]||'📷 '+src.p)+' '+src.by}</span></div>
-      <div class="rc-body"><h5>${s.n} <span style="font-size:11px;color:var(--muted)">· ${s.city}</span></h5>
-      <div class="why">${x.why}</div>
-      <div class="rc-meta"><span>⭐ ${s.rating}</span><span>💰 ${s.price}</span><span>${s.tag}</span></div></div></div>`}).join('')||'<div class="empty-tip">暂无推荐</div>';
-}
 async function refreshRec(){
   if(user){
     const r=await WGOAPI.recommend(8);
-    if(r&&r.ok&&r.list&&r.list.length){renderRec(r.list,'Spring Boot 后端 UserCF（MySQL 评分数据）');return}
+    if(r&&r.ok&&r.list&&r.list.length){
+      const mode=r.mode==='cf'
+        ?`后端协同过滤 · UserCF + ItemCF 融合（${r.behaviors||0} 条行为）`
+        :'后端热门兜底（行为不足，先给几个景点评分试试）';
+      renderRec(r.list,mode);return;
+    }
   }
   renderRec(null);
 }
@@ -156,6 +154,7 @@ function apiChipRender(){
 }
 /* ---- 爬虫数据源 ---- */
 async function renderCrawl(){
+  if(!$('#crawlGrid'))return;
   let data=null;
   try{const r=await fetch('js/spots_crawl.json');if(r.ok)data=await r.json()}catch(e){}
   if(!data||!data.length){$('#crawlGrid').innerHTML='<div class="empty-tip">暂未生成爬虫数据 · 运行 D:\\wandergo-crawler\\run.bat 一键抓取</div>';return}
@@ -165,8 +164,18 @@ async function renderCrawl(){
     <span class="cc-src">🕷 爬虫来源：${x.src||'百度百科5A名录+OSM坐标'}</span></div>`).join('')
     +(data.length>12?`<div class="crawl-card" style="display:grid;place-items:center;color:var(--muted)">… 其余 ${data.length-12} 条存于 MySQL 数据库</div>`:'');
 }
-window.onUserRefresh=()=>{refreshRec();apiChipRender()};
+/* 注意：me.html 也会加载本文件，所以所有写 DOM 的地方都必须先判断元素是否存在，
+   并且刷新钩子要串联而不是直接覆盖 window.onUserRefresh */
+const _prevUserRefresh=window.onUserRefresh;
+window.onUserRefresh=()=>{
+  if(typeof _prevUserRefresh==='function')_prevUserRefresh();
+  if($('#recGrid'))refreshRec();
+  apiChipRender();
+};
 document.addEventListener('DOMContentLoaded',()=>{
-  renderRates();refreshRec();apiChipRender();renderCrawl();
+  if($('#rateStrip'))renderRates();
+  if($('#recGrid'))refreshRec();
+  apiChipRender();
+  if($('#crawlGrid'))renderCrawl();
   setTimeout(apiChipRender,2200);
 });

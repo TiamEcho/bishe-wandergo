@@ -98,16 +98,41 @@ function submitCk(e){
   /* 上报后端（不阻塞） */
   WGOAPI.pushCheckin({nick:user.nick,spot:spot.n,city:spot.city,date:rec.date,text:rec.text,total,mood});
   renderAlbums();renderRewards();renderRanks();
-  ckImgs=[];renderPv();$('#ckText').value='';$('#costRows').innerHTML='';addCostRow();sumCost();
+  ckImgs=[];renderPv();$('#ckText').value='';
+  /* Vue 模式下不能直接清 #costRows（会拆掉挂载点），改为清空响应式数组 */
+  if(costApp)costStore.rows.splice(0,costStore.rows.length);else $('#costRows').innerHTML='';
+  addCostRow();
   openAlbum(rec);
   toast('打卡成功！纪念册已生成并同步社区 · 足迹已在地图点亮 ✨','ok');
 }
+/* ---- 纪念册列表：Vue 3 岛屿 ---- */
+let albumStore=null,albumApp=null;
+function mountAlbumVue(){
+  if(albumApp||!window.Vue||!$('#albumsGrid'))return albumApp;
+  albumStore=Vue.reactive({list:[]});
+  albumApp=Vue.createApp({
+    setup(){return{store:albumStore}},
+    methods:{open(id){openAlbumById(id)}},
+    template:`
+      <div class="album-card" v-for="a in store.list" :key="a.id" @click="open(a.id)">
+        <span class="tape"></span>
+        <img :src="a.cover">
+        <div class="ab"><h5>{{a.dest}}</h5><p>{{a.date}} · {{a.city}}</p>
+          <div class="am"><span>💰 <b>{{a.totalTxt}}</b></span><span>{{a.mood}}</span></div></div>
+      </div>
+      <div class="empty-tip" v-if="!store.list.length">还没有纪念册 · 提交一次打卡就会自动生成第一页 ✨</div>`
+  }).mount('#albumsGrid');
+  return albumApp;
+}
 function renderAlbums(){
   const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
-  $('#albumsGrid').innerHTML=albums.length?albums.map(a=>`<div class="album-card" onclick='openAlbumById("${a.id}")'>
+  const vm=albums.map(a=>({id:a.id,dest:a.dest,date:a.date,city:a.city,mood:a.mood,
+    totalTxt:fmt(a.total),cover:a.imgs[0]||IMG(a.spotId||a.dest)}));
+  if(mountAlbumVue()){albumStore.list=vm;return}
+  $('#albumsGrid').innerHTML=vm.length?vm.map(a=>`<div class="album-card" onclick='openAlbumById("${a.id}")'>
     <span class="tape"></span>
-    <img src="${a.imgs[0]||IMG(a.spotId||a.dest)}">
-    <div class="ab"><h5>${a.dest}</h5><p>${a.date} · ${a.city}</p><div class="am"><span>💰 <b>${fmt(a.total)}</b></span><span>${a.mood}</span></div></div></div>`).join('')
+    <img src="${a.cover}">
+    <div class="ab"><h5>${a.dest}</h5><p>${a.date} · ${a.city}</p><div class="am"><span>💰 <b>${a.totalTxt}</b></span><span>${a.mood}</span></div></div></div>`).join('')
   :'<div class="empty-tip">还没有纪念册 · 提交一次打卡就会自动生成第一页 ✨</div>';
 }
 function openAlbumById(id){const a=JSON.parse(localStorage.getItem('fmw_albums')||'[]').find(x=>x.id===id);if(a)openAlbum(a)}
@@ -129,19 +154,42 @@ function openAlbum(a){
 }
 /* ================= 奖励体系 ================= */
 function myVideosCount(){return JSON.parse(localStorage.getItem('fmw_posts')||'[]').filter(p=>p.type==='video'&&p.plat==='go').length}
+/* ---- 徽章墙：Vue 3 岛屿（解锁状态 / 进度条 / 计数全部响应式） ---- */
+let badgeStore=null,badgeApp=null;
+function mountBadgeVue(){
+  if(badgeApp||!window.Vue||!$('#rewardGrid'))return badgeApp;
+  badgeStore=Vue.reactive({list:[]});
+  badgeApp=Vue.createApp({
+    setup(){return{store:badgeStore}},
+    template:`
+      <div class="badge-card" :class="{got:b.got}" v-for="b in store.list" :key="b.id">
+        <span class="lock" v-if="!b.got">🔒</span>
+        <span class="bi">{{b.icon}}</span><b>{{b.name}}</b><p>{{b.desc}}</p>
+        <div class="prog"><i :style="{width:b.pct+'%'}"></i></div>
+        <p :style="{marginTop:'5px',color:b.got?'var(--gold)':'var(--muted)'}">{{b.got?'✔ 已解锁':b.cur+'/'+b.need}}</p>
+      </div>`
+  }).mount('#rewardGrid');
+  return badgeApp;
+}
 function renderRewards(){
   const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
   const n=albums.length,v=myVideosCount();
   /* 同城榜单判定 */
   const inTop=rankMe('city')<=10;
-  $('#rewardGrid').innerHTML=BADGES.map(b=>{
+  const vm=BADGES.map(b=>{
     const cur=b.id==='b4'?v:n;
     const got=b.id==='b6'?inTop:cur>=b.need;
-    return `<div class="badge-card ${got?'got':''}">${got?'':'<span class="lock">🔒</span>'}
+    return {id:b.id,icon:b.icon,name:b.name,desc:b.desc,got,need:b.need,
+      cur:Math.min(cur,b.need),pct:Math.min(100,cur/b.need*100)};
+  });
+  if(mountBadgeVue()){badgeStore.list=vm;return}
+  $('#rewardGrid').innerHTML=vm.map(b=>`
+      <div class="badge-card ${b.got?'got':''}">${b.got?'':'<span class="lock">🔒</span>'}
       <span class="bi">${b.icon}</span><b>${b.name}</b><p>${b.desc}</p>
-      <div class="prog"><i style="width:${Math.min(100,cur/b.need*100)}%"></i></div>
-      <p style="margin-top:5px;color:${got?'var(--gold)':'var(--muted)'}">${got?'✔ 已解锁':`${Math.min(cur,b.need)}/${b.need}`}</p></div>`}).join('');
+      <div class="prog"><i style="width:${b.pct}%"></i></div>
+      <p style="margin-top:5px;color:${b.got?'var(--gold)':'var(--muted)'}">${b.got?'✔ 已解锁':`${b.cur}/${b.need}`}</p></div>`).join('');
 }
+
 /* ================= 排行榜 ================= */
 function rankMe(scope){
   const n=JSON.parse(localStorage.getItem('fmw_albums')||'[]').length;
@@ -170,7 +218,7 @@ function renderRanks(){
 }
 document.addEventListener('DOMContentLoaded',()=>{
   if($('#ckForm'))initCk();
-  renderAlbums&&renderAlbums();
+  if($('#albumsGrid'))renderAlbums();
   if($('#rewardGrid'))renderRewards();
   if($('#rankNation')){renderRanks();$('#rankCity').onchange=renderRanks}
 });

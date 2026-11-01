@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-11-01T09:24:58.315Z",
+  "users": 20,
+  "behaviors": 320,
+  "train": 240,
+  "test": 80,
+  "topN": 10,
+  "spots": 462,
+  "precisionAt10": 0.095,
+  "recallAt10": 0.2375,
+  "coverage": 0.3052,
+  "validUsers": 20,
+  "hits": 19,
+  "ablation": {
+    "domainPool": {
+      "label": "偏好域候选（用户兴趣城市的景点）",
+      "precisionAt10": 0.1687,
+      "recallAt10": 0.35,
+      "coverage": 0.2381,
+      "hits": 28
+    },
+    "popularBaseline": {
+      "label": "热门兜底基线（不个性化）",
+      "precisionAt10": 0.01,
+      "recallAt10": 0.025,
+      "coverage": 0.0216,
+      "hits": 2
+    }
+  }
+}
