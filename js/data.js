@@ -5,22 +5,166 @@
 
 /* ================= 图片助手 =================
  * 全站图片都是 AI 文生图按提示词实时生成，没有真实照片。
- * P 字典只覆盖 64 个手工精编景点，而行程里的打卡点来自站内景点库（id 形如
- * lib_xxx / 城市|景点名），P 里没有 key，IMG(P[id]) 会拼出 prompt=undefined，
- * 接口直接返回空 —— 这就是打卡视频 / Plog 卡片一片空白的原因。
- * 这里统一兜底：P 里找不到就用景点名拼一句英文提示词。 */
+ * 出图接口有两个坑，都会让「景点推荐」卡片图文不符：
+ *   ① P 字典只覆盖 64 个手工精编景点，站内景点库的 id 查不到，早期直接拼出 prompt=undefined；
+ *   ② 提示词过长 / 生僻地名时接口不报错，而是返回一张 176KB 的
+ *      「The image is generating…」占位图，所有这类卡片最后显示成同一张图。
+ * 因此：提示词统一用「英文地名 + 城市」短句；地名生僻时逐级降级到通用描述，
+ * 由 <img onerror> 与占位图检测兜底（见 core.js imgSrc / watchImg）。 */
+/* 常用汉字 → 拼音（无声调）。站内景点库有 1000+ 条，不可能全部手写英文名，
+ * 未收录的地名按字查表转成拼音再降级，保证提示词永远是英文、且与景点本身有关。查不到的字直接跳过。 */
+const __PYT={
+  '北':'Bei','京':'Jing','上':'Shang','海':'Hai','成':'Cheng','都':'Du','西':'Xi','安':'An','杭':'Hang',
+  '州':'Zhou','苏':'Su','南':'Nan','武':'Wu','汉':'Han','天':'Tian','津':'Jin','重':'Chong','庆':'Qing',
+  '广':'Guang','深':'Shen','圳':'Zhen','长':'Chang','沙':'Sha','青':'Qing','岛':'Dao','大':'Da','连':'Lian',
+  '厦':'Xia','门':'Men','昆':'Kun','明':'Ming','丽':'Li','江':'Jiang','桂':'Gui','林':'Lin','阳':'Yang',
+  '朔':'Shuo','宁':'Ning','哈':'Ha','尔':'Er','滨':'Bin','沈':'Shen','郑':'Zheng','洛':'Luo','开':'Kai',
+  '封':'Feng','济':'Ji','烟':'Yan','台':'Tai','威':'Wei','曲':'Qu','阜':'Fu','泰':'Tai','山':'Shan',
+  '拉':'La','萨':'Sa','银':'Yin','川':'Chuan','太':'Tai','原':'Yuan','合':'He','肥':'Fei','昌':'Chang',
+  '福':'Fu','泉':'Quan','漳':'Zhang','贵':'Gui','遵':'Zun','义':'Yi','绵':'Mian','乐':'Le','九':'Jiu',
+  '寨':'Zhai','沟':'Gou','黄':'Huang','龙':'Long','张':'Zhang','家':'Jia','界':'Jie','凤':'Feng','凰':'Huang',
+  '鸣':'Ming','武':'Wu','陵':'Ling','源':'Yuan','崖':'Ya','三':'San','亚':'Ya','口':'Kou','珠':'Zhu',
+  '佛':'Fo','东':'Dong','莞':'Guan','波':'Bo','温':'Wen','绍':'Shao','兴':'Xing','嘉':'Jia','湖':'Hu',
+  '潮':'Chao','尾':'Wei','梅':'Mei','河':'He','肇':'Zhao','清':'Qing','远':'Yuan','湛':'Zhan','北':'Bei',
+  '柳':'Liu','平':'Ping','港':'Gang','澳':'Ao','台':'Tai','中':'Zhong','雄':'Xiong','花':'Hua','莲':'Lian',
+  '宜':'Yi','兰':'Lan','屏':'Ping','东':'Dong','澎':'Peng','京':'Jing','都':'Du','市':'Shi','板':'Ban',
+  '奈':'Nai','良':'Liang','名':'Ming','古':'Gu','屋':'Wu','横':'Heng','滨':'Bin','神':'Shen','户':'Hu',
+  '福':'Fu','冈':'Gang','札':'Zha','幌':'Huang','绳':'Sheng','冲':'Chong','首':'Shou','尔':'Er','釜':'Fu',
+  '山':'Shan','济':'Ji','曼':'Man','谷':'Gu','清':'Qing','迈':'Mai','普':'Pu','吉':'Ji','芭':'Ba','提':'Ti',
+  '雅':'Ya','越':'Yue','南':'Nan','内':'Nei','胡':'Hu','志':'Zhi','岘':'Xian','会':'Hui','庄':'Zhuang',
+  '加':'Jia','坡':'Po','马':'Ma','来':'Lai','巴':'Ba','厘':'Li','达':'Da','菲':'Fei','律':'Lv','宾':'Bin',
+  '柬':'Jian','埔':'Pu','寨':'Zhai','金':'Jin','边':'Bian','吴':'Wu','哥':'Ge','窟':'Ku','仰':'Yang',
+  '光':'Guang','甸':'Dian','尼':'Ni','泊':'Bo','德':'De','满':'Man','印':'Yin','度':'Du','坦':'Tan',
+  '堡':'Bao','姬':'Ji','陵':'Ling','斯':'Si','里':'Li','卡':'Ka','迪':'Di','拜':'Bai','布':'Bu','扎':'Zha',
+  '比':'Bi','埃':'Ai','及':'Ji','罗':'Luo','旺':'Wang','卢':'Lu','克':'Ke','索':'Suo','摩':'Mo','舍':'She',
+  '夫':'Fu','沙':'Sha','万':'Wan','撒':'Sa','哈':'Ha','拉':'La','哥':'Ge','根':'Gen','本':'Ben','斯':'Si',
+  '德':'De','摩':'Mo','奥':'Ao','陆':'Lu','赫':'He','辛':'Xin','基':'Ji','雷':'Lei','未':'Wei','俄':'E',
+  '莫':'Mo','圣':'Sheng','彼':'Bi','得':'De','希':'Xi','腊':'La','雅':'Ya','典':'Dian','托':'Tuo',
+  '米':'Mi','诺':'Nuo','罗':'Luo','马':'Ma','米':'Mi','威':'Wei','尼':'Ni','佛':'Fo','伦':'Lun','萨':'Sa',
+  '那':'Na','勒':'Le','庞':'Pang','贝':'Bei','灵':'Ling','博':'Bo','洛':'Luo','尼':'Ni','亚':'Ya',
+  '巴':'Ba','黎':'Li','尼':'Ni','戛':'Jia','纳':'Na','赛':'Sai','昂':'Ang','波':'Bo','多':'Duo',
+  '慕':'Mu','黑':'Hei','柏':'Bai','林':'Lin','汉':'Han','堡':'Bao','法':'Fa','克':'Ke','科':'Ke','隆':'Long',
+  '维':'Wei','也':'Ye','纳':'Na','苏':'Su','黎':'Li','世':'Shi','日':'Ri','瓦':'Wa','卢':'Lu','塞':'Sai',
+  '恩':'En','因':'Yin','特':'Te','肯':'Ken','伯':'Bo','尔':'Er','阿':'A','姆':'Mu','丹':'Dan','鹿':'Lu',
+  '鲁':'Lu','塞':'Sai','布':'Bu','鲁':'Lu','日':'Ri','本':'Ben','图':'Tu','马':'Ma','巴':'Ba','伦':'Lun',
+  '西':'Xi','亚':'Ya','格':'Ge','拉':'La','瓦':'Wa','敦':'Dun','约':'Yue','爱':'Ai','丁':'Ding','曼':'Man',
+  '彻':'Che','物':'Wu','浦':'Pu','剑':'Jian','桥':'Qiao','牛':'Niu','津':'Jin','都':'Du','柏':'Bai',
+  '拉':'La','格':'Ge','达':'Da','佩':'Pei','布':'Bu','华':'Hua','沙':'Sha','伊':'Yi','斯':'Si','坦':'Tan',
+  '布':'Bu','尔':'Er','帕':'Pa','奇':'Qi','棉':'Mian','纽':'Niu','洛':'Luo','杉':'Shan','矶':'Ji','旧':'Jiu',
+  '金':'Jin','维':'Wei','加':'Jia','芝':'Zhi','波':'Bo','士':'Shi','顿':'Dun','盛':'Sheng','西':'Xi',
+  '图':'Tu','迈':'Mai','密':'Mi','夏':'Xia','檀':'Tan','香':'Xiang','兰':'Lan','温':'Wen','哥':'Ge',
+  '华':'Hua','多':'Duo','蒙':'Meng','魁':'Kui','渥':'Wo','墨':'Mo','西':'Xi','坎':'Kan','昆':'Kun',
+  '哈':'Ha','瓦':'Wa','那':'Na','约':'Yue','热':'Re','内':'Nei','卢':'Lu','圣':'Sheng','保':'Bao',
+  '宜':'Yi','诺':'Nuo','艾':'Ai','利':'Li','库':'Ku','斯':'Si','科':'Ke','丘':'Qiu','丘':'Qiu','悉':'Xi',
+  '尼':'Ni','墨':'Mo','尔':'Er','本':'Ben','里':'Li','斯':'Si','班':'Ban','黄':'Huang','岸':'An',
+  '珀':'Po','新':'Xin','西':'Xi','兰':'Lan','克':'Ke','皇':'Huang','后':'Hou','镇':'Zhen','惠':'Hui',
+  '灵':'Ling','顿':'Dun','基':'Ji','督':'Du','凯':'Kai','罗':'Luo','托':'Tuo','鲁':'Lu','瓦':'Wa',
+  '吉':'Ji','苏':'Su','梅':'Mei','甲':'Jia','暹':'Xian','粒':'Li','象':'Xiang','朗':'Lang','勃':'Bo',
+  '邦':'Bang','甘':'Gan','夫':'Fu','累':'Lei','班':'Ban','关':'Guan','那':'Na','霸':'Ba','北':'Bei',
+  '函':'Han','馆':'Guan','小':'Xiao','樽':'Zun','登':'Deng','别':'Bie','富':'Fu','良':'Liang','野':'Ye',
+  '美':'Mei','瑛':'Ying','洞':'Dong','爷':'Ye','箱':'Xiang','富':'Fu','士':'Shi','河':'He','日':'Ri',
+  '镰':'Lian','仓':'Cang','之':'Zhi','须':'Xu','贺':'He','高':'Gao','白':'Bai','川':'Chuan','乡':'Xiang',
+  '泽':'Ze','松':'Song','上':'Shang','地':'Di','伊':'Yi','豆':'Dou','热':'Re','静':'Jing','滨':'Bin',
+  '松':'Song','广':'Guang','宫':'Gong','岛':'Dao','高':'Gao','松':'Song','德':'De','知':'Zhi','熊':'Xiong',
+  '本':'Ben','儿':'Er','崎':'Qi','长':'Chang','佐':'Zuo','贺':'He','井':'Jing','岐':'Qi','阜':'Fu',
+  '分':'Fen','府':'Fu','由':'You','院':'Yuan','知':'Zhi','床':'Chuang','网':'Wang','走':'Zou','钏':'Chuan',
+  '路':'Lu','带':'Dai','旭':'Xu','稚':'Zhi','内':'Nei','尾':'Wei','道':'Dao','敷':'Fu','姬':'Ji','路':'Lu',
+  '六':'Liu','槟':'Bin','城':'Cheng','兰':'Lan','威':'Wei','仙':'Xian','晋':'Jin','打':'Da','纳':'Na',
+  '文':'Wen','莱':'Lai','园':'Yuan','博':'Bo','物':'Wu','馆':'Guan','故':'Gu','宫':'Gong','坛':'Tan',
+  '城':'Cheng','长':'Chang','湖':'Hu','海':'Hai','港':'Gang','湾':'Wan','山':'Shan','岭':'Ling',
+  '峰':'Feng','峡':'Xia','镇':'Zhen','街':'Jie','巷':'Xiang','胡':'Hu','同':'Tong','弄':'Nong','场':'Chang',
+  '广':'Guang','商':'Shang','圈':'Quan','寺':'Si','庙':'Miao','教':'Jiao','堂':'Tang','塔':'Ta','楼':'Lou',
+  '阁':'Ge','园':'Yuan','林':'Lin','花':'Hua','动':'Dong','乐':'Le','城':'Cheng','文':'Wen','化':'Hua',
+  '书':'Shu','店':'Dian','美':'Mei','术':'Shu','音':'Yin','厅':'Ting','剧':'Ju','院':'Yuan','体':'Ti',
+  '育':'Yu','界':'Jie','艺':'Yi','心':'Xin','图':'Tu','书':'Shu','馆':'Guan','殿':'Dian','陵':'Ling',
+  '宇':'Yu','皇':'Huang','墙':'Qiang','牌':'Pai','坊':'Fang','建':'Jian','筑':'Zhu','色':'Se','景':'Jing',
+  '点':'Dian','打':'Da','卡':'Ka','热':'Re','门':'Men','色':'Se','丽':'Li','风':'Feng','景':'Jing',
+  '全':'Quan','闲':'Xian','休':'Xiu','假':'Jia','夜':'Ye','餐':'Can','厅':'Ting','酒':'Jiu','吧':'Ba',
+  '咖':'Ka','啡':'Fei','茶':'Cha','馆':'Guan','村':'Cun','落':'Luo','田':'Tian','农':'Nong','老':'Lao',
+  '传':'Chuan','统':'Tong','民':'Min','族':'Zu','情':'Qing','遗':'Yi','产':'Chan','爱':'Ai','亲':'Qin',
+  '子':'Zi','欢':'Huan','乐':'Le','冒':'Mao','险':'Xian','探':'Tan','索':'Suo','漂':'Piao','流':'Liu',
+  '滑':'Hua','雪':'Xue','温':'Wen','泉':'Quan','湿':'Shi','森':'Sen','草':'Cao','原':'Yuan','漠':'Mo',
+  '岸':'An','滩':'Tan','库':'Ku','水':'Shui','江':'Jiang','南':'Nan','塞':'Sai','北':'Bei','原':'Yuan',
+  '峰':'Feng','瀑':'Pu','溶':'Rong','崖':'Ya','石':'Shi','遗':'Yi','址':'Zhi','迹':'Ji'
+};
 const IMGAPI='https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=';
-const IMGFALLBACK='travel destination scenery, landmark, natural light, high quality travel photography';
+const IMGFALLBACK='travel destination scenery, landmark, natural light';
+/* 中文景点名 → 英文地标名：生僻拼音名接口出不了图，常用地标英文名最稳 */
+const EN_PLACE={
+  '798':'798 Art Zone',天安门:'Tiananmen Square',故宫:'Forbidden City',天坛:'Temple of Heaven',
+  颐和园:'Summer Palace',圆明园:'Old Summer Palace',景山:'Jingshan Park',北海:'Beihai Park',
+  南锣鼓巷:'Beijing hutong street',什刹海:'Shichahai lake',三里屯:'Sanlitun street',
+  王府井:'Wangfujing street',前门:'Qianmen street',雍和:'Yonghe Temple',恭王府:'Prince Gong Mansion',
+  环球:'Universal Studios Beijing',长城:'Great Wall',雁栖湖:'Yanqi lake',古北:'Gubei water town',
+  外滩:'The Bund Shanghai',东方明珠:'Oriental Pearl Tower Shanghai',陆家嘴:'Lujiazui skyline',
+  武侯:'Wuhou Shrine Chengdu',锦里:'Jinli street Chengdu',宽窄:'Kuanzhai Alley Chengdu',
+  杜甫:'Du Fu Cottage Chengdu',熊猫:'Giant panda base Chengdu',春熙:'Chunxi road Chengdu',
+  西湖:'West Lake Hangzhou',兵马俑:'Terracotta Army Xian',布达拉:'Potala Palace Lhasa',
+  鼓浪屿:'Gulangyu island Xiamen',张家界:'Zhangjiajie mountains',黄山:'Yellow Mountain',
+  洱海:'Erhai lake Dali',青海湖:'Qinghai lake',九寨:'Jiuzhaigou valley',长白山:'Changbai mountain lake'
+};
+/* 通用构图词：地名出不了图时，用它保证至少是同类型场景，而不是一张无关的山 */
+const SCENE_OF={
+  ancient:'ancient stone walls over green mountains',gate:'red gate tower and wide square',
+  heritage:'historic Chinese palace architecture',park:'city park with trees and lake',
+  street:'lively pedestrian street with shops',water:'calm lake with distant hills',
+  mountain:'mountain ridge under blue sky',theme:'theme park with colorful rides',landmark:'city landmark'
+};
+/* 没有映射的地名就音译（拼音）：接口对拼音地名成功率低，但会由 imgChain 逐级降级兜住，
+ * 总比把中文直接塞进提示词（100% 返回占位图）强 */
+function pinyin(name){
+  const out=[];
+  String(name||'').split('').forEach(ch=>{
+    if(/[a-zA-Z0-9]/.test(ch)){out.push(ch);return}
+    const py=__PYT[ch];
+    if(py)out.push(py.charAt(0).toUpperCase()+py.slice(1));
+  });
+  return out.join('');
+}
 function imgPrompt(key){
   /* 允许直接传提示词（含空格的长句），也允许传 P 的 key */
   if(!key)return IMGFALLBACK;
   if(P[key])return P[key];
-  if(String(key).includes(' '))return key;
-  /* 传进来的是景点 id：优先去景点库里查中文名，拼成「故宫博物院 Beijing China」 */
+  /* 含空格且全是英文（P 里的自定义提示词）直接当提示词用；含中文的仍按景点名走映射 */
+  if(/^[A-Za-z0-9 ,.'&-]+$/.test(String(key)))return String(key);
   const s = typeof spotById==='function' ? spotById(key) : null;
   const name = s ? s.n : String(key).split('|').pop();
-  const city = s && s.city ? ' '+s.city : '';
-  return name+city+' China, landmark travel photography, natural light, high quality';
+  /* 名称必须换成英文：纯中文提示词接口基本都返回占位图。
+   * 优先手写英文地标名 → 其次拼音（站内库 1000+ 条无法全手写） → 再其次英文 id */
+  const enOnly=/^[a-z]{3,}$/.test(String(key))?String(key):'';
+  const enKey=Object.keys(EN_PLACE).find(k=>name.includes(k));
+  const enName=enKey?EN_PLACE[enKey]:(pinyin(name)||enOnly);
+  if(!s && !enName)return IMGFALLBACK;
+  const city = s && s.city ? pinyin(s.city) : '';
+  const tag = String((s && s.tag) || '');
+  const scene = /长城/.test(name) ? 'ancient'
+    : /天安门/.test(name) ? 'gate'
+    : /宫|坛|祠|寺|庙|教堂|大社|神社|塔|楼|阁/.test(name) ? 'heritage'
+    : /乐园|度假区|海洋|动物园/.test(name) ? 'theme'
+    : /公园|园林|植物园|花园/.test(name) ? 'park'
+    : /街|巷|胡同|路|里|广场|商圈/.test(name) ? 'street'
+    : /海|湖|岛|湾|滩|河|瀑/.test(name) ? 'water'
+    : /山|岭|峰|峡/.test(name) ? 'mountain'
+    : 'landmark';
+  return [enName || name, city, SCENE_OF[scene], tag ? tag.split('·')[0].trim() : ''].filter(Boolean).join(' ');
+}
+/* 降级链：真实地名 → 只有地名 → 同类型场景。
+ * 前端 <img> 按这个顺序自动换源：接口出不了图只会返回占位图（正方形），
+ * 检测到就换下一级，所以最终绝不会停在占位图或一张完全无关的图上。 */
+function imgChain(key){
+  const first=imgPrompt(key);
+  const head=first.split(' ').slice(0,3).join(' ');
+  const s = typeof spotById==='function' ? spotById(key) : null;
+  const name = s ? s.n : String(key);
+  const like = /长城|宫|坛|祠|寺|庙|塔|楼|阁/.test(name) ? SCENE_OF.heritage
+    : /公园|园林/.test(name) ? SCENE_OF.park
+    : /街|巷|胡同|广场/.test(name) ? SCENE_OF.street
+    : /海|湖|岛|湾/.test(name) ? SCENE_OF.water
+    : /乐园|度假区/.test(name) ? SCENE_OF.theme
+    : /山|岭|峰/.test(name) ? SCENE_OF.mountain
+    : IMGFALLBACK;
+  /* 第二级只用英文地名（更短的提示词更容易出图），再用同类型场景兜底 */
+  return [...new Set([first, head, like, IMGFALLBACK])];
 }
 const IMG=(p,s)=>IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
 const P={
@@ -146,11 +290,9 @@ const SPOT_EXTRA=[
  {id:'houhai',n:'后海村',city:'三亚',rg:'cn',addr:'三亚市海棠湾后海村',lng:109.760,lat:18.330,hrs:'半天',traf:'海棠湾打车 20 分钟',price:'免费（冲浪课 ¥300 起）',rating:4.6,tag:'冲浪 · 渔村',desc:'国内最容易入门的冲浪湾，浪温柔、教练多，傍晚的村口全是晒伤的人。'}
 ];
 SPOT_EXTRA.forEach(s=>{if(!SPOTS.some(x=>x.id===s.id)){SPOTS.push(s);
-  if(typeof P!=='undefined'&&!P[s.id])P[s.id]='travel photography of '+s.n+' '+s.city+', scenic landmark, natural light, high quality';
   if(typeof ICO!=='undefined'&&!ICO[s.id])ICO[s.id]=s.rg==='ab'?'🌍':'🏔️';}});
-/* 全量补图：任何景点都要有配图，否则卡片会显示 src="undefined" */
-SPOTS.forEach(s=>{if(typeof P!=='undefined'&&!P[s.id])
-  P[s.id]='travel photography of '+(s.n||s.city)+', scenic landmark, natural light, high quality';});
+/* 未精写提示词的景点不再塞中文描述进 P（中文提示词 100% 出占位图），
+ * 交给 imgPrompt / imgChain 按「英文地名 + 场景」自动生成 */
 
 /* ================= 可实施性字段：开放时间 / 最佳时段 / 是否预约 / 建议停留 =================
  * 只有「时段特征」是重活，按 id 精写；其余（开放时间、是否需预约、停留时长）按关键词规则推算，

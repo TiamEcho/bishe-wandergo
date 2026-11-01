@@ -99,7 +99,6 @@ function geoSpot(name,city,prov,lng,lat,rg){
     tag:'AI 收录 · '+(prov||city||'目的地'),
     desc:name+' —— AI 行程库收录的代表性点位。出发前建议再核对景区开放时间、门票政策与天气。'};
   SPOTS.push(s);
-  if(typeof P!=='undefined'&&!P[id])P[id]='travel photography of '+name+' '+(city||prov||'')+', scenic landmark, natural light, high quality';
   if(typeof ICO!=='undefined'&&!ICO[id])ICO[id]='📍';
   return s;
 }
@@ -1041,7 +1040,7 @@ function tlRowHtml(c,di,order){
     const p=c.p,it=p.__itl||{};
     const rests=(it.restaurants||[]).slice(0,2);
     const restHtml=rests.length?`<div class="tl-near"><span class="tl-near-l">🍽 附近餐饮</span>${rests.map(r=>`<span class="tl-near-i">${escHtml(r.name)}${r.rating?' ⭐'+r.rating:''}${r.price?' · '+escHtml(String(r.price)):''}</span>`).join('')}</div>`:'';
-    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(p.id)}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`;
+    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(p.id)}" data-key="${escHtml(p.id)}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`;
   }
   if(c.t==='eat'){
     const it=c.it;
@@ -1344,7 +1343,7 @@ function showPlan(plan,f){
   grid.innerHTML=`
   <div class="mod col-12 clickable" style="animation-delay:.05s" onclick="openMod('spots','${plan.dest}')">
     <h4><span class="mi">🏞</span>景点推荐（含图标分析）<span class="go">查看详情 →</span></h4>
-    <div class="spot-mini-list">${realSpots(plan.spots).map(s=>`<div class="spot-mini" onclick="event.stopPropagation();openSpot('${s.id}')"><img class="zoomable" src="${IMG(P[s.id])}" loading="lazy" onclick="event.stopPropagation();openViewer(this,'${s.n.replace(/'/g,'')}')"><div><h5>${s.n}</h5><div class="city">${s.city} · ${s.tag}</div><div class="icon-chips"><span class="hl">⭐${s.rating}</span><span>💰${s.price}</span><span>⏱${s.hrs}</span><span>🚄${s.traf.split('（')[0]}</span><span>👫 情侣友好</span><span>🎒 背包友好</span></div></div></div>`).join('')}</div>
+    <div class="spot-mini-list">${realSpots(plan.spots).map(s=>`<div class="spot-mini" onclick="event.stopPropagation();openSpot('${s.id}')"><img class="zoomable" src="${IMG(s.id)}" data-key="${escHtml(s.id)}" loading="lazy" onclick="event.stopPropagation();openViewer(this,'${s.n.replace(/'/g,'')}')"><div><h5>${s.n}</h5><div class="city">${s.city} · ${s.tag}</div><div class="icon-chips"><span class="hl">⭐${s.rating}</span><span>💰${s.price}</span><span>⏱${s.hrs}</span><span>🚄${s.traf.split('（')[0]}</span><span>👫 情侣友好</span><span>🎒 背包友好</span></div></div></div>`).join('')}</div>
   </div>
   <div class="mod col-12" style="animation-delay:.1s">
     <h4>路线交流</h4>
@@ -1376,14 +1375,14 @@ function showPlan(plan,f){
   </div>
   <div class="mod col-6 clickable" style="animation-delay:.45s" onclick="openMod('video','${plan.dest}')">
     <h4><span class="mi">🎬</span>打卡视频推荐 · 攻略 vlog<span class="go">查看详情 →</span></h4>
-    <div class="vcards">${plan.videos.map((v,i)=>`<div class="vcard" onclick="event.stopPropagation();openVideo({t:'${v.t}',loc:'${v.loc}',imgs:['${v.imgs.join("','")}']})"><img src="${IMG(v.imgs[0])}" loading="lazy"><span class="play"><i>▶</i></span><div class="vfoot"><h6>${v.t}</h6><p>📍 ${v.loc}</p></div></div>`).join('')}</div>
+    <div class="vcards">${plan.videos.map((v,i)=>`<div class="vcard" onclick="event.stopPropagation();openVideo({t:'${v.t}',loc:'${v.loc}',imgs:['${v.imgs.join("','")}']})"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy"><span class="play"><i>▶</i></span><div class="vfoot"><h6>${v.t}</h6><p>📍 ${v.loc}</p></div></div>`).join('')}</div>
   </div>
   ${foodModHtml(plan)}
   ${crowdModHtml(plan)}
   ${hotelModHtml(plan)}
   <div class="mod col-6 clickable" style="animation-delay:.55s" onclick="openMod('plog','${plan.dest}')">
     <h4><span class="mi">📷</span>Plog 推荐<span class="go">查看详情 →</span></h4>
-    <div class="vcards">${plan.plogs.map(v=>`<div class="vcard" onclick="event.stopPropagation();openPlog('${v.t}','${plan.dest}','${v.img}','${encodeURIComponent(v.txt)}')"><img src="${IMG(v.img)}" loading="lazy"><div class="vfoot"><h6>${v.t}</h6><p>📍 ${plan.dest}</p></div></div>`).join('')}</div>
+    <div class="vcards">${plan.plogs.map(v=>`<div class="vcard" onclick="event.stopPropagation();openPlog('${v.t}','${plan.dest}','${v.img}','${encodeURIComponent(v.txt)}')"><img src="${IMG(v.img)}" data-key="${escHtml(v.img)}" loading="lazy"><div class="vfoot"><h6>${v.t}</h6><p>📍 ${plan.dest}</p></div></div>`).join('')}</div>
   </div>
   <div class="mod col-12" style="animation-delay:.6s;border-style:dashed"><h4><span class="mi">💡</span>AI 省钱贴士</h4><p style="font-size:12.5px;color:var(--ink-2)">${plan.tips}</p></div>
   <div class="mod col-12" id="aiEntMod" style="animation-delay:.65s">
@@ -1391,6 +1390,8 @@ function showPlan(plan,f){
     <div class="mod-blist" id="aiEntBody"><div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div></div>
   </div>`;
   grid.classList.add('show');
+  /* 给本次渲染出的所有图片挂出图兜底：占位图 / 加载失败时按 imgChain 换更通用的提示词 */
+  if(typeof watchImgs==='function')watchImgs(grid);
   aiEntSync(plan);
   /* 侧边模块导航：可展开/收起，点击定位到对应模块 */
   buildRail(plan);

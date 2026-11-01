@@ -347,7 +347,7 @@ function loadCharts(cb){
   })();
 }
 /* ================= 弹窗 ================= */
-function openModal(html,wide){$('#modalBox').className='modal'+(wide?' wide':'');$('#modalBox').innerHTML=html;$('#ovl').classList.add('show')}
+function openModal(html,wide){$('#modalBox').className='modal'+(wide?' wide':'');$('#modalBox').innerHTML=html;$('#ovl').classList.add('show');if(typeof watchImgs==='function')watchImgs($('#modalBox'))}
 function closeModal(){$('#ovl').classList.remove('show');stopVSlide();if(typeof closeViewer==='function')closeViewer()}
 document.addEventListener('click',e=>{if(e.target&&e.target.id==='ovl')closeModal()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const v=document.getElementById('ivw');if(v&&v.classList.contains('show'))return closeViewer();closeModal()}});
@@ -470,7 +470,7 @@ function openSpot(id){
   const s=spotById(id);if(!s)return;
   const lit=litSet().has(id);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div class="dhero"><img class="zoomable" src="${IMG(s.id)}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
+  <div class="dhero"><img class="zoomable" src="${IMG(s.id)}" data-key="${s.id}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
     <h3>${s.n} <span class="tagpill ${s.rg}" style="vertical-align:3px">${s.rg==='cn'?'国内':'国外'}</span>${lit?'<span class="tagpill lit">✨ 已点亮</span>':''}</h3>
     <div class="meta"><span>📍 ${s.city}</span><span>${s.tag}</span><span>⭐ ${s.rating}</span></div></div></div>
   <div class="dbody">
@@ -870,9 +870,71 @@ function initChrome(){
     <div class="toast" id="toast"></div>`);
   }
 }
+/* ================= AI 出图兜底 =================
+ * 出图接口在提示词过长 / 地名生僻时不报错，而是返回一张
+ * 「The image is generating…」的占位图（约 176KB、1:1），
+ * 于是卡片上会出现和景点无关的同一张图。
+ * 这里做两件事：① 记录已知占位图，供检测使用；② 图片按 imgChain 逐级降级重取。
+ * 占位图识别不依赖网络：占位图长宽比为 1:1 且尺寸固定 1024，真实出图是 4:3 / 16:9。 */
+const __imgTried=new WeakMap();
+function imgFallback(el){
+  const chain=__imgTried.get(el)||el.__chain||[];
+  const i=(el.__chainIdx==null?-1:el.__chainIdx)+1;
+  if(i>=chain.length){el.classList.add('img-fail');return}
+  el.__chainIdx=i;
+  el.src=IMGAPI+encodeURIComponent(chain[i])+'&image_size='+(el.dataset.size||'landscape_4_3')+'&r='+i;
+}
+/* 占位图：宽高相等（实测 1832×1832，与 landscape / portrait 的正常出图都不同） */
+function imgIsPlaceholder(el){
+  return el.naturalWidth>200 && Math.abs(el.naturalWidth-el.naturalHeight)<4;
+}
+function watchImg(el,key,size){
+  if(!el||el.__watching)return;
+  el.__watching=1;
+  /* key 可能是景点 id（站内库 id 没有坐标名，需要 imgChain 按名字推断），
+   * 也可能是 imgPrompt 生成的英文提示词；后者直接构造降级链 */
+  const chain=typeof imgChain==='function'
+    ? imgChain(key)
+    : [key,IMGFALLBACK].filter(Boolean);
+  __imgTried.set(el,chain);
+  if(size)el.dataset.size=size;
+  el.addEventListener('error',()=>imgFallback(el));
+  el.addEventListener('load',()=>{if(imgIsPlaceholder(el))imgFallback(el)});
+  /* 挂监听之前就已经加载完的（缓存命中）：直接检测是不是占位图 */
+  if(el.complete&&el.naturalWidth&&imgIsPlaceholder(el))imgFallback(el);
+}
+/* 给刚渲染出来的图片统一挂兜底：优先 data-key / data-img，
+ * 没有就从 src 的 prompt= 参数反推，保证动态渲染的图片也能在出占位图时自动降级 */
+function watchImgs(root){
+  (root||document).querySelectorAll('img').forEach(el=>{
+    if(el.__watching)return;
+    /* data-key 是景点 id，必须用它查 imgChain；只有 data-img 才是直接给提示词 */
+    const key=el.dataset.key||el.dataset.img;
+    if(key)watchImg(el,key,el.dataset.size);
+    else{
+      /* 动态渲染、没标 key 的图：从 src 反推它的降级链 */
+      const m=(el.getAttribute('src')||'').match(/[?&]prompt=([^&]*)/);
+      const base=m?decodeURIComponent(m[1]):'';
+      if(base&&typeof imgChain==='function'){
+        const guess=imgChain(base);
+        el.__watching=1;
+        __imgTried.set(el,guess);
+        el.addEventListener('error',()=>imgFallback(el));
+        el.addEventListener('load',()=>{if(imgIsPlaceholder(el))imgFallback(el)});
+        if(el.complete&&el.naturalWidth&&imgIsPlaceholder(el))imgFallback(el);
+      }else el.addEventListener('error',()=>el.classList.add('img-fail'),{once:true});
+    }
+  });
+}
 /* ================= 公共初始化 ================= */
 document.addEventListener('DOMContentLoaded',()=>{
   initChrome();
   initTheme();initTopnav();initUser();initSearch();initAIChat();
-  $$('[data-img]').forEach(el=>el.src=IMG(el.dataset.img,el.dataset.size||'landscape_4_3'));
+  $$('[data-img]').forEach(el=>{
+    const size=el.dataset.size||'landscape_4_3';
+    watchImg(el,el.dataset.img,size);
+    el.src=IMG(el.dataset.img,size);
+  });
+  /* 其余页面写的 <img src> 没有 data-img，也统一挂上失败兜底 */
+  watchImgs();
 });
