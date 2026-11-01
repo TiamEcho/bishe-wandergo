@@ -162,15 +162,44 @@ const PREF_RULES={
  photo:{tag:['日落','云海','夜景','出片','风景','湖景','海景'],w:1.0,note:'优先出片时段与光线'}
 };
 const INTEREST_KEYS=['历史','自然','美食','摄影','亲子','夜游','购物','海岛','温泉','艺术'];
+/* 兴趣词 → 景点标签里的同义词。标签是「历史 · 宫廷」「夜景 · 都市」这种写法，
+ * 直接对「历史」整词比对会漏掉「遗迹 / 古建 / 博物馆」这一大批点位 */
+const INTEREST_SYN={
+ '历史':['历史','遗迹','遗址','古建','古城','古镇','博物馆','纪念馆','文物','王朝','红色','故里','祠堂'],
+ '自然':['自然','山水','湖泊','湖景','海子','森林','草原','雪山','瀑布','峡谷','湿地','地质'],
+ '美食':['美食','小吃','夜市','市场','茶','咖啡','美食街','老街'],
+ '摄影':['摄影','日落','出片','夜景','云海','机位','观景','天台'],
+ '亲子':['亲子','乐园','动物园','水族','科技馆','海洋','游乐园','迪士尼'],
+ '夜游':['夜游','夜景','夜市','灯光','酒吧'],
+ '购物':['购物','商圈','百货','市集','步行街','免税'],
+ '海岛':['海岛','海滩','沙滩','海岸','岛'],
+ '温泉':['温泉','汤泉','泡池'],
+ '艺术':['艺术','美术馆','展览','剧场','书店','文创','建筑','设计']
+};
 function interestOf(interests){
   const t=String(interests||'');
   return INTEREST_KEYS.filter(k=>t.includes(k));
+}
+/* 一个点位命中了几类兴趣（整词匹配同义词表，不再只比第一个字） */
+function interestHit(s,ints){
+  if(!ints.length)return 0;
+  const tags=String(s.tag||'')+' '+String(s.n||'');
+  let hit=0;
+  ints.forEach(k=>{
+    if((INTEREST_SYN[k]||[k]).some(w=>tags.includes(w)))hit++;
+  });
+  return hit;
 }
 /* 单景点打分：评分 + 兴趣命中 + 最佳时段适配 + 偏好加成 - 车程惩罚 */
 function scoreSpot(s,ctx){
   let sc=(s.rating||4.5)*10;
   const tags=(s.tag||'')+' '+(s.n||'');
-  ctx.ints.forEach(k=>{if(tags.includes(k.slice(0,1))||tags.includes(k))sc+=9});
+  if(ctx.ints.length){
+    const hit=interestHit(s,ctx.ints);
+    sc+=hit*12;                       /* 命中一类兴趣 12 分，命中两类及以上再加 8 */
+    if(hit>=2)sc+=8;
+    if(!hit)sc-=10;                   /* 用户明确选了兴趣，完全不搭的点排后面 */
+  }
   const pr=PREF_RULES[ctx.pref]||PREF_RULES.cheap;
   pr.tag.forEach(k=>{if(tags.includes(k))sc+=6*pr.w});
   if(ctx.used.has(s.id))sc-=999;                      /* 已排过的不重复 */
@@ -181,10 +210,55 @@ function scoreSpot(s,ctx){
   }
   return sc;
 }
-/* 从候选池按分数取前 n 个（同城为主，不足再用同区近邻兜底） */
-function pickSpots(pool,n,ctx){
+/* 从候选池按分数取前 n 个（同城为主，不足再用同区近邻兜底）
+ * 小众保底：大热门（评分高 + 无兴趣标签也排前面）会把名额占满，
+ *   这里给每天预留 1 个「小众 / 文艺 / 街区 / 市集」点位，
+ *   名额不够时从已选中的最弱一个换成最靠前的小众点位 */
+const NICHE_TAGS=['小众','文艺','街区','市集','书店','咖啡馆','文创','巷','弄'];
+function isNiche(s){
+  const tags=String(s.tag||'')+' '+String(s.n||'');
+  return NICHE_TAGS.some(w=>tags.includes(w));
+}
+function pickSpots(pool,n,ctx,dayCount){
   const sorted=pool.slice().sort((a,b)=>scoreSpot(b,ctx)-scoreSpot(a,ctx));
-  return sorted.slice(0,n);
+  const out=sorted.slice(0,n);
+  const days=Math.max(1,dayCount||1);
+  const nicheWant=Math.min(days,out.length);        /* 每天 1 个小众点位 */
+  const have=out.filter(isNiche).length;
+  if(have>=nicheWant)return out;
+  /* 候补小众点位：只从「未被选中的同城点位」里取，分数最高的优先 */
+  const spare=sorted.filter(s=>!out.includes(s)&&isNiche(s));
+  let need=nicheWant-have;
+  for(const cand of spare){
+    if(need<=0)break;
+    /* 换掉已选中分数最低、且不是小众的那个 */
+    const dropPool=out.filter(s=>!isNiche(s)).sort((a,b)=>scoreSpot(a,ctx)-scoreSpot(b,ctx));
+    const drop=dropPool[0];
+    if(!drop)break;
+    out.splice(out.indexOf(drop),1,cand);
+    need--;
+  }
+  return out;
+}
+/* ---- 住宿：没有酒店库，按「当天最后一个景点 + 预算档」给建议，
+ * 位置锚在当天收尾处，避免出现「住城东、逛城西」这种来回折返 ---- */
+function hotelOf(daySpots,city,pref){
+  if(!daySpots.length)return null;
+  const last=daySpots[daySpots.length-1];
+  /* 片区名：取最靠近开头的那一级行政区。
+   * 「上海市黄浦区中山东一路」→ 黄浦；「东京都墨田区本所1丁目」→ 墨田；
+   * 没有区县就退回城市名。用 non-greedy 从前往后切，避免把「市」吃进区名 */
+  let area='';
+  const addr=String(last.addr||'');
+  const mArea=addr.match(/^(?:.{2,6}?[市都道府县])?(.{2,5}?[新]?)(?:区|县)/);
+  const mCity=addr.match(/^([\u4e00-\u9fa5]{2,4}?)市/);
+  if(mArea)area=mArea[1]+'区';
+  else if(mCity)area=mCity[1];
+  if(!area)area=last.city||city;
+  const lv=pref==='comfort'
+    ?{t:'舒适型酒店 / 精品民宿',p:'¥500-900',note:'优先带早餐与地铁口的连锁中高端'}
+    :{t:'经济型酒店 / 青旅',p:'¥180-350',note:'选地铁 1km 内，晚上回得来最重要'};
+  return {n:area+' · '+lv.t,area,lng:last.lng,lat:last.lat,price:lv.p,note:lv.note};
 }
 /* ---- 三餐：按城市美食库就近绑定当天景点 ---- */
 function eatCandidates(city){
@@ -280,12 +354,15 @@ function splitDays(ids,reqDays){
   const days=Array.from({length:d},()=>[]);
   const heavy=list.filter(s=>(s.dur||180)>=400);
   const light=list.filter(s=>(s.dur||180)<400);
-  const perDay=Math.max(3,Math.ceil((heavy.length+light.length)/d));
+  /* 每天配比：大景区（迪士尼 / 登山这种 dur>=400）独占一天；
+   * 其余按「上午 1 + 下午 1 + 夜间 1」的骨架走，单日打卡点上限 3 个，
+   * 超出就推到下一天，排不下的进备选池，不再硬塞 */
+  const DAILY_MAX=3;
   let di=0;
   heavy.forEach(s=>{while(days[di%d].length)di++;days[di%d].push(s.id);di++});
   light.forEach(s=>{
     let k=0,guard=0;
-    while(days[di%d].length>=perDay&&guard++<d*4)di++;
+    while(days[di%d].length>=DAILY_MAX&&guard++<d*4)di++;
     days[di%d].push(s.id);di++;
   });
   /* 空白天：从已有天数里挪一个过来，保证 Day1..DayN 都有内容 */
@@ -294,6 +371,21 @@ function splitDays(ids,reqDays){
     const src=days.reduce((a,b)=>a.length>b.length?a:b,[]);
     if(src.length>1)days[i].push(src.pop());
   }
+  /* 每天内部按时刻顺序排：morning → day → sunset → night；
+   * 同样时段内按距离城市中心由近到远，保证当天单向推进不折返。
+   * 住宿片区跟着最后一个景点走，所以排序必须在 hotelOf 之前定下来 */
+  const ord={morning:0,day:1,sunset:2,night:3};
+  const cLat=days.flat().map(id=>spotById(id)).filter(Boolean);
+  const ctr=cLat.length
+    ?{lng:cLat.reduce((a,s)=>a+s.lng,0)/cLat.length,lat:cLat.reduce((a,s)=>a+s.lat,0)/cLat.length}
+    :null;
+  days.forEach(arr=>arr.sort((a,b)=>{
+    const x=spotById(a),y=spotById(b);
+    const dx=(ord[x&&x.bestTime]??1)-(ord[y&&y.bestTime]??1);
+    if(dx)return dx;
+    if(ctr&&x&&y)return rtDist(ctr,x)-rtDist(ctr,y);
+    return (y&&y.rating||0)-(x&&x.rating||0);
+  }));
   return days;
 }
 /* 用「候选池 + 打分」为任意目的地生成完整规划（无硬编码行程） */
@@ -519,7 +611,64 @@ function applyRemotePlan(plan,remote){
   if(!routeDays.length)return false;
   plan.spots=routeDays.flat().filter((id,i,a)=>a.indexOf(id)===i);
   plan.routeDays=routeDays;
-  plan.timelines=timelines;
+  /* 后端只给景点行，三餐和「入住」都在前端补：
+   * 之前这里直接用 remote 的景点列表覆盖 timelines，页面就只剩景点，
+   * 变成「说好每天含三餐，实际一条餐饮行都没有」。
+   * 三餐时间不能照搬 buildTimeline（它按本地 09:00 起算），
+   * 必须跟着后端景点行的真实时间落位，否则会和景点时间重叠。 */
+  const city=plan.prov||plan.dest||'';
+  /* 餐厅轮转跨天共享：每天各建一个 used 会让三天早餐都是同一家 */
+  const eatRotor={row:0};
+  plan.timelines=timelines.map((items,di)=>{
+    const keep=items.filter(it=>it.type==='spot').sort((a,b)=>(a.start||0)-(b.start||0));
+    const eats=eatCandidates(city);
+    if(!keep.length||!eats.length)return items;
+    const mkEat=(meal,start,endAt)=>{
+      const e=eats[eatRotor.row++%eats.length];
+      const dur=meal==='晚餐'?70:meal==='午餐'?50:45;
+      return {type:'eat',meal,n:e.n,note:e.note,price:e.price,start,end:endAt!=null?endAt:start+dur};
+    };
+    const out=keep.slice();
+    /* 早餐：第一个景点开始前 30 分钟结束；景点 09:00 开始正好接得上 08:00-08:45 */
+    const first=keep[0].start||9*60;
+    if(first>=8*60+45)out.push(mkEat('早餐',Math.max(7*60+30,first-60)));
+    /* 午餐：后端景点是 11:50-14:20 这种整块，本身就跨过饭点。
+     * 优先塞进「两个景点之间的空档」；空档不够就把后面的景点整体顺延，
+     * 保证午餐至少 50 分钟 —— 20 分钟的午休等于没有，实测会显得很赶。 */
+    const lunchAt=(()=>{
+      const LUNCH=50;
+      for(let i=0;i<keep.length;i++){
+        const end=keep[i].end||((keep[i].start||0)+(keep[i].dur||150));
+        if(end<11*60+30)continue;                       /* 还没到饭点 */
+        const next=keep[i+1];
+        const nextStart=next?(next.start||0):null;
+        const start=end;
+        /* 有下一个景点且空档放不下：把这一天剩下的景点整体后移 */
+        if(nextStart!=null&&nextStart-start<LUNCH){
+          const shift=LUNCH-(nextStart-start);
+          for(let k=i+1;k<keep.length;k++){
+            keep[k].start=(keep[k].start||0)+shift;
+            if(keep[k].end!=null)keep[k].end+=shift;
+          }
+        }
+        return {start,end:start+LUNCH};
+      }
+      return {start:12*60+30,end:12*60+30+LUNCH};
+    })();
+    out.push(mkEat('午餐',lunchAt.start,lunchAt.end));
+    /* 晚餐：紧跟当天最后一个景点结束（原先固定 20:00 开始，
+     * 午餐顺延后最后一个景点被推到 20:30 才结束，晚餐就和它撞上了） */
+    const last=keep.reduce((a,b)=>((b.end||0)>(a.end||0)?b:a),keep[0]);
+    const lastEnd=last.end||((last.start||0)+(last.dur||150));
+    out.push(mkEat('晚餐',Math.max(18*60+30,lastEnd+10)));
+    return out.sort((a,b)=>(a.start||0)-(b.start||0));
+  });
+  /* 住宿建议同理：后端有真实酒店就用后端的，没有就按当天收尾景点补 */
+  plan.hotels=routeDays.map((ids,di)=>{
+    const h=(fan[di]&&fan[di].hotel)||null;
+    if(h&&h.name)return {n:h.name,price:h.price||'',note:h.distance?('距当天最后一个景点 '+Math.round(h.distance)+' m'):'当天收尾景点附近',lng:h.location?String(h.location).split(',')[0]:null,lat:h.location?String(h.location).split(',')[1]:null};
+    return hotelOf(ids.map(spotById).filter(Boolean),city,plan.pref);
+  });
   plan.__fan=fan;
   plan.__center=remote.center||plan.__center;
   plan.__engine=remote.engine||null;
@@ -578,11 +727,12 @@ function matchPlan(q,reqDays,opt){
       rtDist({lng:anchor[0],lat:anchor[1]},s)<80).map(s=>s.id);
     pool=pool.concat(SPOTS.filter(s=>(s.city===city&&s.rg===rg)||near.includes(s.id)));
   }
-  /* ③ 按天数决定取几个点位：至少 5 个，每天 4 个左右（1 天 5 个，2 天 7 个，3 天 8 个…） */
+  /* ③ 按天数决定取几个点位：每天 3 个打卡点（上午 / 下午 / 夜间），
+   *    再加 1 个大景区占满一天的名额，所以 1 天 4 个、2 天 7 个、3 天 10 个 */
   const reqD=Math.max(1,reqDays||2);
-  const need=Math.max(5,Math.min(reqD*2+3,reqD*4));
+  const need=Math.min(reqD*3+1,pool.length);
   const ctx={used,ints,pref,anchor,maxDrive:true};
-  let picked=pickSpots(pool,Math.min(need,pool.length),ctx);
+  let picked=pickSpots(pool,Math.min(need,pool.length),ctx,reqD);
   if(picked.length<need){
     /* 同城已排完：用同区 120km 内的真实景点再补一轮，不造占位点 */
     const has=new Set(picked.map(s=>s.id));
@@ -590,7 +740,19 @@ function matchPlan(q,reqDays,opt){
       rtDist({lng:anchor[0],lat:anchor[1]},s)<120);
     if(extra.length){
       pool=pool.concat(extra);
-      picked=pickSpots(pool,Math.min(need,pool.length),ctx);
+      picked=pickSpots(pool,Math.min(need,pool.length),ctx,reqD);
+    }
+  }
+  /* 用户勾了兴趣，但同城候选池里一个都对不上 —— 明确告知，而不是装作按兴趣排了 */
+  let interestNote='';
+  if(ints.length){
+    const hitCount=pool.filter(s=>interestHit(s,ints)>0).length;
+    const lost=ints.filter(k=>!pool.some(s=>interestHit(s,[k])>0));
+    if(!hitCount){
+      interestNote='该城市暂未收录「'+ints.join('/')+'」类点位，本次按评分与距离排序。';
+    }else if(lost.length){
+      interestNote='「'+lost.join('/')+'」类点位该城市暂缺，已按「'+
+        ints.filter(k=>!lost.includes(k)).join('/')+'」偏好排序。';
     }
   }
   const spots=picked.map(s=>s.id);
@@ -607,9 +769,10 @@ function matchPlan(q,reqDays,opt){
     :[['交通',.28],['住宿',.27],['餐饮',.22],['门票/体验',.17]];
   const budgetItems=ratio.map((x,i)=>({k:x[0],v:Math.round(total*x[1]/10)*10,c:'--dc'+(i+1)}));
   budgetItems.push({k:'其他',v:Math.max(0,total-budgetItems.reduce((s,x)=>s+x.v,0)),c:'--dc5'});
-  /* ⑤ 时刻表：每天按 bestTime 排序 + 三餐就近绑定 */
+  /* ⑤ 时刻表：每天按 bestTime 排序 + 三餐就近绑定 + 当天收尾处的住宿建议 */
   const routeDays=splitDays(spots,reqD);
   const timelines=routeDays.map(ids=>buildTimeline(ids,city));
+  const hotels=routeDays.map(ids=>hotelOf(ids.map(spotById).filter(Boolean),city,pref));
   const bookList=[];
   routeDays.forEach((ids,di)=>ids.forEach(id=>{
     const s=spotById(id);
@@ -619,7 +782,7 @@ function matchPlan(q,reqDays,opt){
     __pool:true,dest:dest,prov:city,__ab:ab,from:meta.from||'你的城市',
     days:reqD+' 天',__reqDays:reqD,
     __center:{lng:anchor[0],lat:anchor[1]},
-    spots,routeDays,timelines,bookList,eats,
+    spots,routeDays,timelines,bookList,eats,hotels,interestNote,
     budget:total,budgetItems,
     transport:ab?[
       {m:'✈️ 国际航班',t:'视航线',p:'¥3,000 起',s:.85,note:'提前 4-6 周订票更划算'},
@@ -633,7 +796,7 @@ function matchPlan(q,reqDays,opt){
     crowd:meta.crowd||{kid:'带娃优先选有观光车接驳的点位，少走台阶，备齐防晒与常用药。',elder:'每天核心点位不超过 2 个，注意景区接驳车末班时间。',couple:city+'的日出 / 日落时段人少光好，适合拍照。'},
     videos:[{t:dest+'旅行记录 · 打卡合集',loc:city,imgs:[spots[0],spots[1]||spots[0]]},{t:city+'慢节奏 vlog',loc:city,imgs:[spots[1]||spots[0],spots[2]||spots[0]]}],
     plogs:[{t:'在'+city+'的慢时光',img:spots[0],txt:city+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。'}],
-    tips:(meta.tips?meta.tips+' ':'')+'行程由「景点库候选池 + 兴趣打分」实时生成：共 '+spots.length+' 个点位，每天含三餐与预约提醒；开放时间与预约政策请以景区当日公告为准。'
+    tips:(meta.tips?meta.tips+' ':'')+(interestNote?interestNote+' ':'')+'行程由「景点库候选池 + 兴趣打分」实时生成：共 '+spots.length+' 个打卡点，分 '+reqD+' 天排布，每天 = 打卡点 + 三餐 + 住宿建议；开放时间与预约政策请以景区当日公告为准。'
   };
 }
 /* ---- ECharts 引擎按需加载（AI 页首次用到时自动加载，加载完统一回调） ---- */
@@ -911,12 +1074,15 @@ function renderItinerary3col(plan){
         const hotelHtml=it.hotel?`<div class="tl-near"><span class="tl-near-l">🏨 就近住宿</span><span class="tl-near-i">${escHtml(it.hotel.name)}${it.hotel.rating?' ⭐'+it.hotel.rating:''}${it.hotel.price?' · '+escHtml(String(it.hotel.price)):''}${it.hotel.distance?' · '+it.hotel.distance+'m':''}</span></div>`:'';
         return `<li class="tl-item" data-index="${index}"><span class="tl-time">${time}</span><div class="tl-body"><h5><span class="journey-number">${index+1}</span>${escHtml(it.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}${hotelHtml}<div class="tl-media"><img src="${IMG(P[it.id])}" alt="${escHtml(it.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${it.id}">查看景点详情</button></div></div></li>`;
       }).join('');
+      /* 当天收尾的住宿建议：前端规划没有酒店库，按最后一个景点的位置 + 预算档给出落脚片区 */
+      const ht=(plan.hotels&&plan.hotels[di])||null;
+      const hotelRow=ht?`<li class="tl-item tl-eat"><span class="tl-time">入住</span><div class="tl-body"><h5>🏨 ${escHtml(ht.n)}</h5><p>${escHtml(ht.note||'')}${ht.price?' · 参考价 '+escHtml(String(ht.price)):''}</p></div></li>`:'';
       const noTl=todaySpots.map(p=>`<li class="tl-item" data-index="${p.index}"><span class="tl-time">-</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}</h5><div class="tl-media"><img src="${IMG(P[p.id])}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`).join('');
       /* 扇形分区说明：当天景点相对市中心的方位角区间 → 证明路线单向推进不绕回 */
       const fan=(plan.__fan||[])[di]||{};
       const ang=fan.bearing&&fan.bearing.length===2?fan.bearing:null;
       const fanTip=ang?`<p class="journey-fan">🧭 本日路线位于市中心 ${ang[0]}°–${ang[1]}° 方位扇形内 · 由近及远单向推进${fan.km?' · 约 '+fan.km+' km':''}</p>`:'';
-      return `<section class="journey-day"><h3>Day ${sg.day} · ${escHtml(dayTheme(sg.points.map(p=>p.id)))}</h3>${fanTip}<ul class="timeline">${rows||noTl}</ul></section>`;
+      return `<section class="journey-day"><h3>Day ${sg.day} · ${escHtml(dayTheme(sg.points.map(p=>p.id)))}</h3>${fanTip}<ul class="timeline">${(rows||noTl)+hotelRow}</ul></section>`;
     }).join('');
     cards.innerHTML=tlHtml;
     box.querySelectorAll('[role="tab"]').forEach(b=>{const on=+b.dataset.day===idx;b.classList.toggle('on',on);b.setAttribute('aria-selected',String(on))});
