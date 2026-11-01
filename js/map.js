@@ -58,16 +58,7 @@ function regionColors(map){
   }catch(e){return []}
 }
 /* ---- 图标（普通 / 点亮金圈发光版） ---- */
-function mkIcon(ch){
-  return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><text x="32" y="46" font-size="38" text-anchor="middle">'+ch+'</text></svg>');
-}
-function litIconURL(ch){
-  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72">'
-   +'<circle cx="36" cy="36" r="26" fill="rgba(255,205,88,.22)"/>'
-   +'<circle cx="36" cy="36" r="19" fill="rgba(255,196,64,.45)" stroke="#ffd76a" stroke-width="3"/>'
-   +'<text x="36" y="50" font-size="36" text-anchor="middle">'+ch+'</text></svg>';
-  return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
-}
+/* 标点图标见下方 spotPin：按景点类型给专属 emoji + 配色，做成手帐风贴纸 */
 function spotSeries(list,litIds){
   return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,rippleEffect:{brushType:'stroke',scale:3.4},
     symbolSize:9,itemStyle:{color:'#ff6b57',shadowBlur:12,shadowColor:'rgba(255,107,87,.7)'},
@@ -75,9 +66,9 @@ function spotSeries(list,litIds){
 }
 function iconSeries(list,litIds){
   litIds=litIds||new Set();
-  return {type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:27,cursor:'pointer',
-    emphasis:{scale:1.35},
-    symbol:(v,p)=>litIds.has(p.data.id)?litIconURL(ICO[p.data.id]||'📍'):mkIcon(ICO[p.data.id]||'📍'),
+  return {type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:34,cursor:'pointer',
+    emphasis:{scale:1.3},
+    symbol:(v,p)=>spotPin(p.data.id,litIds.has(p.data.id)),
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))};
 }
 /* 点亮金环涟漪层 */
@@ -94,6 +85,42 @@ function lineSeries(list){
     lineStyle:{color:'#e7c76d',width:1.1,opacity:.32,curveness:.28},
     data:list.map(s=>({coords:[[116.40,39.90],[s.lng,s.lat]],id:s.id}))};
 }
+/* ================= 标点图标 =================
+ * ECharts 的 symbol 必须「同步返回」字符串，而景点照片要先走网络；
+ * 更关键的是出图接口会 302 跳到 lf-cdn，跳转后的响应不带 Access-Control-Allow-Origin，
+ * fetch / canvas 取像素一律 net::ERR_FAILED，所以照片没法转 base64 塞进 SVG 贴纸。
+ * 折中方案：按景点类型给专属 emoji + 暖色渐变底，既能区分「寺/山/海/街」，
+ * 也不依赖网络。悬停时 tooltip 里仍直接显示 <img> 原图（<img> 不需要 CORS）。 */
+const SPOT_STYLE=[
+  [/长城|墙|关|门|楼/,'🧱','#e3c9a6','#8a6a4a'],
+  [/故宫|宫|殿|陵|寺|庙|祠|塔|阁/,'🏯','#f3c98b','#b5763f'],
+  [/海|滩|岛|湾|湖|泉|溪|瀑/,'🏖','#9ed3e8','#3e7fa8'],
+  [/山|峰|岭|崖|峡|洞/,'⛰','#b7d2a8','#4c7546'],
+  [/街|巷|路|里|弄|坊|市/,'🏮','#f0b9a8','#a8503c'],
+  [/园|林|公|苑/,'🌿','#c3ddb4','#50804a']
+];
+function spotStyle(id){
+  const s=(typeof spotById==='function'?spotById(id):null)||{};
+  const txt=(s.tag||'')+(s.n||'')+(P[id]||id);
+  for(const [re,emo,a,b] of SPOT_STYLE){if(re.test(txt))return {emo,a,b}}
+  return {emo:'📍',a:'#f2d8b8',b:'#a97c4c'};
+}
+function spotPin(id,lit){
+  const st=spotStyle(id);
+  return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="80">'
+    +'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+    +'<stop offset="0" stop-color="'+st.a+'"/><stop offset="1" stop-color="'+st.b+'"/></linearGradient></defs>'
+    +'<path d="M32 76 L26 48 L38 48 Z" fill="'+(lit?'#ffd76a':'#c9553f')+'"/>'
+    +'<circle cx="32" cy="27" r="21" fill="url(#g)" stroke="'+(lit?'#ffd76a':'#fffdf8')+'" stroke-width="3'+(lit?'5':'')+'"/>'
+    +'<text x="32" y="35" font-size="20" text-anchor="middle">'+st.emo+'</text>'
+    +'</svg>');
+}
+/* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS） */
+function spotThumbURL(id){try{return IMG(P[id]||id,'square')}catch(e){return ''}}
+/* 标点图标是纯本地 SVG，无需异步预取与刷新 */
+function prefetchThumbs(){}
+function refreshSpotPins(){}
 /* ================= 手帐风平面地图：单层 geo =================
  * 旧实现用 4 个侧壁层 + 顶面叠出「纵深」，本质是平面图层上下位移（伪 3D），
  * 且每次 georoam 要对 10 个 geo 同步 setOption，缩放必然卡。
@@ -236,8 +263,11 @@ function createWanderMap(elId,mode,opts){
   c.setOption({backgroundColor:PAPER.bg,
     tooltip:{trigger:'item',backgroundColor:'rgba(250,245,233,.97)',borderColor:'rgba(201,183,154,.9)',textStyle:{color:'#6b5c47',fontSize:12},
       extraCssText:'box-shadow:0 8px 24px rgba(120,98,70,.24);border-radius:10px;',
-      formatter:p=>p.data&&p.data.id?('<b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情'):(p.name||'')},
+      formatter:p=>p.data&&p.data.id?('<div style="display:flex;gap:8px;align-items:center">'
+        +'<img src="'+spotThumbURL(p.data.id)+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none" onerror="this.style.display=\'none\'">'
+        +'<div><b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情</div></div>'):(p.name||'')},
     geo:geoLayers(mode,opts),series});
+  /* 缩略图仅用于 tooltip，图标本身是本地 SVG，无需预取 */
   c.on('click',p=>{
     if(p.data&&p.data.id){ /* 标点：详情 + 镜头飞过去 */
       flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
@@ -253,6 +283,7 @@ function createWanderMap(elId,mode,opts){
   /* 单层 geo 下 ECharts 自己维护 zoom / center，无需在 georoam 里再 setOption。
      旧代码每次滚轮都同步重绘全部 geo 层，是缩放卡顿的主因。 */
   c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06}};
+  CHARTS[elId]=c;
   return c;
 }
 /* ================= AI 路线层：按 Day 分色连线 + 起点旗标 + 顺序标号 ================= */
@@ -273,8 +304,8 @@ function routeSeries(route){
     }
   });
   if(allPts.length){
-    series.push({type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:6,symbolSize:30,cursor:'pointer',
-      symbol:(v,p)=>mkIcon(ICO[p.data.id]||'📍'),
+    series.push({type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:6,symbolSize:36,cursor:'pointer',
+      symbol:(v,p)=>spotPin(p.data.id,true),
       data:allPts.map(p=>({name:p.n,value:[p.lng,p.lat],id:p.id}))});
     series.push({type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:5,
       rippleEffect:{brushType:'fill',scale:2.6,period:3},

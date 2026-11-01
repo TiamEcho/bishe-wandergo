@@ -454,8 +454,9 @@
 .dest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
 .dest-card{background:linear-gradient(160deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:.25s;cursor:pointer;position:relative}
 .dest-card:hover{transform:translateY(-4px);border-color:var(--line-gold);box-shadow:0 14px 34px rgba(0,0,0,.38)}
-.dest-thumb{height:118px;display:grid;place-items:center;font-size:40px;position:relative}
-.dest-thumb .rk{position:absolute;top:10px;left:10px;font-size:10px;font-weight:900;letter-spacing:.5px;background:rgba(9,16,29,.78);color:#f3da96;border:1px solid var(--line-gold);border-radius:20px;padding:3px 9px;backdrop-filter:blur(4px)}
+.dest-thumb{height:118px;display:grid;place-items:center;font-size:40px;position:relative;overflow:hidden}
+.dest-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.dest-thumb .rk{z-index:2}
 .dest-body{padding:12px 14px 14px}
 .dest-body h4{font-size:15px;font-weight:900}
 .dest-body .dc-sub{font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}

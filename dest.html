@@ -28,11 +28,16 @@
 (function(){
   const GRADS=[['#2b4a6f','#7ea6d9'],['#5a4a2c','#c8a15a'],['#1b3f5c','#5f9bc0'],['#24422e','#5f9a6b'],['#211d3c','#5a4a8c'],['#4a2430','#a8546a']];
   const TAGE=s=>/湖|海|岛|江|河/.test(s)?'🌊':/山|峰|雪|藏/.test(s)?'🏔':/宫|古|史|陵|俑|城/.test(s)?'🏯':/寺|庙|神社|佛/.test(s)?'⛩':/夜|都市|街/.test(s)?'🌃':/园|林|花|樱/.test(s)?'🌸':/原|草/.test(s)?'🌿':'📍';
+  /* 站内 1000+ 条景点大多没有手写提示词，没有就退回 id / 名称，由 imgPrompt 自动转英文地标 */
+  const promptOf=s=>P[s.id]?s.id:(s.en||s.n);
   const top=[...SPOTS].sort((a,b)=>b.rating-a.rating).slice(0,8);
   document.getElementById('destGrid').innerHTML=top.map((s,i)=>{
     const g=GRADS[i%GRADS.length];
     return `<div class="dest-card" onclick="WGO.go('ai.html?city='+encodeURIComponent('${s.n}'))">
-      <div class="dest-thumb" style="background:linear-gradient(135deg,${g[0]},${g[1]})"><span class="rk">TOP ${i+1}</span>${TAGE(s.tag+s.n)}</div>
+      <div class="dest-thumb" style="background:linear-gradient(135deg,${g[0]},${g[1]})">
+        <img src="${IMG(promptOf(s),'landscape_4_3')}" alt="${s.n}" loading="lazy"
+             onerror="this.style.display='none'">
+        <span class="rk">TOP ${i+1}</span>${TAGE(s.tag+s.n)}</div>
       <div class="dest-body">
         <h4>${s.n}</h4>
         <div class="dc-sub">📍 ${s.city} · <span class="star">★ ${s.rating}</span> · ${s.price}</div>

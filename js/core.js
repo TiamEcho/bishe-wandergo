@@ -761,9 +761,9 @@ const TOPNAV=[
    ['memories.html','旅程故事','旅行记录时间线']]},
  {t:'社区攻略',ico:'💬',items:[
    ['community.html','攻略视频列表','B站旅游攻略视频'],
-   ['index.html','平台数据概览','覆盖城市数 / 累计攻略 / 活跃用户 / 点亮省份'],
+   ['analysis.html','平台数据概览','覆盖城市数 / 累计攻略 / 活跃用户 / 点亮省份'],
    ['dest.html','热门目的地推荐','重庆 / 成都 / 西安 / 杭州 等热门城市'],
-   ['analysis.html','景点分析','ECharts 可视化大屏']]}
+   ['analysis.html','景点分析','ECharts 可视化大屏 · 评分榜 / 地区 / 标签 / 花费']]}
 ];
 function initChrome(){
   if(!document.querySelector('header.topnav')){
