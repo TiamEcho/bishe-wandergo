@@ -110,6 +110,93 @@ router.get('/post/list', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* 社区帖子：列表 / 详情 / 发布 / 评论 / 点赞 / 视频源 */
+router.get('/posts', async (req, res, next) => {
+  try {
+    const r = await dbx.listPosts({
+      offset: req.query.offset, limit: req.query.limit,
+      sort: req.query.sort, type: req.query.type, topic: req.query.topic
+    });
+    res.json({ ok: true, total: r.total, list: r.list, items: r.list });
+  } catch (e) { next(e); }
+});
+
+/* 词条列表 / 词条详情：前端 api.js 的 topics() / topicDetail() 打的就是这两个路径，
+   之前后端没有实现，社区页与词条页一直拿不到分类数据 */
+router.get('/topic/list', async (req, res, next) => {
+  try {
+    const kw = String(req.query.kw || '').trim();
+    let list = await dbx.listTopics();
+    if (kw) list = list.filter(t => (t.name + t.description + t.code).includes(kw));
+    res.json({ ok: true, total: list.length, list });
+  } catch (e) { next(e); }
+});
+
+router.get('/topic/detail', async (req, res, next) => {
+  try {
+    const code = String(req.query.code || '').trim();
+    const offset = Number(req.query.offset) || 0;
+    if (!code) return res.status(400).json({ ok: false, message: 'code 不能为空' });
+    const all = await dbx.listTopics();
+    const topic = all.find(t => t.code === code)
+      || { code, name: dbx.TOPIC_NAMES[code] || code, description: '', postCount: 0, heat: 0 };
+    const r = await dbx.listPosts({ topic: code, sort: 'top', offset, limit: 30 });
+    res.json({ ok: true, topic, total: r.total, list: r.list, items: r.list });
+  } catch (e) { next(e); }
+});
+
+/* 帖子详情：前端 postDetail() 用 /api/post/detail?id=xx&nick=xx，
+   返回结构与 api.js 期待的一致（post / comments / liked） */
+router.get('/post/detail', async (req, res, next) => {
+  try {
+    const p = await dbx.getPost(req.query.id);
+    if (!p) return res.status(404).json({ ok: false, message: '帖子不存在' });
+    const comments = await dbx.listPostComments(p.id);
+    res.json({ ok: true, post: p, comments, liked: false });
+  } catch (e) { next(e); }
+});
+
+router.get('/posts/:id', async (req, res, next) => {
+  try {
+    const p = await dbx.getPost(req.params.id);
+    if (!p) return res.status(404).json({ ok: false, message: '帖子不存在' });
+    p.comments = await dbx.listPostComments(p.id);
+    res.json({ ok: true, post: p });
+  } catch (e) { next(e); }
+});
+
+router.post('/posts', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    if (!b.content && !b.title && !(b.images && b.images.length) && !b.videoUrl && !b.videoSrc) {
+      return res.status(400).json({ ok: false, message: '内容不能为空' });
+    }
+    const r = await dbx.addPost(b);
+    res.status(r.created ? 201 : 200).json({ ok: true, created: r.created, post: r.post });
+  } catch (e) { next(e); }
+});
+
+router.get('/posts/:id/comments', async (req, res, next) => {
+  try {
+    res.json({ ok: true, list: await dbx.listPostComments(req.params.id) });
+  } catch (e) { next(e); }
+});
+
+router.post('/posts/:id/comments', async (req, res, next) => {
+  try {
+    const content = (req.body && req.body.content) || '';
+    if (!String(content).trim()) return res.status(400).json({ ok: false, message: '评论不能为空' });
+    await dbx.addPostComment(req.params.id, (req.body && req.body.nick) || '旅行者', content);
+    res.status(201).json({ ok: true, list: await dbx.listPostComments(req.params.id) });
+  } catch (e) { next(e); }
+});
+
+router.post('/posts/:id/like', async (req, res, next) => {
+  try {
+    res.json({ ok: true, likeCount: await dbx.addPostLike(req.params.id) });
+  } catch (e) { next(e); }
+});
+
 /* ② POST /api/checkin —— 新增打卡（同时保留 /api/checkin/add 兼容旧前端） */
 async function createCheckin(req, res, next) {
   try {
@@ -196,6 +283,7 @@ router.get('/videos', async (req, res, next) => {
     cover: r.cover || '',
     source: r.source || 'web',
     sourceUrl: r.source_url || '',
+    playUrl: r.source_url ? '/api/video/stream?src=' + encodeURIComponent(r.source_url) : '',
     type: r.type || 'video',
     content: (r.content || '').slice(0, 200)
   }));
@@ -210,6 +298,7 @@ router.get('/videos', async (req, res, next) => {
       cover: p.cover || '',
       source: p.source || 'web',
       sourceUrl: p.videoUrl || p.sourceUrl || '',
+      playUrl: p.videoUrl ? '/api/video/stream?src=' + encodeURIComponent(p.videoUrl) : '',
       type: 'video',
       content: (p.content && p.content !== '-' ? p.content : '').slice(0, 200)
     });
@@ -217,6 +306,76 @@ router.get('/videos', async (req, res, next) => {
 
     res.json({ ok: true, total: list.length, list: list.slice(0, limit) });
   } catch (e) { next(e); }
+});
+
+/* ⑤b GET /api/video/stream?src= —— 视频流代理：把外站直链转成同源可播地址，
+ * 顺便解决 B 站 / 抖音 CDN 的 Referer 防盗链，手机和别的电脑都能播。
+ * 传入的是 bilibili 网页地址时，先解析出真实 mp4 直链再代理。
+ * 支持 Range（拖动进度条），边下边发，不整段读进内存。 */
+const _VIDEO_HOSTS = /(^|\.)(bilivideo\.com|bilibili\.com|douyin\.com|douyinpic\.com|douyinvod\.com|ixigua\.com|kuaishou\.com|hdslb\.com|ytimg\.com|googlevideo\.com|akamaized\.net|cloudfront\.net|aliyuncs\.com|myqcloud\.com|qiniucdn\.com)$/i;
+const _UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
+
+/* bilibili 网页地址 → mp4 直链（带 5 分钟缓存，避免每次播放都请求 B 站接口） */
+const _biliCache = new Map();
+async function resolveBili(url) {
+  const bv = (/(BV[0-9A-Za-z]{10})/.exec(url) || [])[1];
+  if (!bv) return '';
+  const hit = _biliCache.get(bv);
+  if (hit && Date.now() - hit.at < 300000) return hit.url;
+  const H = { 'User-Agent': _UA, 'Referer': 'https://www.bilibili.com/' };
+  const view = await (await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bv}`, { headers: H })).json();
+  const cid = view && view.data && view.data.cid;
+  if (!cid) return '';
+  const pu = await (await fetch(
+    `https://api.bilibili.com/x/player/playurl?bvid=${bv}&cid=${cid}&qn=64&fnval=1&platform=html5&high_quality=1`,
+    { headers: H })).json();
+  const mp4 = pu && pu.data && pu.data.durl && pu.data.durl[0] && pu.data.durl[0].url;
+  if (!mp4) return '';
+  _biliCache.set(bv, { url: mp4, at: Date.now() });
+  return mp4;
+}
+
+router.get('/video/stream', async (req, res) => {
+  let src = String(req.query.src || '');
+  if (!/^https?:\/\//i.test(src)) return res.status(400).send('src 必须是 http(s) 直链');
+  let u; try { u = new URL(src) } catch { return res.status(400).send('src 非法') }
+  if (!_VIDEO_HOSTS.test(u.hostname)) return res.status(403).send('仅代理已接入的视频平台域名');
+  try {
+    /* 网页地址（非直链）先解析成真实视频流地址 */
+    if (!/\.(mp4|m3u8|flv|webm)(\?|$)/i.test(u.pathname) && /bilibili\.com$/i.test(u.hostname)) {
+      const real = await resolveBili(src).catch(() => '');
+      if (!real) return res.status(404).send('该视频暂无法解析播放地址，请使用站内来源观看');
+      src = real; u = new URL(src);
+    }
+    /* 按来源站点带 Referer：抖音链带 bilibili 的 Referer 会被拒 */
+    const referer = /douyin|ixigua|douyinvod/i.test(u.hostname) ? 'https://www.douyin.com/'
+      : /kuaishou/i.test(u.hostname) ? 'https://www.kuaishou.com/'
+      : 'https://www.bilibili.com/';
+    const headers = { 'User-Agent': _UA, 'Referer': referer };
+    if (req.headers.range) headers.Range = req.headers.range;
+    const r = await fetch(src, { headers, redirect: 'follow' });
+    if (!r.ok && r.status !== 206) return res.status(r.status).send('上游视频不可用');
+    res.status(r.status);
+    ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']
+      .forEach(k => { const v = r.headers.get(k); if (v) res.setHeader(k, v) });
+    if (!res.getHeader('content-type')) res.setHeader('content-type', 'video/mp4');
+    if (!res.getHeader('accept-ranges')) res.setHeader('accept-ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    /* 流式转发：前端先到先播，大文件也不会把内存打满 */
+    if (!r.body) return res.end();
+    const reader = r.body.getReader();
+    res.on('close', () => { try { reader.cancel() } catch (_) {} });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) await new Promise(ok => res.once('drain', ok));
+    }
+    res.end();
+  } catch (e) {
+    if (!res.headersSent) res.status(502).send('视频代理失败：' + String(e.message || e));
+    else res.end();
+  }
 });
 
 /* ⑥ POST /api/analyze-video —— 分析攻略视频，返回结构化结果 */

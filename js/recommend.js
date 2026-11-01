@@ -157,7 +157,7 @@ async function renderCrawl(){
   if(!$('#crawlGrid'))return;
   let data=null;
   try{const r=await fetch('js/spots_crawl.json');if(r.ok)data=await r.json()}catch(e){}
-  if(!data||!data.length){$('#crawlGrid').innerHTML='<div class="empty-tip">暂未生成爬虫数据 · 运行 D:\\wandergo-crawler\\run.bat 一键抓取</div>';return}
+  if(!data||!data.length){$('#crawlGrid').innerHTML='<div class="empty-tip">暂未生成爬虫数据 · 运行抓取脚本可一键采集</div>';return}
   $('#crawlCount').textContent=data.length;
   $('#crawlGrid').innerHTML=data.slice(0,12).map(x=>`<div class="crawl-card"><b>${x.name}</b>
     <div class="cc-meta">📍 ${x.province} ${x.city} · ${x.tags||(x.cat||'')}<br>⭐ ${x.rating||x.score} · 热度 ${x.heat}</div>

@@ -72,8 +72,8 @@ const WGOAPI=(()=>{
     /* ---------- 社区 2.0：词条 / 帖子 / 评论 / 点赞 / BGM / 推荐 ---------- */
     topics(kw){return req('/api/topic/list?kw='+encodeURIComponent(kw||''))},
     topicDetail(code,offset){return req('/api/topic/detail?code='+encodeURIComponent(code)+'&offset='+(offset||0))},
-    postList(topic,sort,offset,limit){return req('/api/post/list?topic='+encodeURIComponent(topic||'')
-      +'&sort='+encodeURIComponent(sort||'hot')+'&offset='+(offset||0)+'&limit='+(limit||30))},
+    postList(topic,sort,offset,limit){return req('/api/posts?topic='+encodeURIComponent(topic||'')
+      +'&sort='+encodeURIComponent(sort||'top')+'&offset='+(offset||0)+'&limit='+(limit||30))},
     postDetail(id,nick){return req('/api/post/detail?id='+encodeURIComponent(id)+'&nick='+encodeURIComponent(nick||''))},
     /* 发布作品：登录态由 Authorization 头带上，后端优先取 token 里的用户名 */
     postAdd(payload){return req('/api/post/add',{method:'POST',body:payload},8000)},

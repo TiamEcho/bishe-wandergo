@@ -68,6 +68,15 @@ const TW = {
     const m = /(BV[0-9A-Za-z]{10})/.exec(url || '');
     return m ? m[1] : '';
   },
+  /* 视频可播地址：后端在线就把外站直链走 /api/video/stream 代理（解决防盗链，
+     任何设备都能播）；离线或直链无效时返回空，由调用方退回 B 站内嵌播放器 */
+  playUrl(url) {
+    const u = String(url || '');
+    if (!/^https?:\/\//i.test(u)) return '';
+    const base = (typeof WGOAPI !== 'undefined' && WGOAPI.base) || '';
+    if (!base) return '';
+    return base + '/api/video/stream?src=' + encodeURIComponent(u);
+  },
   /* 当前登录用户：core.js 里 user 是 let 全局变量，跨脚本可读；读不到就看 localStorage */
   me() {
     try {
@@ -145,10 +154,10 @@ async function openDbPost(id) {
      api.js 的 req 会把失败吞成 null，直接判「离线」就永远点不开 */
   let r = await WGOAPI.postDetail(id, nick);
   if (!r || !r.ok) r = await WGOAPI.postDetail(id, nick);
-  if (r && r.ok) return renderDbPostModal(r.post, r.comments || [], !!r.liked, true);
+  if (r && r.ok) return renderDbPostModal(r.post, r.comments || [], !!r.liked);
   /* 后端离线 / 未入库：站内发布的帖子从 localStorage 读回 */
   const mine = findLocalPost(id);
-  if (mine) return renderDbPostModal(mine, localCmts(mine.id), !!localLikes()[mine.id], false);
+  if (mine) return renderDbPostModal(mine, localCmts(mine.id), !!localLikes()[mine.id]);
   /* 再降级到爬虫数据包 */
   const b = await twLocalData();
   const lp = (b.posts || []).find(x => String(x.id) === String(id));
@@ -156,14 +165,14 @@ async function openDbPost(id) {
     /* 最后一层：内置 POSTS（data.js）里也找不到才提示；
        以前这里直接报「帖子加载失败」，本地发布 / 后端冷启动时会频繁误报 */
     const fb = (typeof POSTS !== 'undefined' ? POSTS : []).find(x => String(x.id) === String(id));
-    if (fb) return renderDbPostModal(localPostStruct(Object.assign({}, fb, { loc: fb.loc, text: fb.txt })), [], false, false);
+    if (fb) return renderDbPostModal(localPostStruct(Object.assign({}, fb, { loc: fb.loc, text: fb.txt })), [], false);
     toast('帖子加载失败：后端未入库，本地也没有这条记录');
     return;
   }
   const cmts = [].concat(localCmts(lp.id), (b.comments || {})[lp.id] || []);
-  renderDbPostModal(lp, cmts, !!localLikes()[lp.id], false);
+  renderDbPostModal(lp, cmts, !!localLikes()[lp.id]);
 }
-function renderDbPostModal(p, comments, liked, online) {
+function renderDbPostModal(p, comments, liked) {
   const pl = TW.platOf(p);
   const cover = TW.cover(p);
   const bv = TW.bvid(p.videoUrl || p.sourceUrl);
@@ -177,11 +186,14 @@ function renderDbPostModal(p, comments, liked, online) {
     ? `<div class="tw-wants"><span class="lbl">📍 文中提到的地点 · 想去就点亮：</span>${wantPlaces.map(w => `<button class="want-chip ${wants[w] ? 'on' : ''}" onclick="twToggleWant('${TW.esc(w)}','${TW.esc(String(p.id))}',this)">${wants[w] ? '✨' : '📍'} ${TW.esc(w)}</button>`).join('')}</div>`
     : '';
 
+  /* 播放优先级：后端代理直链原生 <video> → 直链原生 <video> → B 站内嵌 → 本地模拟 */
+  const direct = TW.playUrl(p.videoUrl || p.playUrl || p.sourceUrl);
+  const rawDirect = /\.(mp4|webm|m3u8)(\?|$)/i.test(p.videoUrl || '') ? p.videoUrl : '';
   const videoBlock = p.type === 'video'
-    ? (bv
-      ? `<div class="tw-video-prev"><iframe src="//player.bilibili.com/player.html?bvid=${bv}&page=1&autoplay=0&high_quality=1" scrolling="no" frameborder="0" allowfullscreen="true"></iframe></div>`
-      : (p.videoUrl && /\.(mp4|webm|m3u8)(\?|$)/i.test(p.videoUrl)
-        ? `<div class="tw-video-prev"><video src="${TW.esc(p.videoUrl)}" controls playsinline></video></div>`
+    ? (direct || rawDirect
+      ? `<div class="tw-video-prev"><video src="${TW.esc(direct || rawDirect)}" controls playsinline preload="metadata"></video></div>`
+      : (bv
+        ? `<div class="tw-video-prev"><iframe src="//player.bilibili.com/player.html?bvid=${bv}&page=1&autoplay=0&high_quality=1" scrolling="no" frameborder="0" allowfullscreen="true"></iframe></div>`
         : `<div class="tw-detail-acts"><button class="tw-btn gold" onclick="twPlayLocal('${TW.esc(p.spotId || 'erhai')}','${TW.esc((p.title || '').slice(0, 14))}')">▶ 播放打卡视频（${TW.esc(bgm || '原声')}）</button></div>`))
     : '';
 
@@ -219,9 +231,6 @@ function renderDbPostModal(p, comments, liked, online) {
         <button class="tw-btn gold sm" onclick="twSendComment('${TW.esc(String(p.id))}')">发布</button>
       </div>
       <div class="tw-cmt-list" id="twCmtList">${renderComments(comments)}</div>
-      <p class="src-note" style="margin-top:14px">${p.source === 'bilibili'
-        ? '📺 本条 Vlog 与评论由后端爬虫通过 B 站公开接口抓取，保留原始链接可溯源；不下载视频、不抓取私密数据。'
-        : '✈️ 本条内容由站内用户发布，评论实时写入 MySQL。'}${online ? '' : ' 当前为离线数据包模式：点赞 / 评论暂存在本地。'}</p>
     </div>`, true);
 }
 
@@ -244,6 +253,30 @@ function renderComments(list) {
       <div class="t"><span>${TW.esc(c.createdAt || '')}</span>${c.likeCount ? `<span>♥ ${c.likeCount}</span>` : ''}</div>
     </div>
   </div>`).join('');
+}
+
+/* 卡片上的 ▶ 直接播放：先按 id 取帖子，拿到直链后弹轻量播放层 */
+async function twPlayVideo(id) {
+  let p = null;
+  try {
+    const r = await WGOAPI.postDetail(id, TW.me() ? TW.me().nick : '');
+    if (r && r.ok) p = r.post;
+  } catch (e) { /* 忽略，走下面的兜底 */ }
+  if (!p) {
+    const b = await twLocalData();
+    p = (b.posts || []).find(x => String(x.id) === String(id))
+      || (typeof POSTS !== 'undefined' ? POSTS : []).find(x => String(x.id) === String(id));
+  }
+  if (!p) { toast('这条视频没找到，可能已被删除'); return; }
+  const src = TW.playUrl(p.videoUrl || p.playUrl || p.sourceUrl);
+  if (!src) return renderDbPostModal(p, [], false);
+  openModal(`<button class="mx" onclick="closeModal()">✕</button>
+    <div class="tw-video-prev" style="border-radius:14px;overflow:hidden">
+      <video src="${TW.esc(src)}" controls autoplay playsinline style="width:100%;display:block;background:#000"></video>
+    </div>
+    <div class="tw-detail-body"><h3>${TW.esc(p.title || '旅行视频')}</h3>
+    <div class="tw-detail-meta"><span>📍 ${TW.esc(p.location || p.city || '旅行中')}</span>
+    <span>${TW.esc(p.source || '')}</span></div></div>`);
 }
 
 /* 站内视频没有真实文件，用景点图轮播 + BGM 模拟播放（与 core.js 的播放器一致） */

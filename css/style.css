@@ -853,6 +853,11 @@ footer{border-top:1px solid var(--line);padding:30px 0 34px;background:var(--bg-
 footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 footer .fb{display:flex;align-items:center;gap:10px;font-weight:900;font-size:15px}
 footer .fnote{font-size:11.5px;color:var(--muted)}
+/* 页脚统一声明区（深色底，各页共用） */
+footer .fdecl{margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.08)}
+footer .fdecl p{font-size:11.5px;line-height:1.9;color:rgba(255,255,255,.46);max-width:1040px}
+footer .fdecl p+p{margin-top:6px}
+footer .fdecl b{color:rgba(255,255,255,.72);font-weight:800;margin-right:8px}
 /* ================= 社区 2.0：平台徽章 / 话题 / 4K 精选 / 图表 ================= */
 .plat-tabs{margin-top:8px}
 .plat{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:99px;color:#fff;white-space:nowrap}

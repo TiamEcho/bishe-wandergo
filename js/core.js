@@ -381,10 +381,26 @@ function toggleBgm(name){
   return true;
 }
 function stopBgm(){bgmName=null;clearTimeout(bgmTimer)}
-/* ================= 打卡视频播放器（含 BGM） ================= */
+/* ================= 打卡视频播放器（含 BGM） =================
+ * d.videoSrc 有值时播放后端托管的真实视频文件（任意设备可播）；
+ * 没有时退化为 AI 图片轮播演示。 */
 let vTimer=null,vProgTimer=null,vFrame=0,vData=null;
 function openVideo(d){
   vData=d;vFrame=0;
+  const real=d&&d.videoSrc;
+  if(real){
+    openModal(`<button class="mx" onclick="closeModal()">✕</button>
+    <div class="vplayer">
+      <div class="vmain">
+        <div class="vstage">
+          <video class="vreal" src="${d.videoSrc}" poster="${d.poster||''}" controls autoplay playsinline preload="metadata"></video>
+          <div class="vtitle"><h4>${d.t||'打卡视频'}</h4><p>📍 ${d.loc||''} · 后端托管视频 · 跨设备可播放</p></div>
+        </div>
+      </div>
+    </div>`,true);
+    const box=$('#modalBox');if(box)box.classList.add('vwide');
+    return;
+  }
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
   <div class="vplayer">
     <div class="vmain">
@@ -746,7 +762,7 @@ const NAVS=[
  ['index.html','🏠','旅行首页'],['novel.html','📖','跟着小说去旅行'],['prince.html','👑','跟着小王子去旅行'],
  ['map.html','🌍','环球地图'],['ai.html','🤖','AI 旅行规划'],['search.html','🔍','全站搜索'],['community.html','💬','旅行社区'],['topic.html','🏷','词条广场'],
  ['checkin.html','📍','我的打卡'],['memories.html','🎬','旅行纪念视频'],['workbench.html','🧳','旅行工作台'],['guide.html','📘','模块导览'],
- ['recommend.html','🎯','猜你喜欢 · 推荐'],['wheel.html','🎡','旅行大转盘']
+ ['recommend.html','🎯','为你推荐'],['wheel.html','🎡','旅行大转盘']
 ];
 const LOGO_SVG='<svg viewBox="0 0 24 24"><path d="M21.5 5.6c-.5-1-1.8-1.4-2.8-.9l-4.3 2.3-8.1-3.4c-.5-.2-1.1-.1-1.5.2l-.9.8c-.5.4-.4 1.2.2 1.5l6.5 3.3-3.7 2-2.9-.6c-.4-.1-.8 0-1.1.3l-.7.6c-.4.4-.3 1 .2 1.2l3.3 1.9 1.9 3.3c.3.5 1 .6 1.3.2l.6-.7c.3-.3.4-.7.3-1.1l-.6-2.9 3.7-2 3.3 6.5c.3.5 1.1.6 1.5.2l.8-.9c.3-.4.4-1 .2-1.5l-3.4-8.1 2.3-4.3c.5-.9.3-2.1-.6-2.6z" transform="scale(.9) translate(1.3,1.3)"/></svg>';
 /* 顶部导航栏：AI规划 / 地图打卡 / 社区攻略 三个下拉 + 登录/用户端 */
@@ -888,7 +904,13 @@ function initChrome(){
     <footer>
       <div class="wrap">
         <div class="fb"><span class="tile" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#f3da96,#c8973f);display:inline-grid;place-items:center">✈️</span>WANDERGO · Fly Me to the World</div>
-        <div class="fnote">让世界，成为你的下一站 · 原型演示 · 页面图片由 AI 生成 · 坐标来自高德坐标拾取器 · 主题可切换</div>
+        <div class="fnote">让世界，成为你的下一站 · 原型演示</div>
+      </div>
+      <div class="wrap">
+        <div class="fdecl">
+          <p><b>数据来源</b>社区 Vlog 与评论由后端爬虫调用 B 站公开接口真实抓取并保留原链接；抖音 / 小红书 / 快手 / Instagram / YouTube 无公开接口，不作为采集来源。图片由 AI 生成，景点坐标为高德坐标拾取器校准。</p>
+          <p><b>使用声明</b>本站为毕业设计演示项目，仅作学习与展示用途，不作商用，内容仅供参考。如涉及权益问题请联系删除。</p>
+        </div>
       </div>
     </footer>
     <div class="ovl" id="ovl"><div class="modal" id="modalBox"></div></div>
