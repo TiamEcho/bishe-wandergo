@@ -77,7 +77,11 @@ function toSpot(s) {
     traffic: s.traffic || '',
     tags: s.tags || '',
     desc: s.desc || '',
-    img: s.img || ''
+    img: s.img || '',
+    /* 站内精编条目没有 category 字段，统一记成「景点」——
+     * 否则 typeLabel 的兜底分支会把所有景区都判成打卡点 */
+    category: s.category || '景点',
+    poiType: s.poi_type || ''
   };
 }
 
@@ -88,8 +92,22 @@ function fromAmap(p) {
     lng: p.lng, lat: p.lat, rating: p.rating || 0, price: p.price || '',
     hours: p.hours || '', traffic: '', tags: p.category || '', desc: '',
     img: '', category: p.category || '景点', type: p.type || '',
-    source: p.source || ''
+    /* 站内库直接带 poi_type（seed 时已按高德标签分好类）；
+     * 高德检索来的没这一列，留空交给 typeLabel 用 amap type 现场判 */
+    poiType: p.poi_type || '', source: p.source || ''
   };
+}
+
+/* 四分类（景区 / 美食 / 打卡点 / 购物）标签：前端行程卡片与地图配色都按它走。
+ * 后端检索池里用的是六分类（景点/购物/文创/美食/休闲/文化）+ 高德原始 type。
+ * 兜底值取「景点」：检索池里 category=景点 的绝大多数就是景区，
+ * 若兜底成打卡点，会出现「柯岩风景区」被标成打卡点的荒谬结果 */
+function typeLabel(s) {
+  if (s.poiType) return s.poiType;
+  /* 站内库条目的 tags 是「历史街区 · 美食」这种人工标签，直接丢进分类器会把
+   * 仓桥直街判成美食；库里的 poi_type 已由 seed 按高德 type 分好，优先用它 */
+  if (s.poi_type) return s.poi_type;
+  return dbx.classifyPoi(s.amapType || s.type, s.category === '景点' ? '景区' : '打卡点');
 }
 
 /* 国内检索不到任何结果时（线上 Render 的高德 Key 常因 IP 白名单 / 配额失效），
@@ -236,8 +254,14 @@ async function collectSpots(city, want) {
       }
     }
 
-    /* 3) 近邻补位：同城库已全部入场后仍不足，才补 60km 内同省景点 */
-    if (chosen.length < want) nearPool(center, libPool, 30).map(toSpot).forEach(push);
+    /* 3) 同城近邻补位：只允许同城（不做跨城拼接）。
+     *    「杭州」不该混进苏州的周庄、山塘街 —— 冷门城市宁可少几个点，
+     *    也不能给出一条跨城的伪行程；跨城由用户显式加天数或多选城市解决 */
+    if (chosen.length < want) {
+      nearPool(center, libPool, 30)
+        .filter(s => cityHit(s.city, city))
+        .map(toSpot).forEach(push);
+    }
 
     /* 4) 精编打卡点兜底：线上 Render 拿不到高德坐标时，站内库会被上面的坐标过滤砍掉大半，
      *    此时把 data.js 的精编打卡点按城市补进来，保证行程至少是「这个城市」的，
@@ -257,10 +281,12 @@ async function collectSpots(city, want) {
 
   return {
     chosen: chosen.slice(0, want),
-    /* 近邻余量：同城库不够时，60km 内同省的补位候选，供「某天景点太少」时回捞 */
+    /* 余量：同城库不够时用于「某天景点太少」的回捞候选；
+     * 只收同城，跨城景点一律不进余量池 */
     rest: chosen.length >= want
       ? []
-      : nearPool(center, libPool, 30).map(toSpot).filter(s => !chosen.some(c => c.name === s.name)),
+      : nearPool(center, libPool, 30).map(toSpot)
+        .filter(s => !chosen.some(c => c.name === s.name) && cityHit(s.city, city)),
     center,
     libraryHit: chosen.filter(c => !isRemote(c)).length,
     amapHit: chosen.filter(c => String(c.id).startsWith('am_')).length,
@@ -437,6 +463,7 @@ async function planRoute(city, days, want) {
         type: 'spot', id: s.id, name: s.name, city: s.city, address: s.address,
         lng: s.lng, lat: s.lat, rating: s.rating, price: s.price, hours: s.hours,
         traffic: s.traffic, desc: s.desc, tags: s.tags, amapType: s.type,
+        poiType: typeLabel(s),
         start, end: start + dur, dur,
         distanceFromCenter: Math.round(dist(center, s) * 10) / 10,
         restaurants: poi.restaurants, hotel: poi.hotel

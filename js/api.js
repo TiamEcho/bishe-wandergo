@@ -25,7 +25,9 @@ const WGOAPI=(()=>{
   const BASE=localStorage.getItem('wgo_api')||_auto;
   let backendUp=null; // null=未知 true=在线 false=离线
   /* Axios 实例（CDN 加载失败时回退原生 fetch，保证离线可用） */
-  const ax=window.axios?window.axios.create({baseURL:BASE,timeout:1800}):null;
+  /* 默认超时 30 秒：Render 免费实例冷启动要 30–50 秒，1.8 秒会被前端自己掐断，
+   * 表现为「一点就失败」。常规接口仍单独给更短超时，见下方各方法的第三个参数 */
+  const ax=window.axios?window.axios.create({baseURL:BASE,timeout:30000}):null;
   /* 当前登录用户（前台走 core.js 的 user；管理端走 localStorage 的 wgo_token） */
   const curNick=()=>(typeof user!=='undefined'&&user&&user.nick)?user.nick:(localStorage.getItem('wgo_nick')||'游客');
   const curToken=()=>{
@@ -33,17 +35,20 @@ const WGOAPI=(()=>{
     return localStorage.getItem('wgo_token')||null;
   };
 
-  async function req(path,opts={},timeout=1800){
+  /* 显式超时优先，未传时用合理默认值。
+   * 原来默认 1.8 秒，会把 Render 免费实例 30–50 秒的冷启动直接掐断，表现为「一点就失败」 */
+  async function req(path,opts={},timeout){
+    const ms=timeout||(opts.method&&opts.method!=='GET'?30000:8000);
     const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
     const tk=curToken();if(tk)headers['Authorization']='Bearer '+tk;
     try{
       let data;
+      /* 超时必须按「每次请求」传，不能改 ax.defaults：并发请求会互相覆盖对方的超时值 */
       if(ax){
-        ax.defaults.timeout=timeout;
-        const r=await ax.request({url:path,method:opts.method||'GET',headers,data:opts.body});
+        const r=await ax.request({url:path,method:opts.method||'GET',headers,data:opts.body,timeout:ms});
         data=r.data;
       }else{
-        const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),timeout);
+        const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),ms);
         const r=await fetch(BASE+path,{method:opts.method||'GET',headers,body:opts.body?JSON.stringify(opts.body):undefined,signal:ctl.signal});
         clearTimeout(t);
         if(!r.ok)throw new Error('http '+r.status);
@@ -94,20 +99,22 @@ const WGOAPI=(()=>{
     adminAuditHandle(id,status){return req('/api/admin/audit/handle',{method:'POST',body:{id,status}})},
     /* 爬虫统计：管理端「🕷 爬虫实时数据」顶部三块统计卡 */
     adminCrawlStats(){return req('/api/admin/crawl/stats')},
-    /* 真实执行 Python 爬虫并回写 MySQL：后端同步阻塞最长 420 秒，
-       全局默认 timeout 只有 1.8 秒，必须在这里单独放大到 480 秒，否则请求会被前端自己中断 */
+    /* 真实执行 Python 爬虫并回写数据库：后端同步阻塞最长 420 秒，必须单独放大到 480 秒 */
     adminCrawl(limit){return req('/api/admin/crawl?limit='+encodeURIComponent(limit||5),{method:'POST'},480000)},
     /* 社区爬虫：B 站公开接口抓 Vlog 与评论，写库；同样需要放大超时 */
     adminCommunityStats(){return req('/api/admin/community/stats')},
     adminCommunityList(limit){return req('/api/admin/community/list?limit='+(limit||40))},
     adminCommunityCrawl(limit){return req('/api/admin/community/crawl?limit='+encodeURIComponent(limit||10),{method:'POST'},420000)},
-    /* 本地 Node 后端健康检查：管理端用它展示 SQLite 真实统计（攻略 / 打卡 / 实体 / 城市） */
+    /* 本地 Node 后端健康检查：管理端用它展示数据库真实统计（攻略 / 打卡 / 实体 / 城市） */
     backendHealth(){return req('/api/health',{},3000)},
     /* ---------- AI 智能体悬浮球 ---------- */
     chat(message,history){return req('/api/chat',{method:'POST',body:{message,history:history||[]}},15000)},
     videoList(limit){return req('/api/videos?limit='+(limit||40),{},6000)},
     analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)},
     /* 行程规划：AI 出景点 → 去重 → 扇形分区 → 周边餐饮住宿（失败返回 null，前端走本地算法） */
-    planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},25000)}
+    /* 要等 PG 冷启动 + 模型出点位，放宽到 55 秒；超时前端仍会走本地算法兜底 */
+    planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},55000)},
+    /* 探活：先打一次健康检查判断后端是否已唤醒（不参与业务，失败返回 null） */
+    ping(){return req('/api/health',{},20000)}
   };
 })();

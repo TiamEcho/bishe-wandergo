@@ -466,4 +466,12 @@ router.get('/rank', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* ⑯ GET /api/spot/types —— 各城市 poi_type 分布（景区/美食/打卡点/购物）
+ *    用于核对冷门城市补点是否到位，也供前端图例展示 */
+router.get('/spot/types', async (req, res, next) => {
+  try {
+    res.json({ ok: true, types: dbx.POI_TYPES, cities: await dbx.spotTypesByCity() });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

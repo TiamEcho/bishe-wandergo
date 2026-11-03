@@ -182,7 +182,9 @@ CREATE TABLE IF NOT EXISTS scenic_spot(
   price     TEXT,
   tags      TEXT,
   cover     TEXT,
-  intro     TEXT
+  intro     TEXT,
+  poi_type  TEXT DEFAULT '景区',
+  source    TEXT
 );
 CREATE TABLE IF NOT EXISTS rating_record(
   id         SERIAL PRIMARY KEY,
@@ -283,7 +285,9 @@ CREATE TABLE IF NOT EXISTS scenic_spot(
   price     TEXT,
   tags      TEXT,
   cover     TEXT,
-  intro     TEXT
+  intro     TEXT,
+  poi_type  TEXT DEFAULT '景区',
+  source    TEXT
 );
 CREATE TABLE IF NOT EXISTS rating_record(
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -479,10 +483,10 @@ async function seedSpots() {
   const cnt = await impl.get('SELECT COUNT(*) AS c FROM scenic_spot');
   if (Number(cnt.c) > 0) return Number(cnt.c);
   const sql = impl.dialect === 'postgres'
-    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
-    : `INSERT OR IGNORE INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
+    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
+    : `INSERT OR IGNORE INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
   let n = 0;
   for (const s of ALL_SPOTS) {
     if (!s.name || !s.city) continue;
@@ -492,15 +496,101 @@ async function seedSpots() {
       Number.isFinite(Number(s.lat)) ? Number(s.lat) : null,
       Number(s.rating) || 0, Number(s.heat) || 0,
       String(s.price == null ? '' : s.price), String(s.tags || s.cat || ''),
-      s.img || s.cover || '', String(s.desc || '').slice(0, 500)
+      s.img || s.cover || '', String(s.desc || '').slice(0, 500),
+      classifyPoi(s.tags || s.cat, '景区'), 'seed'
     ]);
     n += r.changes;
   }
   return n;
 }
 
+/* ---------------- 地点分类（P0-2） ----------------
+ * poi_type：景区 / 美食 / 打卡点 / 购物 —— 冷门城市兜底时按类型均衡挑选
+ * source  ：数据来源（data.js 精编 / amap 高德 / 站内爬库），便于排查与去重
+ * --------------------------------------------------- */
+const POI_TYPES = ['景区', '美食', '打卡点', '购物'];
+
+/* 高德 POI 的 type 字符串 → 四分类。
+ * 顺序很重要：高德景区标签里常带「名胜」「旅游景点」，这里先认景区，
+ * 否则「柯岩风景区（风景名胜;风景名胜;国家级景点）」会被误判成打卡点 */
+function classifyPoi(amapType, fallback) {
+  const t = String(amapType || '');
+  if (/风景名胜|国家级景点|旅游景点|公园|景区|园林|寺|庙|教堂|古迹|遗址|古镇|博物馆|美术馆|展览|纪念馆/.test(t)) return '景区';
+  if (/餐饮|美食|小吃|夜市|茶艺|咖啡|甜品|酒吧|餐厅|快餐厅/.test(t)) return '美食';
+  if (/购物|商场|超市|商业街|步行街|专卖|市场|奥特莱斯|免税/.test(t)) return '购物';
+  if (/地标|观景|游乐|休闲|体育|摄影|文化|科教|艺术|广场|绿地/.test(t)) return '打卡点';
+  return POI_TYPES.includes(fallback) ? fallback : '打卡点';
+}
+
+/* 老库补列：Postgres 用 ADD COLUMN IF NOT EXISTS；SQLite 3.35+ 也支持，
+ * 旧版本会抛错，此时按 PRAGMA 结果判断后再加，保证本地环境同样能升级 */
+async function migrateSpotColumns() {
+  if (impl.dialect === 'postgres') {
+    await impl.exec("ALTER TABLE scenic_spot ADD COLUMN IF NOT EXISTS poi_type TEXT DEFAULT '景区'");
+    await impl.exec('ALTER TABLE scenic_spot ADD COLUMN IF NOT EXISTS source TEXT');
+    return;
+  }
+  const cols = await impl.all("PRAGMA table_info('scenic_spot')");
+  const has = n => cols.some(c => c.name === n);
+  if (!has('poi_type')) await impl.exec("ALTER TABLE scenic_spot ADD COLUMN poi_type TEXT DEFAULT '景区'");
+  if (!has('source')) await impl.exec('ALTER TABLE scenic_spot ADD COLUMN source TEXT');
+}
+
+/* 老数据回填：迁移前入库的景点 source 为空、poi_type 可能为空，
+ * 统一补成「站内精编」，否则前端按类型筛选时这些老景点会整批消失 */
+async function backfillSpotColumns() {
+  await impl.exec("UPDATE scenic_spot SET poi_type = '景区' WHERE poi_type IS NULL OR poi_type = ''");
+  await impl.exec("UPDATE scenic_spot SET source = 'seed' WHERE source IS NULL OR source = ''");
+}
+
+/* 批量写入高德 POI（scripts/fetch-pois.js 与 /api/admin/spot/save 共用）。
+ * 已有同名景点不覆盖人工数据，只补齐空着的分类 / 来源 */
+async function upsertPois(city, list, source) {
+  const sql = impl.dialect === 'postgres'
+    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT (spot_key) DO UPDATE SET poi_type = EXCLUDED.poi_type, source = EXCLUDED.source`
+    : `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(spot_key) DO UPDATE SET poi_type = excluded.poi_type, source = excluded.source`;
+  let n = 0;
+  for (const p of list || []) {
+    if (!p || !p.name) continue;
+    const key = String(p.spot_key || p.id || `${city}|${p.name}`);
+    await impl.run(sql, [
+      key, p.name, city, p.province || '', p.lng == null ? null : Number(p.lng),
+      p.lat == null ? null : Number(p.lat), Number(p.rating) || 0, Number(p.heat) || 0,
+      String(p.price == null ? '' : p.price), String(p.tags || ''),
+      p.cover || '', String(p.intro || p.desc || '').slice(0, 500),
+      classifyPoi(p.amap_type || p.type, p.poi_type), source || p.source || 'amap'
+    ]);
+    n++;
+  }
+  return n;
+}
+
+/* 城市级分类统计：GET /api/spot/index 用它给前端「冷门城市仍有打卡点」做证明 */
+async function spotTypesByCity() {
+  const rows = await impl.all(
+    `SELECT city, poi_type, COUNT(*) AS c FROM scenic_spot
+     WHERE city IS NOT NULL AND city <> '' GROUP BY city, poi_type ORDER BY city`
+  );
+  const out = {};
+  rows.forEach(r => {
+    const t = r.poi_type || '景区';
+    out[r.city] = out[r.city] || { total: 0 };
+    out[r.city][t] = Number(r.c) || 0;
+    out[r.city].total += Number(r.c) || 0;
+  });
+  return out;
+}
+
 async function seed() {
   await impl.exec(DDL);
+  /* 老库补列：CREATE TABLE IF NOT EXISTS 不会给已存在的表加列，
+   * 线上 Postgres 的 scenic_spot 建表早于 poi_type / source，必须显式迁移 */
+  await migrateSpotColumns();
+  await backfillSpotColumns();
   await seedSpots();
 
   const g = await impl.get('SELECT COUNT(*) AS c FROM guide');
@@ -783,6 +873,22 @@ async function getSpot(spotKey) {
   return impl.get('SELECT * FROM scenic_spot WHERE spot_key = ?', [spotKey]);
 }
 
+/* 同城 + 类型检索：冷门城市兜底时按 景区/美食/打卡点/购物 分池挑选，
+ * 避免整条行程全是风景名胜、没有吃饭逛街的地方 */
+async function listSpotsByType(city, poiType, limit = 30) {
+  const order = 'heat DESC, rating DESC';
+  if (city && poiType) {
+    return impl.all(
+      `SELECT * FROM scenic_spot WHERE city = ? AND poi_type = ? ORDER BY ${order} LIMIT ?`,
+      [city, poiType, limit]
+    );
+  }
+  if (city) {
+    return impl.all(`SELECT * FROM scenic_spot WHERE city = ? ORDER BY ${order} LIMIT ?`, [city, limit]);
+  }
+  return impl.all(`SELECT * FROM scenic_spot ORDER BY ${order} LIMIT ?`, [limit]);
+}
+
 /* 热门榜：按热度 / 评分排序，用于冷启动兜底与排行榜 */
 async function rankSpots(scope, city, limit = 20) {
   const order = scope === 'rating' ? 'rating DESC, heat DESC' : 'heat DESC, rating DESC';
@@ -800,7 +906,8 @@ module.exports = {
   addCheckin, addGuide, addEntities, crawlCandidates,
   hashPwd, findUser, findUserById, createUser, verifyUser,
   addRating, toggleFavorite, logBehavior, allBehaviors,
-  listSpots, getSpot, rankSpots, seedSpots,
+  listSpots, getSpot, rankSpots, seedSpots, listSpotsByType,
+  upsertPois, spotTypesByCity, classifyPoi, POI_TYPES, migrateSpotColumns, backfillSpotColumns,
   SPOTS: ALL_SPOTS, DATA_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,
   cityOf: term => ALIAS.get(String(term || '').trim()) || null
 };

@@ -224,6 +224,70 @@ function decorSeries(mode){
     symbol:()=>decorIcon('cloud'),itemStyle:{opacity:.5},
     data:[{value:[-30,45]},{value:[10,52]},{value:[105,10]},{value:[-45,-20]}]}];
 }
+/* ================= 城市边界圈选（P0-3） =================
+ * GeoJSON 由 scripts/fetch-geo.js 从阿里云 DataV GeoAtlas 预下载到 geo/{adcode}.json，
+ * 城市名 → adcode 的映射在 geo/manifest.js（window.WGO_GEO）。运行时零外部请求。
+ * 命中城市：画半透明色块 + 只显示圈内景点与路线；没下到边界的城市保持原样。 */
+const CITY_GEO_CACHE={};
+function cityGeoCode(city){
+  if(!city)return '';
+  const m=(typeof window!=='undefined'&&window.WGO_GEO)||{};
+  if(m[city])return m[city];
+  /* 兼容「大理白族自治州」「杭州市」这类全称：按前缀匹配 */
+  const k=Object.keys(m).find(n=>city.indexOf(n)===0||n.indexOf(city)===0);
+  return k?m[k]:'';
+}
+/* 同步取已加载过的边界（首次调用返回 null，需要走 loadCityGeo） */
+function cityGeoLoaded(city){
+  const code=cityGeoCode(city);
+  return code?CITY_GEO_CACHE[code]||null:null;
+}
+function loadCityGeo(city,cb){
+  const code=cityGeoCode(city);
+  if(!code)return cb(null);
+  if(CITY_GEO_CACHE[code])return cb(CITY_GEO_CACHE[code]);
+  /* 注入 <script>，浏览器会把 geo/{code}.json 当普通静态文件缓存，二次进页面不再请求 */
+  const s=document.createElement('script');
+  s.type='application/json';
+  s.src='geo/'+code+'.json';
+  s.onload=()=>{
+    const txt=s.textContent||'';
+    s.remove();
+    try{CITY_GEO_CACHE[code]=JSON.parse(txt);cb(CITY_GEO_CACHE[code])}
+    catch(e){cb(null)}
+  };
+  s.onerror=()=>{s.remove();cb(null)};
+  document.head.appendChild(s);
+}
+/* 边界外接矩形：用于 fitBounds 聚焦（比按点位拟合更稳，点位不会贴着画布边） */
+function geoBBox(geo){
+  let x0=180,x1=-180,y0=90,y1=-90;
+  const walk=c=>{
+    if(typeof c[0]==='number'){if(c[0]<x0)x0=c[0];if(c[0]>x1)x1=c[0];if(c[1]<y0)y0=c[1];if(c[1]>y1)y1=c[1];return}
+    c.forEach(walk);
+  };
+  (geo.features||[]).forEach(f=>walk(f.geometry.coordinates));
+  return x0>x1?null:{min:[x0,y0],max:[x1,y1],center:[(x0+x1)/2,(y0+y1)/2]};
+}
+/* 射线法判点是否在城市轮廓内（跨环累加奇偶，MultiPolygon 直接平铺所有环） */
+function inCityGeo(geo,lng,lat){
+  if(!geo)return true;
+  let inside=false;
+  const rings=[];
+  (geo.features||[]).forEach(f=>{
+    const t=f.geometry.type,co=f.geometry.coordinates;
+    if(t==='Polygon')co.forEach(r=>rings.push(r));
+    else if(t==='MultiPolygon')co.forEach(poly=>poly.forEach(r=>rings.push(r)));
+  });
+  rings.forEach(r=>{
+    for(let i=0,j=r.length-1;i<r.length;j=i++){
+      const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];
+      if(((yi>lat)!==(yj>lat))&&(lng<(xj-xi)*(lat-yi)/(yj-yi)+xi))inside=!inside;
+    }
+  });
+  return inside;
+}
+
 /* ================= 镜头飞行（单层 geo 补间） ================= */
 function flyTo(chart,target,targetZoom,dur){
   dur=dur||950;
@@ -391,9 +455,19 @@ function createLiteRouteMap(elId,mode,opts){
   const el=document.getElementById(elId);if(!el||!window.echarts)return null;
   const c=echarts.init(el);
   const segs=(opts.segs||[]).slice().sort((a,b)=>a.day-b.day);
+  /* POI_COLOR / poiTypeOf 定义在 ai.js，地图脚本可能先于它加载，取不到就用内置默认色 */
+  const POI_MAP_COLOR=(typeof POI_COLOR!=='undefined'&&POI_COLOR)||
+    {'景区':'#c9a227','美食':'#e0653f','打卡点':'#2f9e8f','购物':'#7a5cc4'};
+  const poiTypeOf=(typeof window.poiTypeOf==='function')?window.poiTypeOf:()=>'景区';
+  /* 点位类型由地图页在构造 segs 时写进 points[].poiType（后端 is 空则按名称猜） */
+  const typeOf=p=>p.poiType||poiTypeOf({n:p.n});
   const stays=opts.stays||[],eats=opts.eats||[];
   let curMode=opts.mode||'drive',eatFilter='',selectedIndex=-1;
-  function orderedPts(){const arr=[];segs.forEach(sg=>sg.points.forEach(p=>arr.push({...p,day:sg.day})));return arr}
+  /* 城市边界（P0-3）：opts.city 命中有预下载 GeoJSON 时，
+   * 只保留圈内景点，并把视野按边界外接矩形聚焦 */
+  let cityGeo=opts.cityGeo||null;
+  const inCity=p=>!cityGeo||inCityGeo(cityGeo,p.lng,p.lat);
+  function orderedPts(){const arr=[];segs.forEach(sg=>sg.points.forEach(p=>{if(inCity(p))arr.push({...p,day:sg.day})}));return arr}
   function seriesOf(){
     const series=[];
     const all=orderedPts();
@@ -407,11 +481,14 @@ function createLiteRouteMap(elId,mode,opts){
       series.push({id:'route-stops',type:'scatter',coordinateSystem:'geo',zlevel:6,cursor:'pointer',
         symbol:'circle',
         symbolSize:(value,params)=>params.dataIndex===selectedIndex?36:30,
-        itemStyle:{color:RT_BLUE,borderColor:'#fff',borderWidth:2},
-        emphasis:{itemStyle:{color:'#1D4ED8',borderWidth:3}},
+        /* 按地点四分类上色：景区金 / 美食橙红 / 打卡点青 / 购物紫。
+         * 冷门城市补进来的非景区点如果和景点同色，地图上就看不出哪站能吃饭逛街 */
+        itemStyle:{color:p=>POI_MAP_COLOR[typeOf(p.data||{})]||RT_BLUE,borderColor:'#fff',borderWidth:2},
+        emphasis:{itemStyle:{borderWidth:3}},
         label:{show:true,position:'inside',color:'#fff',fontSize:12,fontWeight:800,
           formatter:p=>String(p.dataIndex+1)},
-        data:all.map((p,i)=>({name:p.n,value:[p.lng,p.lat],id:p.id,__rt:{kind:'spot',day:p.day,index:i}}))});
+        data:all.map((p,i)=>({name:p.n,value:[p.lng,p.lat],id:p.id,
+          poiType:p.poiType||'',__rt:{kind:'spot',day:p.day,index:i}}))});
       series.push({type:'scatter',coordinateSystem:'geo',zlevel:5,symbolSize:1,silent:true,
         label:{show:true,position:'right',distance:6,color:'#33415c',fontSize:11,fontWeight:600,
           formatter:p=>p.name,backgroundColor:'rgba(255,255,255,.85)',padding:[2,5],borderRadius:4},
@@ -443,6 +520,12 @@ function createLiteRouteMap(elId,mode,opts){
   function render(){
     const all=orderedPts().concat(stays).concat(eats);
     const gOpt=liteGeo(mode);
+    /* 圈内视角：有边界就按外接矩形居中放大，比按点位拟合稳定，
+     * 也不会因为某个点离群就把整张图缩得很小 */
+    const bb=cityGeo?geoBBox(cityGeo):null;
+    if(bb){gOpt.center=bb.center;gOpt.zoom=1;
+      gOpt.regions=[{name:'wgo-city',itemStyle:{
+        areaColor:'rgba(201,162,39,.16)',borderColor:'rgba(201,162,39,.85)',borderWidth:2}}]}
     c.setOption({backgroundColor:'#ffffff',
       tooltip:{trigger:'item',backgroundColor:'rgba(255,255,255,.97)',borderColor:'#d5deea',
         textStyle:{color:'#33415c',fontSize:12},extraCssText:'box-shadow:0 6px 20px rgba(30,50,90,.18);border-radius:8px;',
@@ -472,7 +555,26 @@ function createLiteRouteMap(elId,mode,opts){
   });
   render();
   function resize(){if(c.isDisposed())return;c.resize();focusRoute()}
-  function focusRoute(){const all=orderedPts().concat(stays).concat(eats);if(all.length&&!c.isDisposed())rtFitView(all,c)}
+  function focusRoute(){
+    const all=orderedPts().concat(stays).concat(eats);
+    if(!all.length||c.isDisposed())return;
+    if(cityGeo)return fitCity(c);
+    rtFitView(all,c);
+  }
+  /* fitBounds：把「城市外接矩形」放进画布内边距，而不是只塞点位 */
+  function fitCity(chart){
+    const bb=geoBBox(cityGeo);if(!bb)return;
+    const w=chart.getWidth(),h=chart.getHeight();
+    const pad=Math.min(40,w*.12,h*.12);
+    chart.setOption({geo:{center:bb.center,zoom:1}});
+    const a=chart.convertToPixel({geoIndex:0},bb.min);
+    const b=chart.convertToPixel({geoIndex:0},bb.max);
+    if(!a||!b)return;
+    const bw=Math.abs(b[0]-a[0]),bh=Math.abs(b[1]-a[1]);
+    if(bw<1||bh<1)return;
+    const zoom=Math.min((w-pad*2)/bw,(h-pad*2)/bh)*.98;
+    chart.setOption({geo:{center:bb.center,zoom}});
+  }
   const observer=window.ResizeObserver?new ResizeObserver(resize):null;
   if(observer)observer.observe(el);else window.addEventListener('resize',resize);
   return {chart:c,segs:segs,select,

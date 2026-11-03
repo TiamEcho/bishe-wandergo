@@ -176,7 +176,14 @@ function imgChain(key){
   /* 第二级只用英文地名（更短的提示词更容易出图），再用同类型场景兜底 */
   return [...new Set([first, head, like, IMGFALLBACK])];
 }
-const IMG=(p,s)=>IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
+/* 本地图库：scripts/fetch-spots.js 预先批量出图并压缩成 WebP，放在 img/spots/{id}.webp，
+ * 清单写到 img/spots/manifest.js。命中清单就走本地静态文件（毫秒级），
+ * 没命中的（如动态打卡地名）仍回落到文生图接口，行为与以前一致。 */
+const LOCAL_IMG=(typeof window!=='undefined'&&window.SPOT_IMG)||null;
+const IMG=(p,s)=>{
+  if(LOCAL_IMG&&LOCAL_IMG[p])return 'img/spots/'+LOCAL_IMG[p]+'.webp';
+  return IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
+};
 const P={
  hero:'starry night sky over sea of clouds with glowing golden flight routes and aurora, crescent moon, dreamy fairy tale travel illustration, deep navy and gold',
  gugong:'Forbidden City Beijing red walls and golden roofs under clear blue sky, imperial palace travel photography',
