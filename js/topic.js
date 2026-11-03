@@ -40,7 +40,7 @@ const topicApp = Vue.createApp({
   methods: {
     /* 后端字段 → 卡片字段：封面兜底、BGM 名称、词条名、时间裁剪 */
     deco(p) {
-      const fallback = (typeof P !== 'undefined' && P[p.spotId]) ? IMG(P[p.spotId]) : IMG(P.erhai);
+      const fallback = (typeof P !== 'undefined' && P[p.spotId]) ? IMG(p.spotId) : IMG('erhai');
       const codes = (p.topics || '').split(',').filter(Boolean);
       return Object.assign({}, p, {
         _cover: TW.cover(p),

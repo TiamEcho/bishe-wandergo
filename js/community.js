@@ -2,13 +2,13 @@
  * WANDERGO PLATFORM · 社区 community.js
  * 动态流（视频/Vlog/Plog/图文）+ 多平台筛选 + 4K 精选 + 话题热度榜
  * ========================================================= */
-let feedFilter='all',platFilter='all',heatSort='heat',feedSort='new',feedKw='';
+let feedFilter='all',platFilter='all',heatSort='heat',feedSort='top',feedKw='';
 /* ---- 后端社区数据（含 B 站爬虫帖）：首次进页面拉一次，筛选时复用缓存；
    后端不在线时降级读取 js/posts_crawl.json（由爬虫导出脚本生成，仍是真实抓取数据） ---- */
 let dbPosts=[],dbLoaded=false,topicDefs=[];
 async function ensureDb(){
   if(dbLoaded)return;
-  const [p,t]=await Promise.all([WGOAPI.postList('','new',0,50),WGOAPI.topics()]);
+  const [p,t]=await Promise.all([WGOAPI.postList('','top',0,300),WGOAPI.topics()]);
   if(t&&t.ok){
     topicDefs=t.list;
     window.TW_TOPIC_NAMES=window.TW_TOPIC_NAMES||{};
@@ -79,6 +79,8 @@ function mapApiPost(p){
     loc:p.location||'',
     txt:p.title||'',content:p.content||'',topics:codes,bgm:p.bgm||'',
     likes:p.likeCount||0,cmts:p.commentCount||0,real:p.source==='user'||p.source==='go',liked:false,
+    /* 爬虫质量分 + 播放量：卡片上展示，排序也用它 */
+    quality:p.quality||0,views:p.viewCount||0,
     sourceUrl:p.sourceUrl||''
   };
 }
@@ -152,9 +154,26 @@ function mountFeedVue(){
 async function renderFeed(){
   await ensureDb();
   const mine=JSON.parse(localStorage.getItem('fmw_posts')||'[]');
-  const all=[...dbPosts,...mine,...POSTS];
+  /* 同一内容可能同时出现在后端与本地/静态包里（id 不同但标题作者相同），先去重，避免卡片重复 */
+  const raw=[...dbPosts,...mine,...POSTS];
+  const seenKey=new Set();
+  const all=raw.filter(p=>{
+    const k=String(p.sourceUrl||'').trim()||(String(p.u||'')+'|'+String(p.txt||''));
+    if(seenKey.has(k))return false;
+    seenKey.add(k);return true;
+  });
   const list=all.filter(p=>(feedFilter==='all'?true:feedFilter==='video'||feedFilter==='plog'?p.type===feedFilter:p.rg===feedFilter)&&(platFilter==='all'?true:p.plat===platFilter)&&kwHit(p));
-  list.sort((a,b)=>feedSort==='hot'?((b.likes*3+b.cmts*5)-(a.likes*3+a.cmts*5)):(postTs(b)-postTs(a)));
+  /* 优质优先（默认）：爬虫质量分 + 播放量，再叠本站互动；点赞/评论高的往前排，
+     没有质量分的老数据按互动加权排在后面，不会顶掉真实热门的优质内容 */
+  list.sort((a,b)=>{
+    if(feedSort==='top'){
+      const sa=(a.quality||0)*10+Math.log10((a.views||0)+1)*6+a.likes*0.5+a.cmts*1.5;
+      const sb=(b.quality||0)*10+Math.log10((b.views||0)+1)*6+b.likes*0.5+b.cmts*1.5;
+      return sb-sa;
+    }
+    if(feedSort==='hot')return (b.likes*3+b.cmts*5)-(a.likes*3+a.cmts*5);
+    return postTs(b)-postTs(a);
+  });
   if(mountFeedVue()){feedStore.items=list.map(decoratePost);return}
   const names=window.TW_TOPIC_NAMES||{};
   $('#feedGrid').innerHTML=list.map(p=>{
@@ -174,10 +193,17 @@ async function renderFeed(){
       :IMG(p.spotId||'erhai');
     const onErr=/^data:/.test(img)?'':'this.onerror=null;this.src=\''+imgFb.replace(/'/g,'&#39;')+'\'';
     const act=p.db?`onclick="event.stopPropagation();twToggleLike(${p.id},this)"`:`onclick="event.stopPropagation();likePost(this,'${p.id}')"`;
+    /* 视频卡片：后端在线走后端代理直链，任何设备都能播；离线则退回 B 站内嵌 / 站内模拟 */
+    const vUrl=(p.videoUrl||p.playUrl||p.sourceUrl||'');
+    const vSrc=(p.type==='video'&&vUrl&&typeof TW!=='undefined'&&TW.playUrl)?TW.playUrl(vUrl):'';
+    const openAct=p.db?'openDbPost('+p.id+')':'openPost(\''+p.id+'\')';
+    const playAct=p.type==='video'
+      ?(vSrc?`onclick="event.stopPropagation();twPlayVideo('${TW.esc(String(p.id))}')"`:`onclick="event.stopPropagation();${openAct}"`)
+      :'';
     return `<div class="post" onclick="${p.db?'openDbPost('+p.id+')':'openPost(\''+p.id+'\')'}" style="cursor:pointer">
       <div class="pimg">
         <img src="${img}" loading="lazy" referrerpolicy="no-referrer" onerror="${onErr}">
-        ${p.type==='video'?'<span class="vbadge"><i>▶</i></span><span class="moren">'+(p.db?(TW.bgmName(p.bgm)||''):BGMI(p.bgm))+'</span>':''}
+        ${p.type==='video'?'<span class="vbadge" '+playAct+'><i>▶</i></span><span class="moren">'+(p.db?(TW.bgmName(p.bgm)||''):BGMI(p.bgm))+'</span>':''}
         ${p.type==='plog'?'<span class="moren">📷 Plog</span>':''}
         <span class="plat pb-${p.plat||'go'}" style="position:absolute;top:9px;right:9px">${pl.i} ${pl.n}</span>
       </div>
@@ -223,8 +249,7 @@ function openFeat(i){
   openModal(`<div class="fd-img big" onclick="openViewer(this.querySelector('img'),'${f.t.replace(/'/g,'')} · ${f.loc.replace(/'/g,'')}')"><img src="${src}" style="cursor:zoom-in"><span class="fourk">4K ULTRA HD</span><span class="plat pb-${f.plat}" style="position:absolute;top:10px;right:44px">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fd-zoom">🔍 点击看大图</span></div>
     <div class="dbody"><h3 style="font-size:18px;font-weight:900">${f.t}</h3>
     <div class="fd-meta">📍 ${f.loc} · 📷 ${f.by}</div>
-    <p class="fd-body">这张入选「精选 4K 摄影」的作品由 AI 图片引擎按 4K 超清规格渲染，完整保留了拍摄现场的光影与色彩层次。</p>
-    <p class="src-note">🖼 声明：精选图片由 AI 引擎按 4K 规格重渲染生成，场景信息来自创作者真实打卡（${PLAT[f.plat].n} · ${f.by}）。</p></div>`);
+    <p class="fd-body">这张入选「精选 4K 摄影」的作品由 AI 图片引擎按 4K 超清规格渲染，完整保留了拍摄现场的光影与色彩层次。</p></div>`);
 }
 /* ---- 话题热度榜：热度与帖子数由 MySQL 统计，爬虫新增词条也会出现在榜上 ---- */
 function renderTopics(){
@@ -263,12 +288,11 @@ function openPost(pid){
     ${videoBtn}
     <div class="fd-gal">${gal}</div>
     <div class="pfoot" style="border-top:1px solid var(--line);padding-top:11px"><span>♥ ${p.likes}</span><span>💬 ${p.cmts}</span><span>⭐ 收藏 ${Math.round(p.likes/2.6)}</span><span style="margin-left:auto;font-size:10.5px">${pl.n}</span></div>
-    <div class="dbtns">${p.imgs[0]&&spotById(p.imgs[0])?`<button class="btn line" onclick="WGO.go('map.html',{spot:'${p.imgs[0]}'})">🗺 在地图查看</button><button class="btn gold" onclick="WGO.go('ai.html',{dest:'${p.loc.split(' ')[0]}'})">🤖 AI 规划同款</button>`:''}</div>
-    <p class="src-note">声明：内容来源为 ${pl.n} 创作者 / 站内真实打卡同步 · 正文含路线、花费与踩坑提示 · 图片由 AI 引擎按原场景重渲染，仅供参考。</p></div>`);
+    <div class="dbtns">${p.imgs[0]&&spotById(p.imgs[0])?`<button class="btn line" onclick="WGO.go('map.html',{spot:'${p.imgs[0]}'})">🗺 在地图查看</button><button class="btn gold" onclick="WGO.go('ai.html',{dest:'${p.loc.split(' ')[0]}'})">🤖 AI 规划同款</button>`:''}</div></div>`);
 }
 function openImgLightbox(k){
   const s=spotById(k);
-  openModal(`<div class="fd-img big"><img src="${IMG(P[k],'landscape_16_9')}"><span class="fourk">4K ULTRA HD</span></div>
+  openModal(`<div class="fd-img big"><img src="${IMG(k,'landscape_16_9')}"><span class="fourk">4K ULTRA HD</span></div>
     <div class="dbody"><h3 style="font-size:16px;font-weight:900">${s?s.n:'旅行瞬间'}</h3><div class="fd-meta">${s?'📍 '+s.city+' · '+s.tag:'📷 现场花絮'}</div>
     ${s?`<p class="fd-body">${s.desc}</p><div class="dbtns"><button class="btn gold" onclick="closeModal();setTimeout(()=>openSpot('${s.id}'),200)">📍 查看景点攻略</button></div>`:''}</div>`,true);
 }

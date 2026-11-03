@@ -173,6 +173,30 @@ function evaluate(recsByUser, testSet, allKeys) {
   }
   const mA = evaluate(recA, test, allKeys);
 
+  /* ---------- K 值对比实验（论文 6.x 近邻数敏感性分析） ----------
+   * 固定同一套训练/测试切分与全域候选池，只改变 userCF 的近邻数 K，
+   * 观察 Precision@10 / Recall@10 / 覆盖率的变化，用于确定系统默认 K_NEIGHBOR。 */
+  const K_LIST = [5, 10, 20, 30, 40, 50];
+  const kTable = [];
+  for (const K of K_LIST) {
+    const recs = new Map();
+    for (const name of users) {
+      const uid = idMap.get(name);
+      const mine = matrix.byUser.get(uid);
+      const pool = allKeys.filter(k => !mine || !mine.has(k));
+      recs.set(name, recommendFromMatrix(matrix, uid, pool, TOP_N, { K }));
+    }
+    const mK = evaluate(recs, test, allKeys);
+    kTable.push({
+      K,
+      precisionAt10: Number(mK.precision.toFixed(4)),
+      recallAt10: Number(mK.recall.toFixed(4)),
+      coverage: Number(mK.coverage.toFixed(4)),
+      hits: mK.hits,
+      users: mK.users
+    });
+  }
+
   /* B 组：偏好域（用户训练集中出现城市的景点） */
   const spotCity = new Map(spots.map(s => [s.spot_key, s.city]));
   const recB = new Map();
@@ -218,6 +242,8 @@ function evaluate(recsByUser, testSet, allKeys) {
     coverage: Number(mA.coverage.toFixed(4)),
     validUsers: mA.users,
     hits: mA.hits,
+    /* K 值对比实验 */
+    kSweep: kTable,
     /* 消融对照 */
     ablation: {
       domainPool: {
@@ -251,6 +277,23 @@ function evaluate(recsByUser, testSet, allKeys) {
   console.log('UserCF+ItemCF 融合（全域）         ' + pct(mA.precision).padEnd(15) + pct(mA.recall).padEnd(12) + pct(mA.coverage));
   console.log('UserCF+ItemCF 融合（偏好域）       ' + pct(mB.precision).padEnd(15) + pct(mB.recall).padEnd(12) + pct(mB.coverage));
   console.log('热门兜底基线（不个性化）           ' + pct(mC.precision).padEnd(15) + pct(mC.recall).padEnd(12) + pct(mC.coverage));
+  console.log('');
+
+  console.log('---------- K 值对比实验（全域候选，Top-' + TOP_N + '） ----------');
+  console.log('   K   | Precision@10 | Recall@10 |  覆盖率 | 命中数');
+  console.log('-'.repeat(58));
+  for (const r of kTable) {
+    console.log(
+      String(r.K).padStart(4) + '   |' +
+      pct(r.precisionAt10).padStart(12) + '  |' +
+      pct(r.recallAt10).padStart(9) + '  |' +
+      pct(r.coverage).padStart(6) + '  |' +
+      String(r.hits).padStart(5)
+    );
+  }
+  const bestK = kTable.reduce((a, b) => (b.precisionAt10 > a.precisionAt10 ? b : a), kTable[0]);
+  console.log('-'.repeat(58));
+  console.log(`Precision@10 最高的 K = ${bestK.K}`);
   console.log('');
   console.log('结果已写入 scripts/results.json');
 })().catch(e => { console.error('FAIL', e); process.exit(1); });

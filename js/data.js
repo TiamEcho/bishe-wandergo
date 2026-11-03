@@ -88,10 +88,12 @@ const __PYT={
   '峰':'Feng','瀑':'Pu','溶':'Rong','崖':'Ya','石':'Shi','遗':'Yi','址':'Zhi','迹':'Ji'
 };
 const IMGAPI='https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=';
-const IMGFALLBACK='travel destination scenery, landmark, natural light';
+/* 全站最后兜底：必须避开「travel destination scenery, landmark, natural light」
+ * 这类超宽泛描述——出图接口对它几乎只会回占位图，且所有景点共用一句提示词，
+ * 一旦降级链走到底就会整页出现同一张图。 */
+const IMGFALLBACK='scenic travel landscape, blue sky, mountains and lake, bright daylight';
 /* 中文景点名 → 英文地标名：生僻拼音名接口出不了图，常用地标英文名最稳 */
-const EN_PLACE={
-  '798':'798 Art Zone',天安门:'Tiananmen Square',故宫:'Forbidden City',天坛:'Temple of Heaven',
+const EN_PLACE={'798':'798 Art Zone',天安门:'Tiananmen Square',故宫:'Forbidden City',天坛:'Temple of Heaven',
   颐和园:'Summer Palace',圆明园:'Old Summer Palace',景山:'Jingshan Park',北海:'Beihai Park',
   南锣鼓巷:'Beijing hutong street',什刹海:'Shichahai lake',三里屯:'Sanlitun street',
   王府井:'Wangfujing street',前门:'Qianmen street',雍和:'Yonghe Temple',恭王府:'Prince Gong Mansion',
@@ -101,7 +103,21 @@ const EN_PLACE={
   杜甫:'Du Fu Cottage Chengdu',熊猫:'Giant panda base Chengdu',春熙:'Chunxi road Chengdu',
   西湖:'West Lake Hangzhou',兵马俑:'Terracotta Army Xian',布达拉:'Potala Palace Lhasa',
   鼓浪屿:'Gulangyu island Xiamen',张家界:'Zhangjiajie mountains',黄山:'Yellow Mountain',
-  洱海:'Erhai lake Dali',青海湖:'Qinghai lake',九寨:'Jiuzhaigou valley',长白山:'Changbai mountain lake'
+  洱海:'Erhai lake Dali',青海湖:'Qinghai lake',九寨:'Jiuzhaigou valley',长白山:'Changbai mountain lake',
+  /* 站内补充景点：拼音地名接口基本出不了图，这里给常用英文名，避免落到通用场景图 */
+  苍山:'Cangshan mountain Dali Yunnan',双廊:'Shuanglang lakeside village Dali Yunnan',
+  喜洲:'Xizhou old town Bai village Dali Yunnan',黄龙:'Huanglong travertine pools Sichuan',
+  天门山:'Tianmen mountain glass walkway Zhangjiajie',宝峰湖:'Baofeng lake Zhangjiajie',
+  芙蓉镇:'Furong ancient town waterfall Xiangxi',素贴:'Doi Suthep golden temple Chiang Mai',
+  宁曼:'Nimmanhaemin road cafes Chiang Mai',美旺:'elephant sanctuary Chiang Mai jungle',
+  塔佩:'Tha Phae gate Chiang Mai old city',鱼市:'Male fish market Maldives',香蕉礁:'Banana Reef Maldives coral',
+  沙洲:'Maldives sandbank turquoise lagoon',晴空塔:'Tokyo Skytree tower skyline',
+  涩谷:'Shibuya crossing Tokyo neon night',无界:'teamLab digital art museum Tokyo',
+  金阁:'Kinkaku-ji golden pavilion Kyoto',岚山:'Arashiyama bamboo forest Kyoto',
+  卢浮:'Louvre museum Paris glass pyramid',奥赛:'Orsay museum Paris clock window',
+  蒙马特:'Montmartre Sacre Coeur Paris',辛格维利尔:'Thingvellir national park Iceland rift valley',
+  黄金瀑布:'Gullfoss waterfall Iceland rainbow',黑沙滩:'Reynisfjara black sand beach Iceland',
+  蜈支洲:'Wuzhizhou island Sanya snorkeling',呀诺达:'Yanoda tropical rainforest Sanya',后海:'Houhai surf village Sanya beach'
 };
 /* 通用构图词：地名出不了图时，用它保证至少是同类型场景，而不是一张无关的山 */
 const SCENE_OF={
@@ -111,70 +127,96 @@ const SCENE_OF={
   mountain:'mountain ridge under blue sky',theme:'theme park with colorful rides',landmark:'city landmark'
 };
 /* 没有映射的地名就音译（拼音）：接口对拼音地名成功率低，但会由 imgChain 逐级降级兜住，
- * 总比把中文直接塞进提示词（100% 返回占位图）强 */
+ * 总比把中文直接塞进提示词（100% 返回占位图）强。
+ * 每个音节必须空格分隔：连写成 Cangshan 接口当成生僻词返回占位图，
+ * 拆成 Cang Shan 才更像英文地名。 */
 function pinyin(name){
   const out=[];
   String(name||'').split('').forEach(ch=>{
-    if(/[a-zA-Z0-9]/.test(ch)){out.push(ch);return}
+    if(/[a-zA-Z0-9]/.test(ch)){
+      /* 英文字母原样保留，但和前后的拼音音节之间要断开，避免 ATheBund 这种串词 */
+      if(out.length&&/[a-z0-9]$/i.test(out[out.length-1]))out[out.length-1]+=ch;
+      else out.push(ch);
+      return
+    }
     const py=__PYT[ch];
     if(py)out.push(py.charAt(0).toUpperCase()+py.slice(1));
   });
-  return out.join('');
+  return out.join(' ');
 }
 function imgPrompt(key){
-  /* 允许直接传提示词（含空格的长句），也允许传 P 的 key */
-  if(!key)return IMGFALLBACK;
+  /* 允许直接传提示词（含空格的长句），也允许传 P 的 key。
+   * 兜住历史写法 IMG(P[id])：id 不在 P 里时 P[id] 是 undefined，
+   * 整站没有手写提示词的景点会全部退化到同一张通用图，表现为推荐页图片重复。 */
+  if(key==null)return IMGFALLBACK;
+  /* 调用方显式传了英文提示词键（imgChain 补第三级时用），必须在转字符串前判断 */
+  if(typeof key==='object'&&key.__raw)return String(key.__raw);
+  key=String(key).trim();
+  if(!key||key==='undefined'||key==='null')return IMGFALLBACK;
   if(P[key])return P[key];
-  /* 调用方显式传了英文提示词键，直接透传（imgChain 补第三级时用） */
-  if(key.__raw)return String(key.__raw);
-  /* 含空格且全是英文（P 里的自定义提示词）直接当提示词用；含中文的仍按景点名走映射 */
-  if(/^[A-Za-z0-9 ,.'&-]+$/.test(String(key)))return String(key);
+  /* 先判断是不是景点 id：站内库 63 个景点里只有少数有手写英文提示词，
+   * 其余 id 是纯英文（如 cangshan）。若先把纯英文当提示词透传，
+   * 这些景点会拿「自己的 id」去出图，接口全部返回占位图 →
+   * 推荐页出现大量重复图片。所以景点必须优先走下面的名字映射。 */
   const s = typeof spotById==='function' ? spotById(key) : null;
+  if(!s && /^[A-Za-z0-9 ,.'&-]+$/.test(String(key)))return String(key);
   const name = s ? s.n : String(key).split('|').pop();
   /* 名称必须换成英文：纯中文提示词接口基本都返回占位图。
    * 优先手写英文地标名 → 其次拼音（站内库 1000+ 条无法全手写） → 再其次英文 id */
   const enOnly=/^[a-z]{3,}$/.test(String(key))?String(key):'';
   const enKey=Object.keys(EN_PLACE).find(k=>name.includes(k));
   const enName=enKey?EN_PLACE[enKey]:(pinyin(name)||enOnly);
-  if(!s && !enName)return IMGFALLBACK;
-  const city = s && s.city ? pinyin(s.city) : '';
-  const tag = String((s && s.tag) || '');
-  const scene = /长城/.test(name) ? 'ancient'
+  /* 已经是手写英文地标名时原样返回：城市再用拼音补会拼出 Dali Da 这种碎词 */
+  if(enKey)return EN_PLACE[enKey]+' travel photography';
+  const ascii=v=>String(v||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim();
+  const safeEn=ascii(enName);
+  if(!s && !safeEn)return IMGFALLBACK;
+  const city = s && s.city ? ascii(pinyin(s.city)) : '';
+  const scene = sceneKindOf(name);
+  const parts=[safeEn || 'China', city, SCENE_OF[scene], 'travel photography'];
+  return parts.filter(Boolean).join(' ');
+}
+/* 景点名 → 场景类型。imgPrompt 与 imgChain 共用，避免两处规则不一致。
+ * 分类顺序有讲究：先具体后宽泛，「故宫博物院」含「院」，不能让 park 抢走。 */
+function sceneKindOf(name){
+  name=String(name||'');
+  return /长城/.test(name) ? 'ancient'
     : /天安门/.test(name) ? 'gate'
-    : /宫|坛|祠|寺|庙|教堂|大社|神社|塔|楼|阁/.test(name) ? 'heritage'
+    : /宫|殿|坛|祠|寺|庙|教堂|大社|神社|塔|楼|阁|陵|博物院|博物馆|遗址/.test(name) ? 'heritage'
     : /乐园|度假区|海洋|动物园/.test(name) ? 'theme'
+    : /街|巷|胡同|广场|商圈|古镇/.test(name) ? 'street'
+    : /海|湖|岛|湾|滩|河|瀑|池|泉/.test(name) ? 'water'
+    : /山|岭|峰|峡|崖|谷|林/.test(name) ? 'mountain'
     : /公园|园林|植物园|花园/.test(name) ? 'park'
-    : /街|巷|胡同|路|里|广场|商圈/.test(name) ? 'street'
-    : /海|湖|岛|湾|滩|河|瀑/.test(name) ? 'water'
-    : /山|岭|峰|峡/.test(name) ? 'mountain'
     : 'landmark';
-  return [enName || name, city, SCENE_OF[scene], tag ? tag.split('·')[0].trim() : ''].filter(Boolean).join(' ');
 }
 /* 降级链：真实地名 → 只有地名 → 同类型场景。
  * 前端 <img> 按这个顺序自动换源：接口出不了图只会返回占位图（正方形），
  * 检测到就换下一级，所以最终绝不会停在占位图或一张完全无关的图上。 */
 function imgChain(key){
-  /* 中文地名（用户打卡 / 后端帖子只有中文 location）：直接拼一条英文短句当主提示词，
-   * 不要让 imgPrompt 把整句当成景点名。例如「张家界 · 袁家界」→ Zhangjiajie Yuanjiajie China travel photography */
+  /* 中文地名（用户打卡 / 后端帖子只有中文 location）：先拆成「城市 + 地名」两段拼音，
+   * 再以北京 / 上海 / 中国这类已收录地名兜底，
+   * 例如「大理喜洲古镇」→ 主词 Dali Xizhou Gu Zhen，而不是整串生僻拼音。 */
   const cnLoc=typeof key==='string'&&/[\u4e00-\u9fa5]/.test(key)&&!/^[\u4e00-\u9fa5]{2,6}( · |$)/.test(key);
   if(cnLoc){
-    const py=pinyin(String(key).replace(/[^\u4e00-\u9fa5]/g,' '));
-    const first=py?py+' China travel photography':IMGFALLBACK;
-    return [...new Set([first,py?py+' city scenery':IMGFALLBACK,IMGFALLBACK])];
+    const raw=String(key).split(/[|·,，\s]+/).filter(s=>/[\u4e00-\u9fa5]/.test(s));
+    const name=raw.pop()||'';
+    const city=raw.pop()||'';
+    const py=[pinyin(city),pinyin(name)].filter(Boolean).join(' ');
+    const scene=SCENE_OF[sceneKindOf(name||city)];
+    if(py)return [...new Set([py+' travel photography',py+' city scenery',scene,IMGFALLBACK])];
+    return [scene||IMGFALLBACK,IMGFALLBACK];
   }
   const first=imgPrompt(key);
+  if(/[\u4e00-\u9fa5]/.test(first))return [SCENE_OF[sceneKindOf(String(key))]||IMGFALLBACK,IMGFALLBACK];
+  /* 第二级只留「地名 + 城市」，去掉长场景描述，接口对短句更宽容 */
   const head=first.split(' ').slice(0,3).join(' ');
   const s = typeof spotById==='function' ? spotById(key) : null;
   const name = s ? s.n : String(key);
-  const like = /长城|宫|坛|祠|寺|庙|塔|楼|阁/.test(name) ? SCENE_OF.heritage
-    : /公园|园林/.test(name) ? SCENE_OF.park
-    : /街|巷|胡同|广场/.test(name) ? SCENE_OF.street
-    : /海|湖|岛|湾/.test(name) ? SCENE_OF.water
-    : /乐园|度假区/.test(name) ? SCENE_OF.theme
-    : /山|岭|峰/.test(name) ? SCENE_OF.mountain
-    : IMGFALLBACK;
-  /* 第二级只用英文地名（更短的提示词更容易出图），再用同类型场景兜底 */
-  return [...new Set([first, head, like, IMGFALLBACK])];
+  const kind = sceneKindOf(name);
+  /* 最后一级以前固定用 IMGFALLBACK，导致所有出不了图的景点显示同一张图。
+   * 改成按类型兜底：至少同类型景点共用一个场景，而不是全站一张。 */
+  return [...new Set([first, head, SCENE_OF[kind], IMGFALLBACK])];
 }
 /* 本地图库：scripts/fetch-spots.js 预先批量出图并压缩成 WebP，放在 img/spots/{id}.webp，
  * 清单写到 img/spots/manifest.js。命中清单就走本地静态文件（毫秒级），

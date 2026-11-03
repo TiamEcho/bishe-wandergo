@@ -12,6 +12,9 @@ backend/node_modules/
 backend/data/
 backend/.env
 
+# 根目录构建工具依赖（sharp / semver 等，体积大且可由 package.json 还原）
+node_modules/
+
 # 打包交付物与调试日志（体积过大，不进仓库）
 *.zip
 debug.log

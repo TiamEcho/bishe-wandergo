@@ -138,7 +138,7 @@ function renderAlbums(){
 function openAlbumById(id){const a=JSON.parse(localStorage.getItem('fmw_albums')||'[]').find(x=>x.id===id);if(a)openAlbum(a)}
 function openAlbum(a){
   const costsHtml=a.costs.map(c=>`<div class="li"><span>${c.k}</span><span>${fmt(c.v)}</span></div>`).join('');
-  const photos=(a.imgs.length?a.imgs:[IMG(P.gugong),IMG(P.erhai)]).slice(0,4);
+  const photos=(a.imgs.length?a.imgs:[IMG('gugong'),IMG('erhai')]).slice(0,4);
   const spot=SPOTS.find(s=>s.n===a.dest);
   const coverImg=a.imgs[0]||IMG(spot?spot.id:a.dest,'landscape_16_9');
   openModal(`<div class="album-modal">

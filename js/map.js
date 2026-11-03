@@ -117,7 +117,7 @@ function spotPin(id,lit){
     +'</svg>');
 }
 /* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS） */
-function spotThumbURL(id){try{return IMG(P[id]||id,'square')}catch(e){return ''}}
+function spotThumbURL(id){try{return IMG(id,'square')}catch(e){return ''}}
 /* 标点图标是纯本地 SVG，无需异步预取与刷新 */
 function prefetchThumbs(){}
 function refreshSpotPins(){}

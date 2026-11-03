@@ -29,20 +29,19 @@ Vue.createApp({
   computed: {
     preview() {
       if (this.cover) return this.cover;
-      if (this.spotId && typeof P !== 'undefined' && P[this.spotId]) return IMG(P[this.spotId]);
+      if (this.spotId) return IMG(this.spotId);
       return '';
     },
     bvid() { return TW.bvid(this.videoUrl); },
     hotTopics() { return this.topicPool.slice(0, 5); }
   },
   methods: {
-    /* 场景库：直接用前端图库的 12 个目的地，避免要求用户先上传图片 */
+    /* 场景库直接取景点池（取前 12 个），id 是站内景点 id，
+     * 出图统一走 IMG(id) 的英文名映射，避免 IMG(P[k]) 拿 undefined 出占位图 */
     buildScenes() {
-      const keys = Object.keys(P).slice(0, 12);
-      this.scenes = keys.map(k => {
-        const s = this.spots.find(x => x.id === k);
-        return { k, img: IMG(P[k]), name: s ? s.n : k, city: s ? s.city : '' };
-      });
+      this.scenes = this.spots.slice(0, 12).map(s => ({
+        k: s.id, img: IMG(s.id), name: s.n, city: s.city
+      }));
     },
     pickScene(s) {
       this.spotId = s.k;
