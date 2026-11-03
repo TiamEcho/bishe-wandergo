@@ -964,6 +964,19 @@ const __imgTried=new WeakMap();
 function imgFallback(el){
   const chain=__imgTried.get(el)||el.__chain||[];
   const i=(el.__chainIdx==null?-1:el.__chainIdx)+1;
+  /* 卡片有本地图（img/spots/{id}.webp）就直接用它收尾：
+   * 出图接口无法保证稳定返回 —— 实测 API、Dali、Yunnan、Chinese garden 这类
+   * 再普通不过的提示词都会返回 1832×1832 近白占位图，且成功与否随时间波动。
+   * 若还去走「场景提示词 → IMGFALLBACK」这条链，用户最后看到的是白框或
+   * 一张和景点无关的通用图；本地图虽少，至少是真实照片。 */
+  const local=(typeof localImg==='function')?localImg(el.dataset.key):null;
+  if(i>0&&local){
+    /* 本地已有该景点图：首次降级就直接切过去，不再打接口 */
+    el.__chainIdx=chain.length;
+    el.classList.remove('img-fail');
+    el.src=local;
+    return
+  }
   if(i>=chain.length){
     /* 降级链走完还没图：用 16:9 兜底一次性重取（4:3 卡在瀑布流里会留空白）。
      * 这里不能用通用的 IMGFALLBACK——它是全站固定的一句提示词，所有景点都会

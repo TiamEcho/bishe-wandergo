@@ -220,12 +220,25 @@ function imgChain(key){
 }
 /* 本地图库：scripts/fetch-spots.js 预先批量出图并压缩成 WebP，放在 img/spots/{id}.webp，
  * 清单写到 img/spots/manifest.js。命中清单就走本地静态文件（毫秒级），
- * 没命中的（如动态打卡地名）仍回落到文生图接口，行为与以前一致。 */
-const LOCAL_IMG=(typeof window!=='undefined'&&window.SPOT_IMG)||null;
-const IMG=(p,s)=>{
-  if(LOCAL_IMG&&LOCAL_IMG[p])return 'img/spots/'+LOCAL_IMG[p]+'.webp';
-  return IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
-};
+ * 没命中的（如动态打卡地名）仍回落到文生图接口，行为与以前一致。
+ * manifest 的键是 P 的键（gugong / cangshan），而卡片上的 data-key 是站内库的
+ * lib_xxx id，所以还要按景点名反查一次，否则本地图永远命中不了。 */
+function localImg(id){
+  if(id==null)return null;
+  const m=(typeof window!=='undefined'&&window.SPOT_IMG)||null;
+  if(!m)return null;
+  const key=String(id);
+  if(m[key])return 'img/spots/'+m[key]+'.webp';
+  const s=typeof SPOTS!=='undefined'&&SPOTS.find(x=>x.id===key);
+  const name=s?s.n:(typeof spotById==='function'&&spotById(key)||{}).n;
+  if(name){
+    const hit=SPOTS.find(p=>m[p.id]&&p.n===name);
+    if(hit)return 'img/spots/'+m[hit.id]+'.webp';
+  }
+  return null;
+}
+const IMG=(p,s)=>localImg(p)||IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
+const PIC=(p,s)=>IMG(p,s);
 const P={
  hero:'starry night sky over sea of clouds with glowing golden flight routes and aurora, crescent moon, dreamy fairy tale travel illustration, deep navy and gold',
  gugong:'Forbidden City Beijing red walls and golden roofs under clear blue sky, imperial palace travel photography',
@@ -265,15 +278,20 @@ const P={
  dubai:'Burj Khalifa Dubai skyline at dusk with fountain show lights below, travel photography',
  queenstown:'Queenstown New Zealand lake Wakatipu with Remarkables mountains and autumn trees, travel photography',
  rovaniemi:'Santa Claus village Rovaniemi Finland snow cabins reindeer and northern lights sky, travel photography',
- cangshan:'Cangshan mountain Dali Yunnan China cloud sea over green ridges and cable car at sunrise, travel photography',
- xizhou:'Xizhou ancient town Dali Yunnan Bai ethnic architecture with yellow walls and rice fields, morning light, travel photography',
- shuanglang:'Shuanglang town Dali Erhai lake shoreline with white buildings and jade water at sunset, travel photography',
- santasi:'Three pagodas Chongsheng temple Dali Yunnan China with Cangshan mountain backdrop, blue sky, travel photography',
- jizhaoan:'Jizhao nunnery Dali Yunnan China peaceful temple courtyard with succulents and hydrangea flowers, soft sunlight, travel photography',
- butterfly:'Butterfly spring Dali Yunnan China limpid pool and ancient camellia trees, travel photography',
- haishe:'Xizhou Haishe park Dali Yunnan China swing overlooking Erhai lake under blue sky, travel photography',
- shaxi:'Shaxi ancient town Dali Yunnan China cobblestone market square with old theatre stage, travel photography',
- weishan:'Weishan ancient city Dali Yunnan China Ming and Qing dynasty gate tower with red lanterns, travel photography'
+ /* 下面 9 条是大理周边小众点位。出图接口的地名识别很不稳定：实测连
+  * Dali、Yunnan、Chinese garden、temple China 这类普通词都会返回 1832x1832
+  * 近白占位图（不报错），而 Dali old town / Erhai lake / ancient town /
+  * mountain peak / bamboo forest / waterfall 这类「城市+类型」的短句稳定出图。
+  * 所以这里只写实测能出图的短句，不写长句场景描述。 */
+ cangshan:'mountain peak',
+ xizhou:'ancient town',
+ shuanglang:'Erhai lake',
+ santasi:'Dali old town',
+ jizhaoan:'bamboo forest',
+ butterfly:'waterfall',
+ haishe:'Erhai lake',
+ shaxi:'ancient town',
+ weishan:'Dali old town'
 };
 
 const ICO={gugong:'🏯',bund:'🌃',bmy:'⚔️',erhai:'🚲',jzg:'🏞️',xihu:'🛶',ys:'🎋',ylw:'🏖️',qhh:'🌼',pala:'🙏',greatwall:'🧱',zjj:'⛰️',huangshan:'🌄',gulangyu:'🎹',luguhu:'🛶',cbs:'🏔️',senso:'🏮',inari:'⛩️',paris:'🗼',oia:'🌅',ubud:'🌾',gp:'👑',mbs:'🌳',ice:'❄️',cp:'🍂',opera:'🎭',chiangmai:'🛕',maldives:'🏝️',sagrada:'⛪',dubai:'🏙️',queenstown:'🪂',rovaniemi:'🎅',cangshan:'⛰️',xizhou:'🏘️',shuanglang:'🌅',santasi:'🕍',jizhaoan:'🌸',butterfly:'🦋',haishe:'🌊',shaxi:'🏮',weishan:'🏯'};

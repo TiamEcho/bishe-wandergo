@@ -1422,7 +1422,7 @@ function renderItinerary3col(plan){
       const isCN=all.every(p=>p.rg==='cn');
       const draw=cityGeo=>{
         __itinMap=createLiteRouteMap('journeyMap',isCN?'china':'world',
-          {segs:indexed,cityGeo:cityGeo,mode:rtMode,onSelect:index=>select(index,true)});
+          {segs:indexed,cityGeo:cityGeo,city:plan.dest||plan.prov||'',mode:rtMode,onSelect:index=>select(index,true)});
       };
       /* 只对国内单城行程加载边界；城市已下到 geo/ 就圈选，没下到就按原方式按点位拟合 */
       if(isCN)loadCityGeo(plan.dest||plan.prov||'',draw);else draw(null);

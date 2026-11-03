@@ -117,7 +117,7 @@ function spotPin(id,lit){
     +'</svg>');
 }
 /* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS） */
-function spotThumbURL(id){try{return IMG(id,'square')}catch(e){return ''}}
+function spotThumbURL(id){try{return (typeof localImg==='function'&&localImg(id))||IMG(id,'square')}catch(e){return ''}}
 /* 标点图标是纯本地 SVG，无需异步预取与刷新 */
 function prefetchThumbs(){}
 function refreshSpotPins(){}
@@ -246,18 +246,35 @@ function loadCityGeo(city,cb){
   const code=cityGeoCode(city);
   if(!code)return cb(null);
   if(CITY_GEO_CACHE[code])return cb(CITY_GEO_CACHE[code]);
-  /* 注入 <script>，浏览器会把 geo/{code}.json 当普通静态文件缓存，二次进页面不再请求 */
-  const s=document.createElement('script');
-  s.type='application/json';
-  s.src='geo/'+code+'.json';
-  s.onload=()=>{
-    const txt=s.textContent||'';
-    s.remove();
-    try{CITY_GEO_CACHE[code]=JSON.parse(txt);cb(CITY_GEO_CACHE[code])}
-    catch(e){cb(null)}
-  };
-  s.onerror=()=>{s.remove();cb(null)};
-  document.head.appendChild(s);
+  /* 走 fetch 而不是注入 <script type="application/json" src>：
+   * 后者在部分浏览器内核下既不触发 onload 也不触发 onerror，请求根本不会发出，
+   * 回调永不执行 → 地图区域永久空白且控制台无任何报错，极难排查。
+   * fetch 同时能拿到 HTTP 状态，失败可以明确降级。 */
+  let settled=false;
+  const done=geo=>{if(settled)return;settled=true;cb(geo)};
+  /* 兜底超时：即使 fetch 卡住也不能让地图一直空白，4 秒后按「无边界」正常画点位 */
+  const timer=setTimeout(()=>done(null),4000);
+  if(typeof fetch!=='function'){clearTimeout(timer);return done(null)}
+  fetch('geo/'+code+'.json',{cache:'force-cache'})
+    .then(r=>r.ok?r.json():null)
+    .then(geo=>{clearTimeout(timer);if(geo)CITY_GEO_CACHE[code]=geo;done(geo||null)})
+    .catch(()=>{clearTimeout(timer);done(null)});
+}
+/* 有城市边界时注册成独立地图：ECharts 4 的 geo 只能指定一张 map，
+ * 之前直接把 china 地图放大到 city 的经纬度范围，放大 25~60 倍后原始
+ * 中国地图的简化精度（省级 1000 级坐标点）已经撑不住，画面上只剩几根海岸线、
+ * 城市轮廓完全无法辨认，点位也被挤成一线。
+ * 这里把城市 GeoJSON 注册为按 adcode 命名的独立地图，geo 直接用它，zoom 保持 1 即可满屏。 */
+function registerCityMap(geo,code){
+  /* 名字必须按城市区分：echarts.registerMap 是全局注册表，
+   * 所有城市共用一个 'wgo-city' 的话，第二座城市会沿用第一座已注册的那份 GeoJSON
+   * （render 里 getMap 已存在就跳过注册），于是规划成都却画出潮州的轮廓。 */
+  const name='wgo-city-'+(code||'x');
+  if(!geo||!geo.features||!geo.features.length)return null;
+  try{
+    if(!(echarts.getMap&&echarts.getMap(name)))echarts.registerMap(name,geo);
+    return name;
+  }catch(e){return null}
 }
 /* 边界外接矩形：用于 fitBounds 聚焦（比按点位拟合更稳，点位不会贴着画布边） */
 function geoBBox(geo){
@@ -422,15 +439,23 @@ function rtFitView(pts,chart){
   const center=[(Math.min(...lngs)+Math.max(...lngs))/2,(Math.min(...lats)+Math.max(...lats))/2];
   const width=chart.getWidth(),height=chart.getHeight();
   const padding=Math.min(48,width*.18,height*.18);
+  /* 迭代重算，而不是「量一次再按比例乘」：
+   * zoom 与像素位移不成正比（geo 以 layoutCenter 为原点缩放，且受投影纵横比影响），
+   * 一次乘比例会过冲——实测算出 zoom=21，整条路线反而被压进画布中心一小块。
+   * 这里每轮用实测半径反推目标倍率逐步逼近，再用点位内边距校验兜底。 */
   let zoom=1;
   chart.setOption({geo:{center,zoom}});
-  const probes=pts.concat([{lng:center[0]-.015,lat:center[1]-.015},{lng:center[0]+.015,lat:center[1]+.015}]);
-  const pixels=probes.map(p=>chart.convertToPixel({geoIndex:0},[p.lng,p.lat]));
-  const dx=Math.max(...pixels.map(p=>Math.abs(p[0]-width/2))),dy=Math.max(...pixels.map(p=>Math.abs(p[1]-height/2)));
-  zoom=Math.min((width/2-padding)/Math.max(dx,.001),(height/2-padding)/Math.max(dy,.001))*.96;
+  for(let i=0;i<10;i++){
+    const px=pts.map(p=>chart.convertToPixel({geoIndex:0},[p.lng,p.lat])).filter(a=>a&&Number.isFinite(a[0]));
+    if(!px.length)break;
+    const dx=Math.max(...px.map(a=>Math.abs(a[0]-width/2))),dy=Math.max(...px.map(a=>Math.abs(a[1]-height/2)));
+    const next=zoom*Math.min((width/2-padding)/Math.max(dx,1),(height/2-padding)/Math.max(dy,1));
+    if(Math.abs(next-zoom)<.02){zoom=next;break}
+    zoom=next;
+    chart.setOption({geo:{center,zoom}});
+  }
   chart.setOption({geo:{center,zoom}});
-  // 用实际路线点再次校验，确保数字标记留在内边距之内。
-  for(let i=0;i<12;i++){
+  for(let i=0;i<10;i++){
     const inside=pts.every(p=>{const xy=chart.convertToPixel({geoIndex:0},[p.lng,p.lat]);return xy&&Number.isFinite(xy[0])&&Number.isFinite(xy[1])&&xy[0]>=padding&&xy[0]<=width-padding&&xy[1]>=padding&&xy[1]<=height-padding});
     if(inside)break;
     zoom*=.8;chart.setOption({geo:{center,zoom}});
@@ -438,8 +463,11 @@ function rtFitView(pts,chart){
   return {center,zoom};
 }
 function liteGeo(map){
+  /* layoutCenter/layoutSize 不能少：去掉后 geo 铺满容器，zoom 又是在「铺满态」下
+   * 反复量算出来的，rtFitView 里 zoom 连乘后飙到 21，路线被压进画布中心一小块。
+   * 保留 layout 约束，zoom 的基准才是稳定的，量出来的比例可直接用。 */
   return {map:map,roam:true,zoom:1,center:map==='china'?[104.5,36.5]:[0,20],
-    layoutCenter:['50%','50%'],layoutSize:'88%',
+    layoutCenter:['50%','50%'],layoutSize:'100%',
     label:{show:true,color:'#9aa7ba',fontSize:9},
     itemStyle:{areaColor:'#eff3f9',borderColor:'#ffffff',borderWidth:1.2},
     emphasis:{label:{show:false},itemStyle:{areaColor:'#e2ebff'}}};
@@ -466,6 +494,7 @@ function createLiteRouteMap(elId,mode,opts){
   /* 城市边界（P0-3）：opts.city 命中有预下载 GeoJSON 时，
    * 只保留圈内景点，并把视野按边界外接矩形聚焦 */
   let cityGeo=opts.cityGeo||null;
+  const cityGeoCodeStr=cityGeo?(cityGeoCode(opts.city||'')||''):'';
   const inCity=p=>!cityGeo||inCityGeo(cityGeo,p.lng,p.lat);
   function orderedPts(){const arr=[];segs.forEach(sg=>sg.points.forEach(p=>{if(inCity(p))arr.push({...p,day:sg.day})}));return arr}
   function seriesOf(){
@@ -518,14 +547,20 @@ function createLiteRouteMap(elId,mode,opts){
     return series;
   }
   function render(){
+    /* 视野按「全部站点」拟合，不要只按景点拟合：
+     * 总览模式下住宿 🏨 可能落在城市远郊（成都的西岭雪山、青城山一带），
+     * 只要按景点包围盒取景，这些点就被推到画布外，看起来像「地图没画出来」。 */
     const all=orderedPts().concat(stays).concat(eats);
-    const gOpt=liteGeo(mode);
-    /* 圈内视角：有边界就按外接矩形居中放大，比按点位拟合稳定，
-     * 也不会因为某个点离群就把整张图缩得很小 */
-    const bb=cityGeo?geoBBox(cityGeo):null;
-    if(bb){gOpt.center=bb.center;gOpt.zoom=1;
-      gOpt.regions=[{name:'wgo-city',itemStyle:{
-        areaColor:'rgba(201,162,39,.16)',borderColor:'rgba(201,162,39,.85)',borderWidth:2}}]}
+    /* 圈内视角：把城市边界注册成独立地图，geo 直接用 city 的 GeoJSON，
+     * 而不是把 china 放大几十倍（省级精度不足，放大后只剩海岸线）。 */
+    const cityMap=cityGeo?registerCityMap(cityGeo,cityGeoCodeStr):null;
+    const gOpt=liteGeo(cityMap||mode);
+    /* 城市边界只当底色，视野还是要按点位拟合：
+     * 手机竖屏下面板约 370×340，成都的行政边界接近方形，等比缩进后
+     * 三环内的行程只占中间一小块，点位叠在一起根本看不清路线。
+     * zoom 保持 1（城市 GeoJSON 已注册成独立地图，放大后精度足够），
+     * 由 rtFitView 平移/缩放到「行程点位刚好铺满面板」。 */
+    if(all.length&&cityMap){const v=rtFitView(all,c);gOpt.center=v.center;gOpt.zoom=v.zoom}
     c.setOption({backgroundColor:'#ffffff',
       tooltip:{trigger:'item',backgroundColor:'rgba(255,255,255,.97)',borderColor:'#d5deea',
         textStyle:{color:'#33415c',fontSize:12},extraCssText:'box-shadow:0 6px 20px rgba(30,50,90,.18);border-radius:8px;',
@@ -537,7 +572,9 @@ function createLiteRouteMap(elId,mode,opts){
           return p.name||'';
         }},
       geo:gOpt,series:seriesOf()},true);
-    if(all.length)rtFitView(all,c);
+    /* cityMap 的 center/zoom 已算好写进 gOpt，这里不能再 setOption 一次，
+     * 否则同一帧内的第二次设置会把视野打回城市默认值（点位重新散开）。 */
+    if(all.length&&!cityMap)rtFitView(all,c);
   }
   function select(index){
     selectedIndex=index;
@@ -558,22 +595,7 @@ function createLiteRouteMap(elId,mode,opts){
   function focusRoute(){
     const all=orderedPts().concat(stays).concat(eats);
     if(!all.length||c.isDisposed())return;
-    if(cityGeo)return fitCity(c);
     rtFitView(all,c);
-  }
-  /* fitBounds：把「城市外接矩形」放进画布内边距，而不是只塞点位 */
-  function fitCity(chart){
-    const bb=geoBBox(cityGeo);if(!bb)return;
-    const w=chart.getWidth(),h=chart.getHeight();
-    const pad=Math.min(40,w*.12,h*.12);
-    chart.setOption({geo:{center:bb.center,zoom:1}});
-    const a=chart.convertToPixel({geoIndex:0},bb.min);
-    const b=chart.convertToPixel({geoIndex:0},bb.max);
-    if(!a||!b)return;
-    const bw=Math.abs(b[0]-a[0]),bh=Math.abs(b[1]-a[1]);
-    if(bw<1||bh<1)return;
-    const zoom=Math.min((w-pad*2)/bw,(h-pad*2)/bh)*.98;
-    chart.setOption({geo:{center:bb.center,zoom}});
   }
   const observer=window.ResizeObserver?new ResizeObserver(resize):null;
   if(observer)observer.observe(el);else window.addEventListener('resize',resize);

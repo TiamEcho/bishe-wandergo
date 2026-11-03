@@ -19,7 +19,10 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'img', 'spots');
-const API = 'https://trae-api-cn.mchost.guru/api/ide/v1/tool_text_to_image?prompt=';
+/* 必须是 /text_to_image：/tool_text_to_image 带鉴权校验，
+ * 无 Key 时直接返回 {"code":1001,"message":"...not able to authenticate you"}，
+ * 脚本此前用错端点，导致一张图都没能产出。 */
+const API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=';
 const KEY = process.env.IMG_API_KEY || '';
 
 const args = process.argv.slice(2);
@@ -42,6 +45,15 @@ function loadPrompts() {
 
 async function toWebp(buf) {
   const sharp = require('sharp');   // 没有 sharp 就别硬存：原图 jpg 太大，不如继续用线上接口
+  /* 接口遇到不认识的地名不报错，而是返回 1832x1832 的近白占位图（约 176KB jpeg）。
+   * 只靠文件体积挡不住它（远超 8192B 阈值），必须看尺寸和像素均值：
+   * 真实出图是 1216x912 之类的横幅，占位图恒为正方形且整体接近纯白。 */
+  const meta = await sharp(buf).metadata();
+  if (meta.width === meta.height) {
+    const st = await sharp(buf).stats();
+    const mean = st.channels.slice(0, 3).reduce((a, c) => a + c.mean, 0) / 3;
+    if (mean > 200) throw new Error('接口返回占位图（正方形 ' + meta.width + 'px，均值 ' + mean.toFixed(0) + '）');
+  }
   return await sharp(buf).resize({ width: 960, withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
 }
 
