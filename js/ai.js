@@ -193,11 +193,13 @@ function interestHit(s,ints){
 function scoreSpot(s,ctx){
   let sc=(s.rating||4.5)*10;
   const tags=(s.tag||'')+' '+(s.n||'');
+  /* 长途出行成本高，兴趣权重放大（命中 +18/类、不搭 -16）；短途保持原比例 */
+  const isLong=ctx.tripType==='长途';
   if(ctx.ints.length){
     const hit=interestHit(s,ctx.ints);
-    sc+=hit*12;                       /* 命中一类兴趣 12 分，命中两类及以上再加 8 */
+    sc+=hit*(isLong?18:12);           /* 命中一类兴趣加分，命中两类及以上再加 8 */
     if(hit>=2)sc+=8;
-    if(!hit)sc-=10;                   /* 用户明确选了兴趣，完全不搭的点排后面 */
+    if(!hit)sc-=isLong?16:10;         /* 用户明确选了兴趣，完全不搭的点排后面 */
   }
   const pr=PREF_RULES[ctx.pref]||PREF_RULES.cheap;
   pr.tag.forEach(k=>{if(tags.includes(k))sc+=6*pr.w});
@@ -205,7 +207,9 @@ function scoreSpot(s,ctx){
   if(s.dur>=420)sc+=6;                                /* 大景区优先，撑得住一天 */
   if(ctx.maxDrive){                                   /* 同城多点时，离锚点越远越扣分 */
     const d=rtDist({lng:ctx.anchor[0],lat:ctx.anchor[1]},s);
-    if(d>60)sc-=Math.min(30,(d-60)*.35);
+    /* 短途对距离更敏感（>30km 就开始扣），长途可接受更大车程（>90km 才扣） */
+    const safe=isLong?90:30, k=isLong?.25:.45;
+    if(d>safe)sc-=Math.min(30,(d-safe)*k);
   }
   return sc;
 }
@@ -347,16 +351,16 @@ function buildTimeline(ids,city,opts){
 }
 /* 把景点按天切分：大景区独占一天（dur>=420），其余每天 3-4 个；
  * 总点位多于 天数*4 时，多出来的按「备选」均摊到每天，不再挤掉 */
-function splitDays(ids,reqDays){
+function splitDays(ids,reqDays,tripType){
   const list=ids.map(spotById).filter(Boolean);
   const d=Math.max(1,reqDays||1);
   const days=Array.from({length:d},()=>[]);
   const heavy=list.filter(s=>(s.dur||180)>=400);
   const light=list.filter(s=>(s.dur||180)<400);
   /* 每天配比：大景区（迪士尼 / 登山这种 dur>=400）独占一天；
-   * 其余按「上午 1 + 下午 1 + 夜间 1」的骨架走，单日打卡点上限 3 个，
-   * 超出就推到下一天，排不下的进备选池，不再硬塞 */
-  const DAILY_MAX=3;
+   * 其余按「上午 1 + 下午 1 + 夜间 1」的骨架走，单日打卡点上限按行程类型区分：
+   * 短途 3 个（节奏慢）、长途 4 个（行程长、单位时间效率更高），超出就推到下一天 */
+  const DAILY_MAX=String(tripType||'').trim()==='长途'?4:3;
   let di=0;
   heavy.forEach(s=>{while(days[di%d].length)di++;days[di%d].push(s.id);di++});
   light.forEach(s=>{
@@ -699,6 +703,9 @@ function matchPlan(q,reqDays,opt){
   opt=opt||{};
   const ints=interestOf(opt.interests);
   const pref=opt.pref||'cheap';
+  /* 行程类型：短途节奏慢、点位少；长途点位多、兴趣权重更高 */
+  const tripType=String(opt.tripType||'').trim()==='长途'?'长途':'短途';
+  const isLong=tripType==='长途';
   /* ① 定位城市：先找景点名，再找城市名，最后走 GEO_DB */
   const bySpot=SPOTS.find(s=>s.n&&q.includes(s.n));
   let city='',rg='cn',anchor=null;
@@ -726,11 +733,13 @@ function matchPlan(q,reqDays,opt){
       rtDist({lng:anchor[0],lat:anchor[1]},s)<80).map(s=>s.id);
     pool=pool.concat(SPOTS.filter(s=>(s.city===city&&s.rg===rg)||near.includes(s.id)));
   }
-  /* ③ 按天数决定取几个点位：每天 3 个打卡点（上午 / 下午 / 夜间），
-   *    再加 1 个大景区占满一天的名额，所以 1 天 4 个、2 天 7 个、3 天 10 个 */
+  /* ③ 按天数与行程类型决定取几个点位：
+   *    短途每天 2 个（上午 / 下午，节奏慢）、长途每天 3 个（上午 / 下午 / 夜间），
+   *    再各加 1 个大景区名额，所以短途 1 天 3 个、3 天 7 个；长途 1 天 4 个、3 天 10 个 */
   const reqD=Math.max(1,reqDays||2);
-  const need=Math.min(reqD*3+1,pool.length);
-  const ctx={used,ints,pref,anchor,maxDrive:true};
+  const perDay=isLong?3:2;
+  const need=Math.min(reqD*perDay+1,pool.length);
+  const ctx={used,ints,pref,anchor,maxDrive:true,tripType};
   let picked=pickSpots(pool,Math.min(need,pool.length),ctx,reqD);
   if(picked.length<need){
     /* 同城已排完：用同区 120km 内的真实景点再补一轮，不造占位点 */
@@ -769,7 +778,7 @@ function matchPlan(q,reqDays,opt){
   const budgetItems=ratio.map((x,i)=>({k:x[0],v:Math.round(total*x[1]/10)*10,c:'--dc'+(i+1)}));
   budgetItems.push({k:'其他',v:Math.max(0,total-budgetItems.reduce((s,x)=>s+x.v,0)),c:'--dc5'});
   /* ⑤ 时刻表：每天按 bestTime 排序 + 三餐就近绑定 + 当天收尾处的住宿建议 */
-  const routeDays=splitDays(spots,reqD);
+  const routeDays=splitDays(spots,reqD,tripType);
   const timelines=routeDays.map(ids=>buildTimeline(ids,city));
   const hotels=routeDays.map(ids=>hotelOf(ids.map(spotById).filter(Boolean),city,pref));
   const bookList=[];
@@ -779,7 +788,7 @@ function matchPlan(q,reqDays,opt){
   }));
   return {
     __pool:true,dest:dest,prov:city,__ab:ab,from:meta.from||'你的城市',
-    days:reqD+' 天',__reqDays:reqD,
+    days:reqD+' 天',__reqDays:reqD,__tripType:tripType,
     __center:{lng:anchor[0],lat:anchor[1]},
     spots,routeDays,timelines,bookList,eats,hotels,interestNote,
     budget:total,budgetItems,
@@ -838,9 +847,28 @@ fixPOIRoute(POI_ROUTE);
 /* 计算旅行天数（返程 - 出发 + 1） */
 function calcDays(){
   const s=$('#fStart').value,e=$('#fEnd').value;
-  if(!s||!e){$('#fDays').textContent='1 天';return 1}
+  if(!s||!e){$('#fDays').textContent='1 天';syncTripType(1);return 1}
   const d=Math.round((new Date(e)-new Date(s))/86400000)+1;
-  const n=Math.max(1,d);$('#fDays').textContent=n+' 天';return n;
+  const n=Math.max(1,d);$('#fDays').textContent=n+' 天';syncTripType(n);return n;
+}
+/* 天数与行程类型联动：只给建议，不强制改用户的选择 */
+function syncTripType(days){
+  const tip=$('#tripTypeTip');if(!tip)return;
+  const n=days||calcDaysQuiet();
+  const cur=(($$('#fTripType button.on')[0]||{dataset:{}}).dataset.type)||'短途';
+  const suggest=n<=3?'短途':'长途';
+  if(cur===suggest){
+    tip.textContent='当前 '+n+' 天，适合'+suggest;
+    tip.classList.remove('on');
+  }else{
+    tip.textContent='当前 '+n+' 天，更接近'+suggest+'（仍按所选的'+cur+'推荐）';
+    tip.classList.add('on');
+  }
+}
+function calcDaysQuiet(){
+  const s=$('#fStart').value,e=$('#fEnd').value;
+  if(!s||!e)return 1;
+  return Math.max(1,Math.round((new Date(e)-new Date(s))/86400000)+1);
 }
 /* 读取表单，拼接查询文本供 matchPlan 识别目的地 */
 function readForm(){
@@ -852,8 +880,9 @@ function readForm(){
   const pref=($('#fPref')||{}).value||'cheap';
   const stay=$('#fStay').value;
   const interests=[...$$('#fInterests button.on')].map(b=>b.textContent).join('、');
+  const tripType=($$('#fTripType button.on')[0]||{dataset:{}}).dataset.type||'短途';
   const special=$('#fSpecial').value.trim();
-  return {from,dest,days,traffic,budget,pref,stay,interests,special,
+  return {from,dest,days,traffic,budget,pref,stay,interests,tripType,special,
     query:dest+(interests?' '+interests:'')+(special?' '+special:'')};
 }
 /* ---- 交通规划：按起点→目的地估算距离，再按用户勾选的方式组合分段 ---- */
@@ -966,7 +995,7 @@ function runAI(){
 async function finishPlan(f,pipe,tip){
   /* 站内景点库必须先就位再匹配：否则「上海」只能匹配到 data.js 里的外滩 1 个点 */
   await loadSpotLib();
-  let plan=matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref});
+  let plan=matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref,tripType:f.tripType});
   const reqD=Math.max(1,f.days||2);
   if(plan){
     if(tip)tip.textContent='正在按方位角分区 · 串联周边餐饮与住宿…';
@@ -991,6 +1020,13 @@ $('#fStart').addEventListener('change',calcDays);
 $('#fEnd').addEventListener('change',calcDays);
 /* 兴趣标签多选 */
 $$('#fInterests button').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+/* 行程类型单选：短途 / 长途 */
+$$('#fTripType button').forEach(b=>b.onclick=()=>{
+  $$('#fTripType button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  syncTripType();
+});
+syncTripType();
 /* 交通方式多选（大巴 / 动车 / 火车 / 飞机，可混合分段） */
 $$('#fTraffic button').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
 function planRoute(plan){

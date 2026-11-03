@@ -215,10 +215,19 @@ const P={
  sagrada:'Sagrada Familia Barcelona Spain colorful stained glass interior light, Gaudi architecture, travel photography',
  dubai:'Burj Khalifa Dubai skyline at dusk with fountain show lights below, travel photography',
  queenstown:'Queenstown New Zealand lake Wakatipu with Remarkables mountains and autumn trees, travel photography',
- rovaniemi:'Santa Claus village Rovaniemi Finland snow cabins reindeer and northern lights sky, travel photography'
+ rovaniemi:'Santa Claus village Rovaniemi Finland snow cabins reindeer and northern lights sky, travel photography',
+ cangshan:'Cangshan mountain Dali Yunnan China cloud sea over green ridges and cable car at sunrise, travel photography',
+ xizhou:'Xizhou ancient town Dali Yunnan Bai ethnic architecture with yellow walls and rice fields, morning light, travel photography',
+ shuanglang:'Shuanglang town Dali Erhai lake shoreline with white buildings and jade water at sunset, travel photography',
+ santasi:'Three pagodas Chongsheng temple Dali Yunnan China with Cangshan mountain backdrop, blue sky, travel photography',
+ jizhaoan:'Jizhao nunnery Dali Yunnan China peaceful temple courtyard with succulents and hydrangea flowers, soft sunlight, travel photography',
+ butterfly:'Butterfly spring Dali Yunnan China limpid pool and ancient camellia trees, travel photography',
+ haishe:'Xizhou Haishe park Dali Yunnan China swing overlooking Erhai lake under blue sky, travel photography',
+ shaxi:'Shaxi ancient town Dali Yunnan China cobblestone market square with old theatre stage, travel photography',
+ weishan:'Weishan ancient city Dali Yunnan China Ming and Qing dynasty gate tower with red lanterns, travel photography'
 };
 
-const ICO={gugong:'🏯',bund:'🌃',bmy:'⚔️',erhai:'🚲',jzg:'🏞️',xihu:'🛶',ys:'🎋',ylw:'🏖️',qhh:'🌼',pala:'🙏',greatwall:'🧱',zjj:'⛰️',huangshan:'🌄',gulangyu:'🎹',luguhu:'🛶',cbs:'🏔️',senso:'🏮',inari:'⛩️',paris:'🗼',oia:'🌅',ubud:'🌾',gp:'👑',mbs:'🌳',ice:'❄️',cp:'🍂',opera:'🎭',chiangmai:'🛕',maldives:'🏝️',sagrada:'⛪',dubai:'🏙️',queenstown:'🪂',rovaniemi:'🎅'};
+const ICO={gugong:'🏯',bund:'🌃',bmy:'⚔️',erhai:'🚲',jzg:'🏞️',xihu:'🛶',ys:'🎋',ylw:'🏖️',qhh:'🌼',pala:'🙏',greatwall:'🧱',zjj:'⛰️',huangshan:'🌄',gulangyu:'🎹',luguhu:'🛶',cbs:'🏔️',senso:'🏮',inari:'⛩️',paris:'🗼',oia:'🌅',ubud:'🌾',gp:'👑',mbs:'🌳',ice:'❄️',cp:'🍂',opera:'🎭',chiangmai:'🛕',maldives:'🏝️',sagrada:'⛪',dubai:'🏙️',queenstown:'🪂',rovaniemi:'🎅',cangshan:'⛰️',xizhou:'🏘️',shuanglang:'🌅',santasi:'🕍',jizhaoan:'🌸',butterfly:'🦋',haishe:'🌊',shaxi:'🏮',weishan:'🏯'};
 const iconURL=ch=>'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><text x="32" y="46" font-size="38" text-anchor="middle">'+ch+'</text></svg>');
 
 const SPOTS=[
@@ -262,6 +271,12 @@ const SPOT_EXTRA=[
  {id:'cangshan',n:'苍山',city:'大理',rg:'cn',addr:'大理市苍山世界地质公园',lng:100.130,lat:25.680,hrs:'半天',traf:'感通索道/洗马潭索道',price:'¥120 起（含索道）',rating:4.7,tag:'雪山 · 云海',desc:'十九峰十八溪，索道上去看云海翻涌，玉带路徒步最出片。'},
  {id:'xizhou',n:'喜洲古镇',city:'大理',rg:'cn',addr:'大理市喜洲镇',lng:100.130,lat:25.860,hrs:'半天',traf:'古城打车约 30 分钟',price:'免费',rating:4.6,tag:'白族 · 古建',desc:'白族民居博物馆、转角楼和喜洲粑粑，麦田最绿是四月。'},
  {id:'shuanglang',n:'双廊古镇',city:'大理',rg:'cn',addr:'大理市双廊镇',lng:100.190,lat:25.900,hrs:'半天-1天',traf:'环海东路自驾 / 包车',price:'免费',rating:4.7,tag:'海景 · 日落',desc:'洱海东岸的海景小镇，日落时分整片湖面都是金色。'},
+ {id:'santasi',n:'崇圣寺三塔',city:'大理',rg:'cn',addr:'大理市崇圣寺三塔文化旅游区',lng:100.147,lat:25.702,hrs:'2-3 小时',traf:'古城打车 10 分钟 / 三塔专线',price:'¥75',rating:4.7,tag:'古塔 · 历史',desc:'三塔倒影公园的一汪水，把苍山、白塔和云一起收进倒影里。'},
+ {id:'jizhaoan',n:'寂照庵',city:'大理',rg:'cn',addr:'大理市苍山圣应峰下（感通寺后山）',lng:100.141,lat:25.680,hrs:'2 小时',traf:'古城打车 15 分钟 + 步行 20 分钟',price:'免费',rating:4.8,tag:'寺庙 · 花园 · 文艺',desc:'满院多肉与绣球，被称为最文艺的尼姑庵，素斋需提前一天预约。'},
+ {id:'butterfly',n:'蝴蝶泉',city:'大理',rg:'cn',addr:'大理市喜洲镇周城村蝴蝶泉公园',lng:100.117,lat:25.884,hrs:'2 小时',traf:'古城至喜洲方向班车约 35 分钟',price:'¥40',rating:4.3,tag:'泉潭 · 民俗 · 历史',desc:'《五朵金花》的取景地，泉边合欢树倒映成一片安静。'},
+ {id:'haishe',n:'喜洲海舌公园',city:'大理',rg:'cn',addr:'大理市喜洲镇海舌生态公园',lng:100.141,lat:25.842,hrs:'2 小时',traf:'喜洲古镇步行 20 分钟 / 电动车',price:'免费',rating:4.6,tag:'湖景 · 拍照 · 日落',desc:'伸进洱海的一片陆地，白秋千与芦苇荡是本地人最爱的傍晚去处。'},
+ {id:'shaxi',n:'沙溪古镇',city:'大理',rg:'cn',addr:'大理州剑川县沙溪镇寺登街',lng:99.851,lat:26.315,hrs:'1 天',traf:'大理自驾 / 班车约 2.5 小时',price:'免费',rating:4.8,tag:'古镇 · 历史 · 慢生活',desc:'茶马古道上唯一幸存的古集市，寺登街的石板路还留着马帮的蹄印。'},
+ {id:'weishan',n:'巍山古城',city:'大理',rg:'cn',addr:'大理州巍山县南诏镇拱辰楼',lng:100.307,lat:25.230,hrs:'半天-1天',traf:'大理乘动车 / 班车约 1.5 小时',price:'古城免费（巍宝山 ¥40）',rating:4.6,tag:'古城 · 历史 · 民俗',desc:'南诏国的发祥地，拱辰楼下的米线一条街是本地人的早市日常。'},
  /* ---- 九寨 / 成都 ---- */
  {id:'huanglong',n:'黄龙风景区',city:'阿坝州',rg:'cn',addr:'阿坝州松潘县黄龙乡',lng:103.824,lat:32.754,hrs:'1 天',traf:'九黄机场包车约 1.5h / 川主寺班车',price:'¥170（索道另计）',rating:4.8,tag:'钙化池 · 彩池',desc:'三千多个钙化彩池顺山而下，五彩池在阳光下像打翻的眼影盘。'},
  {id:'kuanzhai',n:'宽窄巷子',city:'成都',rg:'cn',addr:'成都市青羊区长顺上街',lng:104.055,lat:30.669,hrs:'半天',traf:'地铁4号线宽窄巷子站',price:'免费',rating:4.5,tag:'老街 · 市井',desc:'三条清代巷子拼成的成都样本，掏耳朵、盖碗茶、龙抄手一次体验完。'},
@@ -345,6 +360,12 @@ const SPOT_TIME={
  cangshan:['08:00-17:00','morning',true,240,'索道分感通/洗马潭两条，需看天气开放'],
  xizhou:['全天','morning',false,180,''],
  shuanglang:['全天','sunset',false,240,''],
+ santasi:['08:00-18:00','day',true,150,'三塔倒影公园与主景区同票，需在售票窗口购买'],
+ jizhaoan:['08:00-17:00','morning',false,120,'素斋需提前一天预约，山路台阶较多'],
+ butterfly:['08:00-18:00','day',true,120,''],
+ haishe:['全天','sunset',false,120,''],
+ shaxi:['全天','morning',false,420,'车程较远，建议与剑川石宝山连游'],
+ weishan:['全天','morning',false,300,'古城免费，巍宝山需另购票'],
  huanglong:['07:00-17:00','morning',true,300,'高海拔慢走，索道上行步行下'],
  kuanzhai:['全天','sunset',false,180,''],
  wuhou:['08:00-20:00','night',false,180,'锦里夜间灯笼最好看'],
