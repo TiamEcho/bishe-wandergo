@@ -699,6 +699,41 @@ async function fetchRemotePlan(city,days,want){
     return (r&&r.ok&&Array.isArray(r.plan)&&r.plan.length)?r:null;
   }catch(_){return null}
 }
+/* 冷门城市兜底：静态库 / GEO_DB 都没收录时，从后端 scenic_spot 取该城景点。
+ * fetch-pois.js 拉的高德 POI 只进数据库，前端不动这一步就会报「没有识别到目的地」。
+ * 拿到数据后写回 SPOTS 再跑一次本地算法，后续排序 / 三餐 / 时刻表全部复用原有逻辑。 */
+function matchPlanRemote(q,reqDays,opt){
+  if(typeof WGOAPI==='undefined'||!WGOAPI.spotCity)return Promise.resolve(null);
+  /* 只取「市 / 县 / 区」前面的主体，避免把「想去潮州玩两天」整句当城市名 */
+  const m=String(q||'').match(/([\u4e00-\u9fa5]{2,6}?)(?:市|县|区)?(?:$|\s|\d)/);
+  const city=m?m[1]:'';
+  if(!city)return Promise.resolve(null);
+  return WGOAPI.spotCity(city).then(r=>{
+    const list=(r&&r.ok&&r.spots)||[];
+    if(!list.length)return null;
+    const has=new Set(SPOTS.map(s=>s.city+'|'+s.n));
+    let added=0;
+    list.forEach(it=>{
+      if(!it||!it.name||it.lng==null||it.lat==null)return;
+      const k=(it.city||city)+'|'+it.name;
+      if(has.has(k))return;
+      has.add(k);added++;
+      SPOTS.push({
+        id:'rm_'+encodeURIComponent(it.spot_key||it.name),
+        n:it.name,city:it.city||city,rg:'cn',
+        addr:(it.city||city)+' · '+it.name,
+        lng:+it.lng,lat:+it.lat,
+        hrs:'2-3 小时',traf:'当地交通可达',price:it.price||'以景区公示为准',
+        rating:+(it.rating||0)||4.3,openHrs:'以景区公告为准',
+        bestTime:'day',needBook:false,dur:180,
+        tag:it.tags||it.poi_type||'景点',desc:it.desc||'',
+        __poiType:it.poi_type||''
+      });
+    });
+    if(!added)return null;
+    return matchPlan(q,reqDays,opt);
+  }).catch(()=>null);
+}
 /* 行程生成：城市定位 → 同城候选池打分 → 按天数取点位 → 三餐/预约 → 每天时刻表 */
 function matchPlan(q,reqDays,opt){
   q=q||'';
@@ -724,7 +759,10 @@ function matchPlan(q,reqDays,opt){
   }
   if(!city){
     const g=geoMatch(q);
-    return g?genPlan(g,reqDays):null;
+    if(g)return genPlan(g,reqDays);
+    /* 静态库与 GEO_DB 都没收录的冷门城市（如潮州、景德镇），
+     * 改问后端 scenic_spot 表：那里有 fetch-pois.js 新拉的高德 POI */
+    return matchPlanRemote(q,reqDays,opt);
   }
   /* ② 候选池：同城全部景点；单城不足 3 个时，补同区近邻（80km 内，绝不跨地域） */
   const used=new Set();
@@ -958,6 +996,10 @@ function planMainLeg(km,traffic,pref){
   segs.push({m:'🏨 目的地接驳',t:'按次 20-40min',p:'¥30-80',s:.65,note:'高铁站 / 机场到酒店，打车或景区直通车'});
   return segs;
 }
+/* 后端冷启动探活状态：null=探活中 / false=仍在唤醒 / true=已就绪。
+ * 必须在模块作用域——runAI 里赋值，finishPlan 里读取；
+ * 写在 runAI 内部就变成局部变量，finishPlan 会直接 ReferenceError */
+let backendCold=null,waken=0;
 function runAI(){
   const f=readForm();
   if(!f.from)return toast('请先填写出发地（起点）📍');
@@ -980,8 +1022,8 @@ function runAI(){
   /* 探活：Render 免费实例冷启动要 30–50 秒，先把「正在唤醒后端」写进提示，
    * 避免用户以为页面卡死。后端已热时这次请求 1 秒内返回，提示不闪 */
   const probe=(typeof WGOAPI!=='undefined'&&WGOAPI.ping)?WGOAPI.ping():Promise.resolve({ok:true});
-  /* backendCold：null=探活中 / false=仍在唤醒 / true=已就绪 */
-  let backendCold=null,waken=0;
+  /* backendCold / waken 在模块作用域声明，这里只做赋值 */
+  backendCold=null;waken=0;
   const tw=setInterval(()=>{
     waken++;
     if(tip&&backendCold===false)tip.textContent='后端服务休眠中，正在唤醒（约 30–50 秒）…第 '+waken+' 秒';
@@ -1008,7 +1050,8 @@ function runAI(){
 async function finishPlan(f,pipe,tip){
   /* 站内景点库必须先就位再匹配：否则「上海」只能匹配到 data.js 里的外滩 1 个点 */
   await loadSpotLib();
-  let plan=matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref,tripType:f.tripType});
+  /* 可能是本地同步结果，也可能是冷门城市走后端兜底的 Promise，统一 await */
+  let plan=await matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref,tripType:f.tripType});
   const reqD=Math.max(1,f.days||2);
   if(plan){
     const cold=backendCold===false;
@@ -1630,8 +1673,9 @@ function fuelHtml(plan){
    · 过路费按 ¥0.45/km → 过路费 <b>¥${toll}</b><br>
    · 合计约 <b>¥${total}</b>（实际以车型 / 路线为准）· <a href="https://ditu.amap.com/" target="_blank" style="color:var(--gold)">高德地图输入起终点算精确油费 →</a></div>`;
 }
-function openMod(kind,dest){
-  const plan=matchPlan(dest);
+async function openMod(kind,dest){
+  /* matchPlan 对冷门城市返回 Promise，这里 await 后两种情况都能拿到 plan */
+  const plan=await matchPlan(dest);
   if(!plan)return toast('没有识别到该目的地，换个地名试试');
   if(kind==='spots'){
     openModal(`<button class="mx" onclick="closeModal()">✕</button><div style="padding:24px"><h3 style="font-size:18px;font-weight:900;margin-bottom:4px">🏞 ${plan.dest} · 景点清单</h3><p style="font-size:12px;color:var(--muted);margin-bottom:14px">含名称、地址、坐标、建议时长与交通衔接，可直接用于地图标点</p>

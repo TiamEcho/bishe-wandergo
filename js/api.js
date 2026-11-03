@@ -116,6 +116,8 @@ const WGOAPI=(()=>{
     /* 要等 PG 冷启动 + 模型出点位，放宽到 55 秒；超时前端仍会走本地算法兜底 */
     planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},55000)},
     /* 探活：先打一次健康检查判断后端是否已唤醒（不参与业务，失败返回 null） */
-    ping(){return req('/api/health',{},20000)}
+    ping(){return req('/api/health',{},20000)},
+    /* 单城景点（含 poi_type 四分类）：前端静态库没收录的冷门城市靠它兜底 */
+    spotCity(city){return req('/api/spot/city?city='+encodeURIComponent(city),{},20000)}
   };
 })();
