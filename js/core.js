@@ -1073,6 +1073,18 @@ document.addEventListener('error',e=>{
    * 不能因为 __watching 为真就放过，否则本地图 404 会一直停在裂图状态 */
   imgPlaceholder(el);
 },true);
+/* DOM 里写死的 onerror="this..."（历史写法，如 dest.html 的 this.style.display='none'）
+ * 会在兜底之前把图藏掉或改掉，导致占位图失效；统一摘掉，交给上面的全局兜底处理。 */
+document.addEventListener('DOMContentLoaded',()=>{
+  $$('img[onerror]').forEach(el=>el.removeAttribute('onerror'));
+  new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      if(n.tagName==='IMG'&&n.hasAttribute('onerror'))n.removeAttribute('onerror');
+      n.querySelectorAll&&n.querySelectorAll('img[onerror]').forEach(el=>el.removeAttribute('onerror'));
+    }));
+  }).observe(document.body,{childList:true,subtree:true});
+});
 /* 挂监听前就已经加载失败的图（首屏直出、走了缓存）：补一次检查 */
 function sweepBrokenImgs(root){
   (root||document).querySelectorAll('img').forEach(el=>{
