@@ -988,10 +988,9 @@ function imgFallback(el){
       el.src=IMGAPI+encodeURIComponent(scene)+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_16_9');
       return
     }
-    /* 降级链与重试全部失败：不再留一个空 <img>（页面会显示裂图），
-     * 换成按景点类型着色的占位块，至少每个景点颜色不同、能看出是哪张卡。 */
-    el.removeAttribute('src');
-    el.classList.add('img-fail');return
+    /* 降级链与重试全部失败：换内联 SVG 占位图。
+     * 不能用空的 <img>（浏览器会显示裂图图标），也不能再指回网络地址。 */
+    imgPlaceholder(el);return
   }
   el.__chainIdx=i;
   el.src=IMGAPI+encodeURIComponent(chain[i])+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_4_3')+'&r='+i;
@@ -1044,6 +1043,42 @@ function watchImgs(root){
     }
   });
 }
+/* ================= 图片加载失败兜底 =================
+ * 全站 <img> 统一挂 error 捕获（capture 阶段，能拦到动态插入的图），
+ * 任何一张图最终取不到都换成内联 SVG 占位图：不依赖网络、不会二次失败，
+ * 用户看到的是统一风格的空图块，而不是浏览器裂图图标。
+ * 注意 imgFallback 已经处理了「降级链」；这里只在降级链也失败（img-fail）时兜底。 */
+const IMG_PLACEHOLDER='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">'
+  +'<rect width="640" height="480" fill="#ece7dc"/>'
+  +'<path d="M0 372l150-118 108 84 96-72 150 118v96H0z" fill="#d8d0c0"/>'
+  +'<circle cx="492" cy="132" r="38" fill="#e4dcc9"/>'
+  +'<text x="320" y="256" font-size="26" fill="#a89c85" text-anchor="middle" font-family="sans-serif">图片加载失败</text>'
+  +'</svg>');
+function imgPlaceholder(el){
+  if(!el||el.__phDone)return;
+  el.__phDone=1;
+  el.classList.remove('img-fail');
+  el.classList.add('img-ph');
+  el.removeAttribute('srcset');
+  el.removeAttribute('data-src');
+  el.src=IMG_PLACEHOLDER;
+}
+document.addEventListener('error',e=>{
+  const el=e.target;
+  if(!el||el.tagName!=='IMG')return;
+  /* 出图接口的降级链还在跑（core 里自己接管），交给 imgFallback 处理 */
+  if(typeof imgFallback==='function'&&(el.__watching||__imgTried.has(el))&&!el.__lastTry)return;
+  imgPlaceholder(el);
+},true);
+/* 挂监听前就已经加载失败的图（首屏直出、走了缓存）：补一次检查 */
+function sweepBrokenImgs(root){
+  (root||document).querySelectorAll('img').forEach(el=>{
+    if(el.complete&&el.naturalWidth===0&&el.getAttribute('src')&&!el.__watching){
+      imgPlaceholder(el);
+    }
+  });
+}
 /* ================= 公共初始化 ================= */
 document.addEventListener('DOMContentLoaded',()=>{
   initChrome();
@@ -1057,4 +1092,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   /* 其余页面写的 <img src> 没有 data-img，也统一挂上失败兜底 */
   watchImgs();
+  /* 首屏直出的本地图如果已经加载失败，watchImgs 会把它们标成 __watching
+   * 从而绕开 error 兜底，所以这里在挂完监听后统一补扫一次 */
+  sweepBrokenImgs();
 });

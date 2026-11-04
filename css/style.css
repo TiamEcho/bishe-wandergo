@@ -71,6 +71,8 @@ input,select,textarea{font-family:inherit}
 img{display:block}
 /* 出图接口彻底失败时（降级链走完）：不留裂图图标，改为渐变占位块 */
 img.img-fail{background:linear-gradient(135deg,var(--panel-2),var(--panel-3));min-height:60px}
+/* 最终兜底：内联 SVG 占位图，铺满容器、不拉伸变形 */
+img.img-ph{object-fit:cover;background:var(--panel-2)}
 .wrap{width:min(1180px,93%);margin:0 auto}
 .sec{padding:64px 0}
 .sec-alt{background:var(--bg-soft)}

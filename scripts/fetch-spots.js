@@ -103,8 +103,10 @@ function writeManifest(allIds) {
 (async () => {
   const P = loadPrompts();
   const all = Object.keys(P);
-  let targets = all.filter(id => !/^hero|^qroad|^pool/.test(id));
-  if (only.length) targets = targets.filter(id => only.includes(id));
+  /* hero / qroad / pool 是三张全站通用装饰图，不是景点卡片图：
+   * 默认批量出图时跳过，但用 --only 显式点名时仍然要取，否则这三张永远缺本地文件。 */
+  const DECOR = /^(hero|qroad|pool)$/;
+  let targets = only.length ? all.filter(id => only.includes(id)) : all.filter(id => !DECOR.test(id));
   fs.mkdirSync(OUT_DIR, { recursive: true });
   console.log(`共 ${targets.length} 个景点，输出到 img/spots/`);
   let ok = 0;
