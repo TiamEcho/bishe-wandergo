@@ -1069,6 +1069,8 @@ document.addEventListener('error',e=>{
   if(!el||el.tagName!=='IMG')return;
   /* 出图接口的降级链还在跑（core 里自己接管），交给 imgFallback 处理 */
   if(typeof imgFallback==='function'&&(el.__watching||__imgTried.has(el))&&!el.__lastTry)return;
+  /* watchImgs 给没有 data-key 的图也挂了 error 监听（只为加 .img-fail），
+   * 不能因为 __watching 为真就放过，否则本地图 404 会一直停在裂图状态 */
   imgPlaceholder(el);
 },true);
 /* 挂监听前就已经加载失败的图（首屏直出、走了缓存）：补一次检查 */
