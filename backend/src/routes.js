@@ -40,6 +40,11 @@ function toItem(row, kind) {
 /* 健康检查 / 演示用状态 */
 router.get('/health', async (req, res, next) => {
   try {
+    /* ?ping=1 为前端冷启动探活专用：只回进程状态，不查数据库（PG 冷连接要多等几秒），
+     * 保证实例醒来的瞬间就能返回 */
+    if (req.query.ping) {
+      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()) });
+    }
     res.json({
       ok: true, time: dbx.now(), db: dbx.dialect, ai: aiStatus(),
       stats: await dbx.stats()
