@@ -102,7 +102,7 @@ function srFallbackCover(p){
   if(!id||typeof P==='undefined'||!P[id]){
     const spots=(typeof SPOTS!=='undefined'?SPOTS:[]);
     const scored=spots.map(s=>[srSpotScore(s,probe),s]).filter(x=>x[0]>0)
-      .sort((a,b)=>b[0]-a[0]).slice(0,3).map(x=>x[1]);
+      .sort((a,b)=>b[0]-a[0]).slice(0,4).map(x=>x[1]);
     if(scored.length){
       const seed=String(p.id||p.title||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0);
       id=scored[seed%scored.length].id;
