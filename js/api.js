@@ -18,7 +18,7 @@ const WGOAPI=(()=>{
   const _isGithubIO=/\.github\.io$/i.test(_host);
   /* Render 已部署后端；GitHub Pages 默认使用此地址。
    * localStorage 中的 wgo_api 可用于临时覆盖。 */
-  const RENDER_BACKEND='https://wandergo-backend-6i1z.onrender.com';
+  const RENDER_BACKEND='https://wandergo-backend-v2.onrender.com';
   const _auto=_isLocal?'http://localhost:8080'
     :_isGithubIO?RENDER_BACKEND
     :/\.onrender\.com$/i.test(_host)?RENDER_BACKEND
