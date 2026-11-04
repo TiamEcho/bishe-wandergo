@@ -56,8 +56,12 @@ function srEsc(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function srCover(p){
-  if(p.cover&&/^https?:/.test(p.cover))return p.cover;
-  return '';
+  /* 爬虫收进来的 B站/抖音封面是外站 CDN 地址：带防盗链、会挂、也会拖慢首屏。
+   * 这几个域名一律不用外链封面，直接用下面 srFallbackCover 的本地图库图。 */
+  const c=p.cover||'';
+  if(!/^https?:/.test(c))return '';
+  if(/hdslb\.com|bilivideo\.com|douyinpic\.com|douyinvod\.com|ixigua\.com|kuaishou\.com/i.test(c))return '';
+  return c;
 }
 /* 兜底封面：外站封面被反爬/跨域拦截时，用本地景点图库的图顶上，卡片不留白 */
 function srFallbackCover(p){
