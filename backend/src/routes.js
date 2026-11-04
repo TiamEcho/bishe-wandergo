@@ -9,7 +9,7 @@ const { collectGuide } = require('./collector');
 const { aiStatus, extractEntities, chat } = require('./dots');
 const { localExtract } = require('./extract');
 const { planRoute } = require('./plan');
-const { searchCitySpots } = require('./services/scenicSpotSearch');
+const { searchCitySpots, ensureCitySpots } = require('./services/scenicSpotSearch');
 const { recommend } = require('./recommend');
 
 const router = express.Router();
@@ -570,6 +570,25 @@ router.get('/plan/spots', async (req, res) => {
   } catch (e) {
     console.error('[plan/spots]', e);
     res.status(500).json({ ok: false, message: '检索失败', error: String(e.message || e) });
+  }
+});
+
+/* ⑨ GET /api/spot/city?city=上饶&limit=200&force=1 —— 城市点位（库优先 + 按需补拉）
+ * 与 ⑧ 的区别：先查数据库，库空才实时打高德并落库，同一城市第二次直接命中库。
+ * 拉不到时 ok:false + message「该城市暂无数据」，不返回任何模拟数据。 */
+router.get('/spot/city', async (req, res) => {
+  try {
+    const city = String(req.query.city || '').trim();
+    if (!city) return res.status(400).json({ ok: false, message: '请先输入城市名', places: [] });
+    const out = await ensureCitySpots(city, {
+      limit: req.query.limit,
+      force: req.query.force === '1' || req.query.force === 'true'
+    });
+    /* 404 表示「确实没有这条数据」，前端据此展示友好提示而不是「请求失败」 */
+    res.status(out.ok ? 200 : 404).json(out);
+  } catch (e) {
+    console.error('[spot/city]', e);
+    res.status(500).json({ ok: false, message: '该城市暂无数据', error: String(e.message || e), places: [] });
   }
 });
 
