@@ -73,6 +73,17 @@ img{display:block}
 img.img-fail{background:linear-gradient(135deg,var(--panel-2),var(--panel-3));min-height:60px}
 /* 最终兜底：内联 SVG 占位图，铺满容器、不拉伸变形 */
 img.img-ph{object-fit:cover;background:var(--panel-2)}
+/* 加载中：src 还没赋（出图队列限流）或静态图仍在下载，先铺 shimmer 骨架，
+   避免 <img> 塌成 0 高导致卡片跳动。load 事件一到就会被移除。 */
+img.img-skel{min-height:60px;background:linear-gradient(100deg,var(--panel-2) 20%,var(--panel-3) 40%,var(--panel-2) 60%);background-size:220% 100%;animation:imgShimmer 1.15s linear infinite}
+@keyframes imgShimmer{0%{background-position:130% 0}100%{background-position:-40% 0}}
+@media (prefers-reduced-motion:reduce){img.img-skel{animation:none;background:var(--panel-2)}}
+/* 数据为空：空状态插画 + 引导文案 */
+.empty-art{display:flex;flex-direction:column;align-items:center;gap:10px;padding:36px 16px;text-align:center;color:var(--muted)}
+.empty-art svg{width:132px;height:96px;opacity:.9}
+.empty-art b{font-size:15px;color:var(--ink-2);font-weight:600}
+.empty-art span{font-size:13px;line-height:1.7}
+.empty-art a{color:var(--gold);text-decoration:underline}
 .wrap{width:min(1180px,93%);margin:0 auto}
 .sec{padding:64px 0}
 .sec-alt{background:var(--bg-soft)}

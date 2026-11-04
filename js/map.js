@@ -116,8 +116,13 @@ function spotPin(id,lit){
     +'<text x="32" y="35" font-size="20" text-anchor="middle">'+st.emo+'</text>'
     +'</svg>');
 }
-/* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS） */
-function spotThumbURL(id){try{return (typeof localImg==='function'&&localImg(id))||IMG(id,'square')}catch(e){return ''}}
+/* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS）
+ * 只认本地图库：tooltip 里的 <img> 拿不到 core 的降级链（不在 document 树里），
+ * 若回落到 IMG() 的文生图外链，一旦接口抽风就会在贴纸旁留一块空白。
+ * 本地没有该景点图时函数返回空串，formatter 改显示 SVG 占位图标。 */
+function spotThumbURL(id){
+  try{return (typeof localImg==='function'&&localImg(id))||''}catch(e){return ''}
+}
 /* 标点图标是纯本地 SVG，无需异步预取与刷新 */
 function prefetchThumbs(){}
 function refreshSpotPins(){}
@@ -344,9 +349,20 @@ function createWanderMap(elId,mode,opts){
   c.setOption({backgroundColor:PAPER.bg,
     tooltip:{trigger:'item',backgroundColor:'rgba(250,245,233,.97)',borderColor:'rgba(201,183,154,.9)',textStyle:{color:'#6b5c47',fontSize:12},
       extraCssText:'box-shadow:0 8px 24px rgba(120,98,70,.24);border-radius:10px;',
-      formatter:p=>p.data&&p.data.id?('<div style="display:flex;gap:8px;align-items:center">'
-        +'<img src="'+spotThumbURL(p.data.id)+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none" onerror="this.style.display=\'none\'">'
-        +'<div><b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情</div></div>'):(p.name||'')},
+      formatter:p=>{
+        if(!(p.data&&p.data.id))return p.name||'';
+        /* 缩略图只走本地图库；缺图时直接显示分级占位图标，不留白 */
+        const th=spotThumbURL(p.data.id);
+        const ph='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="104" height="104" viewBox="0 0 104 104">'
+          +'<rect width="104" height="104" rx="16" fill="#ece7dc"/>'
+          +'<rect x="4" y="4" width="96" height="96" rx="13" fill="none" stroke="#a89c85" stroke-opacity=".35" stroke-width="2" stroke-dasharray="7 6"/>'
+          +'<text x="52" y="62" font-size="34" text-anchor="middle">🏛️</text></svg>');
+        return '<div style="display:flex;gap:8px;align-items:center">'
+          +'<img src="'+(th||ph)+'" alt="'+(p.data.name||'')+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none"'
+          +' onerror="this.onerror=null;this.src=\''+ph+'\'">'
+          +'<div><b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情</div></div>';
+      }},
     geo:geoLayers(mode,opts),series});
   /* 缩略图仅用于 tooltip，图标本身是本地 SVG，无需预取 */
   c.on('click',p=>{

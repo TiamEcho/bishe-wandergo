@@ -254,7 +254,9 @@ function srPaint(){
     if(filters)filters.style.display='none';
     if(cnt)cnt.textContent=`「${srState.kw||'全部'}」共 ${rows.length} 个词条`;
     grid.innerHTML=rows.length?rows.map(srTopicCard).join('')
-      :`<div class="sr-empty-box">没有匹配的词条 😢<br><span>试试「海岛」「亲子」「穷游」这类词，或切回「全部」看内容</span></div>`;
+      :(typeof emptyArt==='function'
+        ?emptyArt('没有匹配的词条','试试「海岛」「亲子」「穷游」这类词，或切回「全部」看内容；换个城市试试也可以')
+        :`<div class="sr-empty-box">没有匹配的词条 😢</div>`);
     if(more)more.style.display='none';
     return;
   }
@@ -264,7 +266,9 @@ function srPaint(){
   if(cnt)cnt.textContent=`「${srState.kw||'全部'}」共 ${rows.length} 条内容${spots.length+dests.length?' · 地点 '+(spots.length+dests.length)+' 个':''}`;
   const show=rows.slice(0,srPage*SR_PAGE);
   grid.innerHTML=show.length?show.map(srCard).join('')
-    :`<div class="sr-empty-box">没有匹配的内容 😢<br><span>换个关键词，或把「平台 / 地区 / 时间」筛选放宽试试；也可以直接去 <a href="ai.html?dest=${encodeURIComponent(srState.kw)}">AI 规划</a> 生成一份行程</span></div>`;
+    :(typeof emptyArt==='function'
+      ?emptyArt('没有匹配的内容','换个关键词，或把「平台 / 地区 / 时间」筛选放宽试试；也可以直接去 <a href="ai.html?dest='+encodeURIComponent(srState.kw)+'">AI 规划</a> 生成一份行程')
+      :`<div class="sr-empty-box">没有匹配的内容 😢</div>`);
   if(more)more.style.display=rows.length>show.length?'inline-flex':'none';
   /* 图片兜底：外站封面挂了就用本地景点图顶上，不留白 */
   if(typeof watchImgs==='function')watchImgs(grid);

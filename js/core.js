@@ -511,7 +511,7 @@ function openSpot(id){
   const s=spotById(id);if(!s)return;
   const lit=litSet().has(id);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div class="dhero"><img class="zoomable" src="${IMG(s.id)}" data-key="${s.id}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
+  <div class="dhero"><img class="zoomable" src="${IMG(s.id)}" data-key="${s.id}" data-kind="spot" alt="${s.n}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
     <h3>${s.n} <span class="tagpill ${s.rg}" style="vertical-align:3px">${s.rg==='cn'?'国内':'国外'}</span>${lit?'<span class="tagpill lit">✨ 已点亮</span>':''}</h3>
     <div class="meta"><span>📍 ${s.city}</span><span>${s.tag}</span><span>⭐ ${s.rating}</span></div></div></div>
   <div class="dbody">
@@ -926,6 +926,8 @@ let __imgBusy=0;
 const IMG_CONCURRENCY=3;
 function imgQueuePush(el,url){
   el.dataset.qsrc=url;
+  /* 排队期间 <img> 没有 src 会塌陷：先挂 shimmer 骨架，加载完成由 load 捕获撤掉 */
+  imgSkeletonOn(el);
   __imgQueue.push(el);
   imgQueuePump();
 }
@@ -1039,7 +1041,13 @@ function watchImgs(root){
         /* 关键：不保留原始 src 让浏览器并发抢，改由队列限流后再赋 */
         imgQueuePush(el,el.getAttribute('src'));
         el.removeAttribute('src');
-      }else el.addEventListener('error',()=>el.classList.add('img-fail'),{once:true});
+      }else{
+        /* 本地/静态图（img/spots、img/shots 等）：失败也走分级占位图，
+         * 否则 .img-fail 只换底色，尺寸小的缩略图会留一块空灰块 */
+        el.addEventListener('error',()=>imgPlaceholder(el));
+        /* 本地/静态图还在下载时也显示骨架，避免闪白 */
+        if(!el.complete)imgSkeletonOn(el);
+      }
     }
   });
 }
@@ -1048,22 +1056,81 @@ function watchImgs(root){
  * 任何一张图最终取不到都换成内联 SVG 占位图：不依赖网络、不会二次失败，
  * 用户看到的是统一风格的空图块，而不是浏览器裂图图标。
  * 注意 imgFallback 已经处理了「降级链」；这里只在降级链也失败（img-fail）时兜底。 */
-const IMG_PLACEHOLDER='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">'
-  +'<rect width="640" height="480" fill="#ece7dc"/>'
-  +'<path d="M0 372l150-118 108 84 96-72 150 118v96H0z" fill="#d8d0c0"/>'
-  +'<circle cx="492" cy="132" r="38" fill="#e4dcc9"/>'
-  +'<text x="320" y="256" font-size="26" fill="#a89c85" text-anchor="middle" font-family="sans-serif">图片加载失败</text>'
-  +'</svg>');
+/* 按图片类型分级：景点 / 餐饮 / 酒店 / 城市各用一套图标和文案，
+ * 不再所有失败图都显示同一张「图片加载失败」通用占位图。 */
+const IMG_KINDS={
+  spot:{icon:'🏛️',text:'景点图暂缺',bg:'#ece7dc',fg:'#a89c85'},
+  food:{icon:'🍴',text:'美食图暂缺',bg:'#f3e8dc',fg:'#b08a63'},
+  hotel:{icon:'🏨',text:'酒店图暂缺',bg:'#e6ece6',fg:'#8a9c88'},
+  city:{icon:'🏙️',text:'城市图暂缺',bg:'#e4e9f0',fg:'#8a97ab'}
+};
+function imgKindOf(el){
+  const explicit=el&&el.dataset&&el.dataset.kind;
+  if(explicit&&IMG_KINDS[explicit])return explicit;
+  const s=[el&&el.dataset&&el.dataset.key,el&&el.alt,el&&el.title].filter(Boolean).join(' ');
+  if(/餐|美食|food|eat|restaurant|咖啡|茶|bar/i.test(s))return 'food';
+  if(/酒店|民宿|住宿|hotel|stay|room|inn/i.test(s))return 'hotel';
+  if(/城市|city|目的地|dest/i.test(s))return 'city';
+  return 'spot';
+}
+function imgPlaceholderSvg(kind){
+  const k=IMG_KINDS[kind]||IMG_KINDS.spot;
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">'
+    +'<rect width="640" height="480" fill="'+k.bg+'"/>'
+    +'<rect x="24" y="24" width="592" height="432" rx="18" fill="none" stroke="'+k.fg+'" stroke-opacity=".35" stroke-width="2" stroke-dasharray="9 7"/>'
+    +'<text x="320" y="248" font-size="76" text-anchor="middle">'+k.icon+'</text>'
+    +'<text x="320" y="306" font-size="26" fill="'+k.fg+'" text-anchor="middle" font-family="sans-serif">'+k.text+'</text>'
+    +'</svg>');
+}
+/* 兼容旧调用：无 kind 时按 alt/data-key 推断 */
 function imgPlaceholder(el){
   if(!el||el.__phDone)return;
   el.__phDone=1;
-  el.classList.remove('img-fail');
+  const kind=imgKindOf(el);
+  el.classList.remove('img-fail','img-skel');
   el.classList.add('img-ph');
+  el.dataset.imgKind=kind;
   el.removeAttribute('srcset');
   el.removeAttribute('data-src');
-  el.src=IMG_PLACEHOLDER;
+  el.src=imgPlaceholderSvg(kind);
 }
+/* ================= 加载中：骨架屏 =================
+ * watchImg / watchImgs 会把图片的 src 推迟到队列里再赋，
+ * 空 src 的 <img> 会塌成 0 高，这里补一个 shimmer 占位，图到了再撤掉。 */
+function imgSkeletonOn(el){
+  if(!el||el.classList.contains('img-ph'))return;
+  el.classList.add('img-skel');
+}
+document.addEventListener('load',e=>{
+  const el=e.target;
+  if(el&&el.tagName==='IMG')el.classList.remove('img-skel');
+},true);
+/* 兜住所有渲染路径：新增或改 src 时只要还没加载完就挂骨架，
+ * 加载完成由上面的 load 捕获撤掉，失败则转成分级占位图（imgPlaceholder 也会撤掉）。
+ * 只监听 src 属性：旧属性监听（未过滤）会把任何 class / style 改动都当成「重新加载」，
+ * 从而清掉 __phDone 并给已经失败的图重新挂骨架，兜底占位图会被反复重绘。 */
+const __skelSeen=new WeakSet();
+new MutationObserver(muts=>{
+  muts.forEach(m=>{
+    const t=m.target;
+    if(m.type==='attributes'&&t.tagName==='IMG'){
+      t.__phDone=0;
+      if(!t.complete&&t.getAttribute('src'))imgSkeletonOn(t);
+      return;
+    }
+    m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      const list=n.tagName==='IMG'?[n]:n.querySelectorAll('img');
+      list.forEach(el=>{
+        if(el.complete||el.classList.contains('img-ph'))return;
+        if(__skelSeen.has(el)&&el.getAttribute('src')===el.dataset.skelSrc)return;
+        __skelSeen.add(el);el.dataset.skelSrc=el.getAttribute('src')||'';
+        imgSkeletonOn(el);
+      });
+    });
+  });
+}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
 document.addEventListener('error',e=>{
   const el=e.target;
   if(!el||el.tagName!=='IMG')return;
@@ -1085,6 +1152,19 @@ document.addEventListener('DOMContentLoaded',()=>{
     }));
   }).observe(document.body,{childList:true,subtree:true});
 });
+/* 数据为空：统一空状态插画 + 引导文案（搜索 / 列表 / 地图共用） */
+function emptyArt(title,desc){
+  return '<div class="empty-art">'
+    +'<svg viewBox="0 0 132 96" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    +'<rect x="10" y="16" width="112" height="64" rx="8" fill="#efe9db" stroke="#c9b79a" stroke-width="2"/>'
+    +'<path d="M10 66l30-24 22 17 18-13 32 25" fill="#dcd2be"/>'
+    +'<circle cx="92" cy="34" r="9" fill="#e8d9a8" stroke="#c9b79a" stroke-width="1.6"/>'
+    +'<circle cx="66" cy="48" r="18" fill="none" stroke="#b9a888" stroke-width="2.6" stroke-dasharray="6 5"/>'
+    +'<path d="M79 61l14 14" stroke="#b9a888" stroke-width="3.4" stroke-linecap="round"/>'
+    +'</svg>'
+    +'<b>'+(title||'这里还没有内容')+'</b>'
+    +'<span>'+(desc||'换个城市试试，或放宽筛选条件')+'</span></div>';
+}
 /* 挂监听前就已经加载失败的图（首屏直出、走了缓存）：补一次检查 */
 function sweepBrokenImgs(root){
   (root||document).querySelectorAll('img').forEach(el=>{
