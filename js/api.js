@@ -61,6 +61,17 @@ const WGOAPI=(()=>{
   const status=()=>backendUp;
   return {
     req,status,base:BASE,
+    /* 跨域互通自检：GitHub Pages 页面 → Render 后端。
+     * 浏览器控制台执行 WGOAPI.diag() 即可看到 BASE、健康检查结果和 CORS 结论 */
+    async diag(){
+      const out={base:BASE,origin:location.origin,axios:!!ax,online:null,health:null,error:''};
+      try{
+        const r=await req('/api/health',{},15000);
+        out.online=!!r;out.health=r;
+        if(!r&&!ax)out.error='axios 未加载，回退 fetch';
+      }catch(e){out.error=String(e&&e.message||e)}
+      return out;
+    },
     auth(mode,body){return req('/api/user/'+(mode==='login'?'login':'register'),{method:'POST',body:{username:body.nick,password:body.pwd}})},
     /* 协同过滤推荐：后端优先，离线时返回 null 由前端本地算法兜底 */
     recommend(n=8){return req('/api/recommend?nick='+encodeURIComponent(curNick())+'&n='+n)},
