@@ -52,7 +52,7 @@ function classify(typeStr, fallback) {
 
 /* 单页请求：返回 {pois, count}，失败返回 {pois:[], count:0}（不影响其他组） */
 async function fetchPage(keywords, city, page) {
-  const j = await amap.call('/place/text', {
+  const j = await amap.call('/v3/place/text', {
     keywords,
     city,
     citylimit: 'true',

@@ -110,10 +110,12 @@ async function searchAround(lng, lat, types, keyword, radius = 500, limit = 8) {
   }).filter(x => x.name);
 }
 
-/* 城市级 POI 检索（P0-2）：关键词检索 /place/text，用于批量补冷门城市的
- * 餐饮 / 购物 / 打卡点。extensions=all 才会返回 rating 与 type */
+/* 城市级 POI 检索（P0-2）：关键词检索 /v3/place/text，用于批量补冷门城市的
+ * 餐饮 / 购物 / 打卡点。extensions=all 才会返回 rating 与 type
+ * 注意必须带 /v3 版本段：高德对无版本号的 /place/text 一律返回
+ * 10002 SERVICE_NOT_AVAILABLE，看起来像 Key 被禁用，其实是路径不对。 */
 async function searchCity(city, keywords, limit = 25, page = 1) {
-  const j = await call('/place/text', {
+  const j = await call('/v3/place/text', {
     keywords,
     city,
     citylimit: 'true',
