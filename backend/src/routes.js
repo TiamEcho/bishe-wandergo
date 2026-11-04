@@ -585,10 +585,11 @@ router.get('/spot/city', async (req, res) => {
       force: req.query.force === '1' || req.query.force === 'true'
     });
     /* 404 表示「确实没有这条数据」，前端据此展示友好提示而不是「请求失败」 */
-    res.status(out.ok ? 200 : 404).json(out);
+    /* spots 是 places 的别名：前端 ai.js 的 matchPlanRemote 读的是 r.spots */
+    res.status(out.ok ? 200 : 404).json({ ...out, spots: out.places || [] });
   } catch (e) {
     console.error('[spot/city]', e);
-    res.status(500).json({ ok: false, message: '该城市暂无数据', error: String(e.message || e), places: [] });
+    res.status(500).json({ ok: false, message: '该城市暂无数据', error: String(e.message || e), places: [], spots: [] });
   }
 });
 

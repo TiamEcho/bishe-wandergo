@@ -87,8 +87,10 @@ function toPlace(poi, category) {
   if (!name) return null;
   const biz = poi.biz_ext || {};
   const typeStr = str(poi.type);
+  const cat = classify(typeStr, category);
   return {
     id: 'am_' + (str(poi.id) || name),
+    spot_key: str(poi.id) || '',
     name,
     address: str(poi.address),
     city: str(poi.cityname),
@@ -100,7 +102,9 @@ function toPlace(poi, category) {
     hours: str(biz.opentime || biz.open_time),
     tel: str(poi.tel),
     type: typeStr,
-    category: classify(typeStr, category),
+    poi_type: cat,
+    tags: typeStr.split(';').filter(Boolean).pop() || '',
+    category: cat,
     source: 'amap'
   };
 }
@@ -281,9 +285,13 @@ async function ensureCitySpots(city, opts = {}) {
 /* 库里的一行 → 与 searchCitySpots 相同形状 */
 function rowToPlace(row) {
   return {
+    spot_key: row.spot_key || '',
     name: row.name,
+    city: row.city || '',
     lng: Number(row.lng) || 0,
     lat: Number(row.lat) || 0,
+    poi_type: row.poi_type || '景点',
+    tags: row.tags || '',
     category: row.poi_type || '景点',
     rating: Number(row.rating) || 0,
     heat: Number(row.heat) || 0,
