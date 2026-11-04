@@ -695,6 +695,11 @@ function assertUniqueDays(plan){
 async function fetchRemotePlan(city,days,want){
   if(typeof WGOAPI==='undefined'||!WGOAPI.planRoute)return null;
   try{
+    /* 冷启动场景先探活：实例未醒就直接走本地兜底，别让用户干等 55 秒 */
+    if(WGOAPI.warm&&WGOAPI.status()!==true&&backendCold===false){
+      warmBackend();   /* 后台继续唤醒，醒了下一轮规划就能用上后端数据 */
+      return null;
+    }
     const r=await WGOAPI.planRoute(city,days,want);
     return (r&&r.ok&&Array.isArray(r.plan)&&r.plan.length)?r:null;
   }catch(_){return null}
@@ -1000,6 +1005,31 @@ function planMainLeg(km,traffic,pref){
  * 必须在模块作用域——runAI 里赋值，finishPlan 里读取；
  * 写在 runAI 内部就变成局部变量，finishPlan 会直接 ReferenceError */
 let backendCold=null,waken=0;
+/* 后端连不上时的统一提示条：一直显示到探活成功（或本次规划结束） */
+function wakeTip(show,sec){
+  let el=document.getElementById('wakeTip');
+  if(!show){if(el)el.classList.remove('on');return}
+  if(!el){
+    el=document.createElement('div');
+    el.id='wakeTip';el.className='wake-tip';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<span class="wt-dot"></span><b>正在唤醒服务中…</b>'
+    +'<span class="wt-sub">后端实例休眠时首次访问需 30–50 秒'+(sec?'，已等待 '+sec+' 秒':'')
+    +'；可先用本地数据浏览，数据稍后自动同步</span>';
+  el.classList.add('on');
+}
+/* 探活 + 轮询：后端已热时第一次 ping 秒回，不打扰用户；未醒则显示唤醒提示并每 3 秒重试 */
+function warmBackend(){
+  if(typeof WGOAPI==='undefined'||!WGOAPI.warm)return Promise.resolve(null);
+  if(WGOAPI.status()===true)return Promise.resolve(true);
+  return WGOAPI.warm({max:120000,onWait:sec=>{backendCold=false;waken=sec;wakeTip(true,sec)}})
+    .then(r=>{
+      backendCold=!!r;
+      if(r){wakeTip(false);toast('✅ 后端服务已唤醒，正在同步线上数据…')}
+      return r;
+    });
+}
 function runAI(){
   const f=readForm();
   if(!f.from)return toast('请先填写出发地（起点）📍');
@@ -1019,17 +1049,12 @@ function runAI(){
   let left=Math.round(total/1000);
   const TIPS=['正在解析你的出行需求…','正在聚合全网真实攻略…','正在清洗数据、剔除广告…','正在模块化生成方案…'];
   if(tip)tip.textContent='AI 正在思考：'+TIPS[0]+' · 约 '+left+' 秒';
-  /* 探活：Render 免费实例冷启动要 30–50 秒，先把「正在唤醒后端」写进提示，
-   * 避免用户以为页面卡死。后端已热时这次请求 1 秒内返回，提示不闪 */
-  const probe=(typeof WGOAPI!=='undefined'&&WGOAPI.ping)?WGOAPI.ping():Promise.resolve({ok:true});
-  /* backendCold / waken 在模块作用域声明，这里只做赋值 */
+  /* 探活：Render 免费实例冷启动要 30–50 秒，未就绪时页面右下角显示
+   * 「正在唤醒服务中…」并每 3 秒轮询重试；后端已热时一次 ping 秒回，提示不闪 */
   backendCold=null;waken=0;
-  const tw=setInterval(()=>{
-    waken++;
-    if(tip&&backendCold===false)tip.textContent='后端服务休眠中，正在唤醒（约 30–50 秒）…第 '+waken+' 秒';
-  },1000);
-  probe.then(r=>{backendCold=!!r;clearInterval(tw);
-    if(!backendCold&&tip)tip.textContent='后端正在冷启动，先用本地算法生成行程…'});
+  warmBackend().then(ok=>{
+    if(!ok&&tip)tip.textContent='后端暂未唤醒，先用本地算法生成行程…';
+  });
   const t2=setInterval(()=>{
     left--;const idx=Math.min(3,Math.floor((total-left*1000)/seg));
     if(tip&&backendCold!==false){if(left>0)tip.textContent='AI 正在思考：'+TIPS[idx]+' · 约 '+left+' 秒';else tip.textContent='马上完成，正在排版模块…'}

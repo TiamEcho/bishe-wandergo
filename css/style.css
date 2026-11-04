@@ -347,6 +347,30 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .g-hint{position:absolute;bottom:0;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,.62);background:rgba(9,16,29,.55);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:4px 12px;backdrop-filter:blur(4px);pointer-events:none;white-space:nowrap;z-index:3}
 .globe-fallback{display:none;position:relative;place-items:center;width:100%;height:100%}
 .globe-fallback.on{display:grid}
+/* 3D 地球加载骨架：three.js 从 CDN 拉取期间先显示一个呼吸圆环 + 文案，
+ * 避免用户对着空画布以为页面挂了；地球初始化完成或失败回退时由 globe.js 移除 */
+.globe-skel{position:absolute;inset:0;display:grid;place-items:center;gap:12px;z-index:2;pointer-events:none}
+.globe-skel .gs-ring{width:96px;height:96px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,rgba(231,199,109,.32),rgba(90,130,190,.12) 60%,transparent 72%);
+  border:1px solid rgba(231,199,109,.35);
+  box-shadow:0 0 34px rgba(231,199,109,.22),inset 0 0 26px rgba(120,170,230,.18);
+  animation:gsPulse 1.8s ease-in-out infinite}
+.globe-skel .gs-txt{font-size:11.5px;color:var(--muted);letter-spacing:.06em;text-align:center}
+.globe-skel .gs-txt b{display:block;font-size:13px;color:var(--gold);font-weight:800;margin-bottom:2px}
+.globe-skel.off{opacity:0;transition:opacity .35s}
+@keyframes gsPulse{0%,100%{transform:scale(.94);opacity:.7}50%{transform:scale(1.04);opacity:1}}
+/* 冷启动唤醒提示条（ai.js / search.js 共用）：固定在右下角，不遮挡内容 */
+.wake-tip{position:fixed;right:20px;bottom:24px;z-index:900;max-width:340px;
+  display:none;align-items:flex-start;gap:9px;padding:12px 15px;
+  background:rgba(11,18,32,.95);border:1px solid var(--line-gold);border-radius:13px;
+  box-shadow:0 16px 40px rgba(0,0,0,.5);font-size:12.5px;color:var(--ink-2);line-height:1.55}
+.wake-tip.on{display:flex}
+.wake-tip b{display:block;color:var(--gold);font-size:13px;margin-bottom:1px}
+.wake-tip .wt-sub{color:var(--muted);font-size:11.5px}
+.wake-tip .wt-dot{flex:none;width:10px;height:10px;margin-top:5px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 0 0 rgba(231,199,109,.55);animation:wtDot 1.5s ease-out infinite}
+@keyframes wtDot{0%{box-shadow:0 0 0 0 rgba(231,199,109,.55)}70%{box-shadow:0 0 0 9px rgba(231,199,109,0)}100%{box-shadow:0 0 0 0 rgba(231,199,109,0)}}
+@media(max-width:640px){.wake-tip{left:12px;right:12px;bottom:12px;max-width:none}}
 /* 地球标记点击弹窗 */
 .g-pop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.93);width:236px;background:rgba(11,18,32,.95);border:1px solid var(--line-gold);border-radius:14px;padding:14px 16px 13px;opacity:0;visibility:hidden;transition:.2s;z-index:4;box-shadow:0 18px 44px rgba(0,0,0,.55)}
 .g-pop.on{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1)}

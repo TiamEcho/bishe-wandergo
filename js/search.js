@@ -14,10 +14,32 @@ const SR_API=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://
 let srAi=null;      // 最近一次 /api/search 返回的实体（地名/美食/商圈）与统计
 
 /* 调用 GET /api/search，成功则用返回结果替换卡片池 */
+/* 搜索页的唤醒提示条：与 ai.js 的 wakeTip 同一套样式，这里单独实现避免跨文件依赖 */
+function srWakeTip(show,sec){
+  let el=document.getElementById('srWakeTip');
+  if(!show){if(el)el.classList.remove('on');return}
+  if(!el){
+    el=document.createElement('div');
+    el.id='srWakeTip';el.className='wake-tip';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<span class="wt-dot"></span><b>正在唤醒服务中…</b>'
+    +'<span class="wt-sub">后端休眠时首次搜索需 30–50 秒'+(sec?'，已等待 '+sec+' 秒':'')
+    +'；本地结果已先展示，服务醒来后自动补充线上帖子</span>';
+  el.classList.add('on');
+}
 async function srSearchApi(kw){
   try{
+    /* 冷启动：先探活，实例未醒就显示唤醒提示并每 3 秒重试（最多 2 分钟），
+     * 醒来的那一刻再发起正式搜索；本地池已经在页面上，用户不会看到空白 */
+    if(typeof WGOAPI!=='undefined'&&WGOAPI.warm&&WGOAPI.status()!==true){
+      const ok=await WGOAPI.warm({max:120000,onWait:sec=>srWakeTip(true,sec)});
+      srWakeTip(false);
+      if(!ok)return null;
+    }
     const ctl=new AbortController();
-    const timer=setTimeout(()=>ctl.abort(),5000);
+    /* 与 api.js 的 T_REQ 对齐：30 秒 */
+    const timer=setTimeout(()=>ctl.abort(),30000);
     const r=await fetch(`${SR_API}/api/search?q=${encodeURIComponent(kw||'')}&limit=80`,{signal:ctl.signal});
     clearTimeout(timer);
     if(!r.ok)return null;
@@ -33,6 +55,7 @@ async function srSearchApi(kw){
     srPage=1;srPaint();
     return d;
   }catch(e){return null}
+  finally{srWakeTip(false)}
 }
 
 function srQ(){try{return WGO.q('kw')||''}catch(e){return''}}

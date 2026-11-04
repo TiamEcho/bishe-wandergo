@@ -24,11 +24,14 @@ const WGOAPI=(()=>{
     :/\.onrender\.com$/i.test(_host)?RENDER_BACKEND
     :(location.protocol==='https:'?location.origin:location.protocol+'//'+_host+':8080');
   const BASE=localStorage.getItem('wgo_api')||_auto;
+  /* 冷启动超时约定（Render 免费实例唤醒要 30–50 秒）：
+   * 请求 30 秒、行程规划 55 秒；唤醒状态由 WGOAPI.warm() 统一探活 + 轮询 */
+  const T_REQ=30000,T_PLAN=55000;
   let backendUp=null; // null=未知 true=在线 false=离线
   /* Axios 实例（CDN 加载失败时回退原生 fetch，保证离线可用） */
   /* 默认超时 30 秒：Render 免费实例冷启动要 30–50 秒，1.8 秒会被前端自己掐断，
    * 表现为「一点就失败」。常规接口仍单独给更短超时，见下方各方法的第三个参数 */
-  const ax=window.axios?window.axios.create({baseURL:BASE,timeout:30000}):null;
+  const ax=window.axios?window.axios.create({baseURL:BASE,timeout:T_REQ}):null;
   /* 当前登录用户（前台走 core.js 的 user；管理端走 localStorage 的 wgo_token） */
   const curNick=()=>(typeof user!=='undefined'&&user&&user.nick)?user.nick:(localStorage.getItem('wgo_nick')||'游客');
   const curToken=()=>{
@@ -36,10 +39,10 @@ const WGOAPI=(()=>{
     return localStorage.getItem('wgo_token')||null;
   };
 
-  /* 显式超时优先，未传时用合理默认值。
-   * 原来默认 1.8 秒，会把 Render 免费实例 30–50 秒的冷启动直接掐断，表现为「一点就失败」 */
+  /* 显式超时优先，未传时统一 30 秒（T_REQ）。
+   * 原来短超时会把 Render 免费实例 30–50 秒的冷启动直接掐断，表现为「一点就失败」 */
   async function req(path,opts={},timeout){
-    const ms=timeout||(opts.method&&opts.method!=='GET'?30000:8000);
+    const ms=timeout||T_REQ;
     const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
     const tk=curToken();if(tk)headers['Authorization']='Bearer '+tk;
     try{
@@ -60,7 +63,7 @@ const WGOAPI=(()=>{
   }
   const status=()=>backendUp;
   return {
-    req,status,base:BASE,
+    req,status,base:BASE,timeout:T_REQ,planTimeout:T_PLAN,
     /* 跨域互通自检：GitHub Pages 页面 → Render 后端。
      * 浏览器控制台执行 WGOAPI.diag() 即可看到 BASE、健康检查结果和 CORS 结论 */
     async diag(){
@@ -76,9 +79,9 @@ const WGOAPI=(()=>{
     /* 协同过滤推荐：后端优先，离线时返回 null 由前端本地算法兜底 */
     recommend(n=8){return req('/api/recommend?nick='+encodeURIComponent(curNick())+'&n='+n)},
     /* 打卡上报数据库（成功与否都不阻塞本地保存） */
-    pushCheckin(rec){return req('/api/checkin/add',{method:'POST',body:rec},1500)},
+    pushCheckin(rec){return req('/api/checkin/add',{method:'POST',body:rec})},
     /* 评分上报：写入 MySQL 评分矩阵，反哺协同过滤 */
-    rate(spotId,score){return req('/api/rating/add',{method:'POST',body:{nick:curNick(),spotId,score}},1500)},
+    rate(spotId,score){return req('/api/rating/add',{method:'POST',body:{nick:curNick(),spotId,score}})},
     spots(){return req('/api/spot/list')},
     rank(scope,city){return req('/api/rank?scope='+scope+'&city='+encodeURIComponent(city||''))},
     /* 社区互动 */
@@ -125,9 +128,25 @@ const WGOAPI=(()=>{
     analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)},
     /* 行程规划：AI 出景点 → 去重 → 扇形分区 → 周边餐饮住宿（失败返回 null，前端走本地算法） */
     /* 要等 PG 冷启动 + 模型出点位，放宽到 55 秒；超时前端仍会走本地算法兜底 */
-    planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},55000)},
-    /* 探活：先打一次健康检查判断后端是否已唤醒（不参与业务，失败返回 null） */
-    ping(){return req('/api/health',{},20000)},
+    planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},T_PLAN)},
+    /* 探活：GET /api/health 只判断「后端进程是否已醒」，不做业务（失败返回 null）。
+     * 休眠中的实例会挂起不响应，所以 ping 给满 30 秒；warm() 负责外层轮询 */
+    ping(){return req('/api/health?ping=1',{},T_REQ)},
+    /* 冷启动探活 + 轮询：先用 ping 唤醒，未就绪就每 3 秒重试，直到连通或超时。
+     * onWait(已等秒数) 让调用方刷新「正在唤醒服务中…」提示文案 */
+    async warm(opt){
+      opt=opt||{};
+      const max=opt.max||120000,step=3000,t0=Date.now();
+      let waited=0;
+      while(Date.now()-t0<=max){
+        const r=await ping();
+        if(r&&r.ok!==false){backendUp=true;return r}
+        waited=Math.round((Date.now()-t0)/1000);
+        if(typeof opt.onWait==='function')opt.onWait(waited);
+        await new Promise(res2=>setTimeout(res2,step));
+      }
+      backendUp=false;return null;
+    },
     /* 单城景点（含 poi_type 四分类）：前端静态库没收录的冷门城市靠它兜底 */
     spotCity(city){return req('/api/spot/city?city='+encodeURIComponent(city),{},20000)}
   };

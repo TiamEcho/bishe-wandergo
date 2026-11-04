@@ -8,8 +8,17 @@
         stage=document.getElementById('globeSec'),
         pop=document.getElementById('gPop'),
         hint=document.getElementById('globeHint'),
-        fb=document.getElementById('globeFallback');
+        fb=document.getElementById('globeFallback'),
+        skel=document.getElementById('globeSkel');
   if(!cv||!stage) return;
+
+  /* 首屏骨架屏：加载引擎期间显示，地球首帧渲染完成或回退静态地球时淡出移除 */
+  let skelGone=false;
+  function hideSkel(){
+    if(skelGone||!skel)return;skelGone=true;
+    skel.classList.add('off');
+    setTimeout(()=>skel.remove(),380);
+  }
 
   const CDNS=[
     'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
@@ -31,6 +40,7 @@
     cv.style.display='none';
     if(fb)fb.classList.add('on');
     if(hint)hint.textContent='3D 资源加载失败，已切换为静态地球';
+    hideSkel();
   }
 
   function init(){
@@ -225,6 +235,7 @@
       /* 飞线呼吸 */
       arcs.forEach((l,i)=>{l.material.opacity=.32+Math.sin(t*1.6+i*.9)*.18});
       renderer.render(scene,cam);
+      hideSkel();                          /* 引擎就绪并进入渲染循环，撤掉加载提示 */
     })();
 
     /* ---------- 工具函数 ---------- */
