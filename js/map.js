@@ -123,6 +123,16 @@ function spotPin(id,lit){
 function spotThumbURL(id){
   try{return (typeof localImg==='function'&&localImg(id))||''}catch(e){return ''}
 }
+/* 缩略图占位：tooltip 里的 <img> 不在 document 树里，拿不到 core 的全局兜底，
+ * 所以这里直接按时段类型（景点/餐饮/酒店/城市）取分级占位图，而不是统一一张。 */
+function spotThumbPH(id){
+  if(typeof imgPlaceholderSvg!=='function')return '';
+  const s=(typeof spotById==='function'&&spotById(id))||{};
+  const kind=(typeof imgKindOf==='function')
+    ?imgKindOf({dataset:{key:id},alt:s.n||s.city||''})
+    :'spot';
+  return imgPlaceholderSvg(kind);
+}
 /* 标点图标是纯本地 SVG，无需异步预取与刷新 */
 function prefetchThumbs(){}
 function refreshSpotPins(){}
@@ -351,16 +361,12 @@ function createWanderMap(elId,mode,opts){
       extraCssText:'box-shadow:0 8px 24px rgba(120,98,70,.24);border-radius:10px;',
       formatter:p=>{
         if(!(p.data&&p.data.id))return p.name||'';
-        /* 缩略图只走本地图库；缺图时直接显示分级占位图标，不留白 */
+        /* 缩略图只走本地图库；缺图时按类型显示分级占位图标，不留白 */
         const th=spotThumbURL(p.data.id);
-        const ph='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="104" height="104" viewBox="0 0 104 104">'
-          +'<rect width="104" height="104" rx="16" fill="#ece7dc"/>'
-          +'<rect x="4" y="4" width="96" height="96" rx="13" fill="none" stroke="#a89c85" stroke-opacity=".35" stroke-width="2" stroke-dasharray="7 6"/>'
-          +'<text x="52" y="62" font-size="34" text-anchor="middle">🏛️</text></svg>');
+        const ph=spotThumbPH(p.data.id);
         return '<div style="display:flex;gap:8px;align-items:center">'
           +'<img src="'+(th||ph)+'" alt="'+(p.data.name||'')+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none"'
-          +' onerror="this.onerror=null;this.src=\''+ph+'\'">'
+          +(th&&ph?' onerror="this.onerror=null;this.src=\''+ph+'\'"':'')+'>'
           +'<div><b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情</div></div>';
       }},
     geo:geoLayers(mode,opts),series});

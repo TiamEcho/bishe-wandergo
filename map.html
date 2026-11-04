@@ -48,8 +48,8 @@
 <script src="geo/manifest.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1144"></script>
-<script src="js/core.js?v=1148"></script>
-<script src="js/map.js?v=1144"></script>
+<script src="js/core.js?v=1149"></script>
+<script src="js/map.js?v=1145"></script>
 <script>
 let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
@@ -105,7 +105,10 @@ loadECharts(ok=>{
     $('#mapFallback').style.display='grid';
     $('#mapFallback').innerHTML='<div style="grid-column:1/-1;padding:24px;text-align:center;color:#c9553f;font-size:13px;line-height:1.9">'
       +'<b>地图初始化失败</b><br>'+String(e&&e.message||e)
-      +'<br><span style="color:#8a7a63;font-size:12px">请按 F12 打开控制台查看详细堆栈</span></div>';
+      +'<br><span style="color:#8a7a63;font-size:12px">请按 F12 打开控制台查看详细堆栈</span></div>'
+      +'<div style="grid-column:1/-1">'+(typeof emptyArt==='function'
+        ?emptyArt('这张手账地图暂时没画出来','换个城市看看，或刷新页面重试；标点数据不会丢失')
+        :'')+'</div>';
     toast('地图初始化失败：'+(e&&e.message||e),'err');
     return;
   }

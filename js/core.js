@@ -1073,6 +1073,9 @@ const IMG_KINDS={
 function imgKindOf(el){
   const explicit=el&&el.dataset&&el.dataset.kind;
   if(explicit&&IMG_KINDS[explicit])return explicit;
+  /* ai.js 的行程条目用 data-kind="eat|hotel" 标记类型 */
+  if(explicit==='eat')return 'food';
+  if(explicit==='hotel')return 'hotel';
   const s=[el&&el.dataset&&el.dataset.key,el&&el.alt,el&&el.title].filter(Boolean).join(' ');
   if(/餐|美食|food|eat|restaurant|咖啡|茶|bar/i.test(s))return 'food';
   if(/酒店|民宿|住宿|hotel|stay|room|inn/i.test(s))return 'hotel';
