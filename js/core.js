@@ -558,7 +558,13 @@ function doSearch(raw){
   if(shops.length)groups.push({icon:'🎨',name:'小众文创店铺',items:shops.map(s=>({icon:'☕',t:hl(s.name,q),sub:`${s.city} · ${s.type} · ${s.hours}`,run:()=>WGO.go('workbench.html',{shop:s.name})}))});
   const dests=typeof DEST_META!=='undefined'?Object.keys(DEST_META).filter(k=>k.toLowerCase().includes(q)).slice(0,4):[];
   if(dests.length)groups.push({icon:'🤖',name:'AI 行程方案',items:dests.map(k=>({icon:'🧭',t:hl(k,q),sub:(DEST_META[k].mood||'')+' · 点击让 AI 生成行程',run:()=>WGO.go('ai.html',{dest:k})}))});
-  if(!groups.length){R.innerHTML=`<div class="sr-empty">没有找到与「${raw}」相关的内容 😢<br><span>换个词试试，或去社区发布第一条笔记</span></div>`;return}
+  if(!groups.length){
+    /* 与 search.html 结果页共用同一套空状态插画与引导文案 */
+    R.innerHTML=(typeof emptyArt==='function')
+      ?emptyArt('没有找到与「'+raw+'」相关的内容','换个城市或关键词试试，也可以直接去社区发布第一条笔记')
+      :`<div class="sr-empty">没有找到与「${raw}」相关的内容 😢<br><span>换个词试试，或去社区发布第一条笔记</span></div>`;
+    return
+  }
   R.innerHTML=groups.map(g=>`<div class="sr-group"><div class="sr-gtitle">${g.icon} ${g.name}</div>${g.items.map((it,i)=>`<button class="sr-item" data-g="${g.name}" data-i="${i}"><span class="sr-ic">${it.icon}</span><span class="sr-main"><b>${it.t}</b><i>${it.sub||''}</i></span><span class="sr-go">↵</span></button>`).join('')}</div>`).join('');
   $$('.sr-item').forEach(btn=>btn.onclick=()=>{
     const g=groups.find(x=>x.name===btn.dataset.g),it=g.items[+btn.dataset.i];
