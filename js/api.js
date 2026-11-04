@@ -139,7 +139,8 @@ const WGOAPI=(()=>{
       const max=opt.max||120000,step=3000,t0=Date.now();
       let waited=0;
       while(Date.now()-t0<=max){
-        const r=await ping();
+        /* 直接用 req 打探活，不依赖 this——warm 常被解构调用（const {warm}=WGOAPI） */
+        const r=await req('/api/health?ping=1',{},T_REQ);
         if(r&&r.ok!==false){backendUp=true;return r}
         waited=Math.round((Date.now()-t0)/1000);
         if(typeof opt.onWait==='function')opt.onWait(waited);
