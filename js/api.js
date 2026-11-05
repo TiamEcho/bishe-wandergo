@@ -123,7 +123,9 @@ const WGOAPI=(()=>{
     /* 本地 Node 后端健康检查：管理端用它展示数据库真实统计（攻略 / 打卡 / 实体 / 城市） */
     backendHealth(){return req('/api/health',{},3000)},
     /* ---------- AI 智能体悬浮球 ---------- */
-    chat(message,history){return req('/api/chat',{method:'POST',body:{message,history:history||[]}},15000)},
+    chat(message,history,model){return req('/api/chat',{method:'POST',body:{message,history:history||[],model:model||undefined}},15000)},
+    /* 自选 AI 模型：GET /api/models 返回 {default,list:[{id,label,desc}]}，失败返回 null 走内置默认 */
+    models(){return req('/api/models',{},8000)},
     videoList(limit){return req('/api/videos?limit='+(limit||40),{},6000)},
     analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)},
     /* 行程规划：AI 出景点 → 去重 → 扇形分区 → 周边餐饮住宿（失败返回 null，前端走本地算法） */

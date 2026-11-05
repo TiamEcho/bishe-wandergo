@@ -6,13 +6,17 @@ const path = require('path');
 const fs = require('fs');
 const dbx = require('./db');
 const { collectGuide } = require('./collector');
-const { aiStatus, extractEntities, chat } = require('./dots');
+const { aiStatus, extractEntities, chat, modelList } = require('./dots');
 const { localExtract } = require('./extract');
 const { planRoute } = require('./plan');
 const { searchCitySpots, ensureCitySpots } = require('./services/scenicSpotSearch');
 const { recommend } = require('./recommend');
+const linkParse = require('./routes/link-parse');
 
 const router = express.Router();
+
+/* 链接解析（B 站 / 小红书 / 抖音）：独立路由文件，直接挂在 /api 下 */
+router.use('/', linkParse);
 
 /* 攻略 / 打卡 → 前端卡片统一结构（字段与 js/search.js 的 srCard 对齐） */
 function toItem(row, kind) {
@@ -266,6 +270,11 @@ router.post('/collect-guide', async (req, res) => {
  * AI 智能体悬浮球相关接口
  * ========================================================= */
 
+/* ③ GET /api/models —— 自选 AI 模型（前端下拉框数据源） */
+router.get('/models', async (req, res) => {
+  res.json({ ok: true, ...(await modelList()) });
+});
+
 /* ④ POST /api/chat —— 通用对话 */
 router.post('/chat', async (req, res) => {
   try {
@@ -274,7 +283,7 @@ router.post('/chat', async (req, res) => {
     if (!String(message).trim()) {
       return res.status(400).json({ ok: false, message: 'message 不能为空' });
     }
-    const r = await chat(message, history);
+    const r = await chat(message, history, req.body && req.body.model);
     res.json({ ok: true, engine: r.engine, reply: r.reply, model: r.model || null, error: r.error || null });
   } catch (e) {
     console.error('[chat]', e);
