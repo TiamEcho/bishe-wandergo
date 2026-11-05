@@ -95,28 +95,33 @@ async function parseBilibili(rawUrl) {
   const url = pickUrl(rawUrl);
   const id = biliId(url);
   if (!id) return { type: 'bilibili', url, error: '未识别到 BV 号 / av 号' };
-  const q = id.bvid ? `bvid=${id.bvid}` : `aid=${id.aid}`;
-  const j = await getJSON(`https://api.bilibili.com/x/web-interface/view?${q}`, { headers: BILI_HEADERS });
-  if (!j || j.code !== 0 || !j.data) {
-    return { type: 'bilibili', url, error: (j && j.message) || '解析失败' };
+  try {
+    const q = id.bvid ? `bvid=${id.bvid}` : `aid=${id.aid}`;
+    const j = await getJSON(`https://api.bilibili.com/x/web-interface/view?${q}`, { headers: BILI_HEADERS });
+    if (!j || j.code !== 0 || !j.data) {
+      return { type: 'bilibili', url, error: (j && j.message) || '解析失败' };
+    }
+    const d = j.data;
+    let tags = (d.tag || []).map(t => t.tag_name).filter(Boolean);
+    if (!tags.length) tags = await biliTags(d.bvid, d.aid);
+    const subtitle = await biliSubtitle(d.aid, d.cid, d.bvid);
+    return {
+      type: 'bilibili',
+      url,
+      title: d.title || '',
+      desc: d.desc || '',
+      tags,
+      subtitle,
+      /* 附带的展示字段：封面 / 时长 / UP 主 / 播放量 */
+      cover: d.pic || '',
+      duration: d.duration || 0,
+      author: (d.owner && d.owner.name) || '',
+      view: d.stat ? d.stat.view : 0
+    };
+  } catch (e) {
+    /* 机房 IP 访问 B 站接口会被返回风控 HTML，解析失败一律降级，不抛给前端 */
+    return { type: 'bilibili', url, error: '解析失败' };
   }
-  const d = j.data;
-  let tags = (d.tag || []).map(t => t.tag_name).filter(Boolean);
-  if (!tags.length) tags = await biliTags(d.bvid, d.aid);
-  const subtitle = await biliSubtitle(d.aid, d.cid, d.bvid);
-  return {
-    type: 'bilibili',
-    url,
-    title: d.title || '',
-    desc: d.desc || '',
-    tags,
-    subtitle,
-    /* 附带的展示字段：封面 / 时长 / UP 主 / 播放量 */
-    cover: d.pic || '',
-    duration: d.duration || 0,
-    author: (d.owner && d.owner.name) || '',
-    view: d.stat ? d.stat.view : 0
-  };
 }
 
 /* ---------------- 小红书 ----------------
@@ -158,6 +163,15 @@ function xhsFromHtml(html) {
   return { title, content, images: [...new Set(images)] };
 }
 
+/* 风控/登录拦截页：正文只有站内通用文案（「登录」「扫码」「你访问的页面不见了」等），
+ * 不是笔记内容，按失败处理，避免把登录页当成解析成功 */
+const XHS_BLOCKED = /登录后查看|请登录|扫码登录|安全验证|访问异常|你访问的页面不见了|页面不存在|登录小红书/;
+function xhsIsBlocked(html, r) {
+  if (XHS_BLOCKED.test(r.title || '') || XHS_BLOCKED.test(r.content || '')) return true;
+  /* 整页几乎没内容、且命中验证页特征，也按拦截处理 */
+  return html.length < 20000 && /登录|验证/.test(html) && !/noteDetailMap/.test(html);
+}
+
 async function parseXiaohongshu(rawUrl) {
   const url = pickUrl(rawUrl);
   try {
@@ -168,7 +182,7 @@ async function parseXiaohongshu(rawUrl) {
     });
     const r = xhsFromState(html) || xhsFromHtml(html);
     /* 反爬页也会带 og:image（站内默认图），没拿到标题和正文一律按降级处理 */
-    if (r && (r.title || r.content)) {
+    if (r && (r.title || r.content) && !xhsIsBlocked(html, r)) {
       return { type: 'xiaohongshu', url, title: r.title, content: r.content, images: r.images };
     }
     return { type: 'xiaohongshu', url, error: '解析失败' };
