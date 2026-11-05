@@ -116,11 +116,61 @@ function srSpotScore(s,probe){
   }
   return sc;
 }
+/* 拼音首字母：外滩→WT、故宫博物院→GGBWY。
+ * 用 __PYT 逐字取拼音首字母；查不到映射的字跳过（如「·」）。 */
+function srAbbr(name){
+  if(typeof __PYT==='undefined'||!name)return '';
+  return String(name).split('').map(ch=>{
+    const py=__PYT[ch];
+    return py?py.charAt(0).toUpperCase():'';
+  }).join('');
+}
+/* 封面匹配（P0）：按优先级从帖子文本里找到最佳本地封面景点 id。
+ * 1. 精确：景点全名出现在标题/正文/定位里（多个命中取更具体/评分更高的）
+ * 2. 包含：景点名前缀 2-3 字被文本包含（故宫半日游 → 故宫博物院）
+ * 3. 拼音首字母：文本里的连续大写字母段 == 景点名缩写（如帖子写 GGBWY）
+ * 4. 城市/tag 辅助分（只对 1-3 命中者加权，不能单独导致选图）
+ * 返回 null 表示前三层都没命中。 */
+function srMatchSpot(probe,spotId){
+  if(spotId&&(typeof P!=='undefined')&&P[spotId])return {id:spotId,lv:0};
+  const spots=(typeof SPOTS!=='undefined'?SPOTS:[]);
+  const m=(typeof window!=='undefined'&&window.SPOT_IMG)||{};
+  if(!spots.length||!Object.keys(m).length)return null;
+  const txt=String(probe||''),low=txt.toLowerCase();
+  let best=null;
+  spots.forEach(s=>{
+    if(!m[s.id])return;                       /* 只考虑本地有 webp 的景点 */
+    const n=String(s.n||'');
+    let lv=0;
+    if(n&&txt.includes(n))lv=1;               /* 精确：全名出现 */
+    else if(n.length>=2){
+      for(const L of [3,2]){                  /* 包含：前缀命中 */
+        const pre=n.slice(0,L);
+        if(pre.length>=2&&txt.includes(pre)){lv=2;break}
+      }
+    }
+    if(!lv){                                   /* 拼音首字母：匹配文本里的连续字母段 */
+      const ab=srAbbr(n);
+      if(ab&&ab.length>=2&&low!==low.toUpperCase()){
+        const up=txt.toUpperCase();
+        if(new RegExp('(?<![\\p{L}\\p{N}])'+ab+'(?!\\p{L})','u').test(up))lv=3;
+      }
+    }
+    if(!lv)return;
+    /* 同层内的细化排序：名字更长更具体 + 评分更高优先 */
+    const score=lv*1000+(n.length*2)+((s.rating||4)*10)
+      +(s.city&&txt.includes(s.city)?15:0);
+    if(!best||score>best.score)best={id:s.id,lv,score};
+  });
+  return best;
+}
 /* 兜底封面：外站封面被反爬/跨域拦截时，用本地景点图库的图顶上，卡片不留白。
- * 按相关度排序后取前几张，再用帖子 id 哈希轮流选一张：
- * 同一城市的多个帖子不会全挤在同一张图上，但同一条帖子每次刷新是稳定的。 */
+ * 优先级：景点名精确匹配 > 前缀包含匹配 > 拼音首字母 > 按相关度/哈希散选 > 全库散选。 */
 function srFallbackCover(p){
   const probe=(p.title||'')+' '+(p.content||'')+' '+(p.location||'')+' '+(p.topics||'');
+  /* ---- 1-3 级：名字/前缀/拼音首字母直接命中，稳拿该景点封面 ---- */
+  const hit=srMatchSpot(probe,p.spotId);
+  if(hit&&hit.lv<=3)return typeof IMG==='function'?IMG(hit.id,'landscape_4_3'):'';
   let id=p.spotId||'';
   if(!id||typeof P==='undefined'||!P[id]){
     const spots=(typeof SPOTS!=='undefined'?SPOTS:[]);
