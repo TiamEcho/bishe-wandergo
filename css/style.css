@@ -144,6 +144,11 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .ai-close:hover{opacity:1;background:rgba(255,255,255,.2)}
 .ai-vidbtn{margin:10px 16px 0;padding:8px 12px;border-radius:10px;border:1px dashed var(--line-gold);background:var(--glass);color:var(--gold);font-size:12.5px;font-weight:700;cursor:pointer;transition:.2s}
 .ai-vidbtn:hover{background:rgba(255,215,106,.14)}
+/* 自选模型下拉：与上方「选择视频分析」同一行视觉层级，靠右对齐的小控件 */
+.ai-model{display:flex;align-items:center;gap:8px;margin:8px 16px 0;font-size:11.5px;color:var(--muted)}
+.ai-model label{flex:none;font-weight:700}
+.ai-model select{flex:1;min-width:0;padding:6px 8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:11.5px;cursor:pointer;outline:none;transition:.2s}
+.ai-model select:hover,.ai-model select:focus{border-color:var(--line-gold);color:var(--gold)}
 .ai-msgs{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .ai-msg{display:flex;gap:8px;align-items:flex-start}
 .ai-msg.user{flex-direction:row-reverse}

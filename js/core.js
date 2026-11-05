@@ -601,8 +601,33 @@ function initAIChat(){
   const msgs=$('#aiMsgs'), input=$('#aiInput'), sendBtn=$('#aiSend');
   const closeBtn=$('#aiClose'), vidBtn=$('#aiPickVideo');
   const vidModal=$('#aiVidModal'), vidList=$('#aiVidList'), vidClose=$('#aiVidClose');
+  const modelSel=$('#aiModel');
   const WELCOME='你好！我可以帮你分析旅游攻略视频，也可以直接帮你规划行程~ ✨';
   let history=[]; let busy=false;
+
+  /* ---- 自选模型：后端 GET /api/models 拉列表，失败保留「默认模型」一项 ----
+   * 选择结果存 localStorage，刷新后仍然生效；发给 /api/chat 时由后端做白名单校验 */
+  const MODEL_KEY='wgo_ai_model';
+  function loadModels(){
+    if(!modelSel) return;
+    const saved=localStorage.getItem(MODEL_KEY)||'';
+    if(saved) modelSel.dataset.saved=saved;
+    WGOAPI.models().then(r=>{
+      if(!r||!r.ok||!Array.isArray(r.list)||!r.list.length) return;
+      const cur=modelSel.dataset.saved||saved;
+      modelSel.innerHTML='<option value="">默认（'+((r.list.find(m=>m.id===r.default)||{}).label||r.default)+'）</option>'
+        +r.list.map(m=>`<option value="${m.id}" title="${m.desc||''}">${m.label}${m.desc?' · '+m.desc.split(' · ')[0]:''}</option>`).join('');
+      if(cur&&r.list.some(m=>m.id===cur)) modelSel.value=cur;
+    }).catch(()=>{});
+  }
+  if(modelSel){
+    modelSel.onchange=()=>{
+      const v=modelSel.value;
+      v?localStorage.setItem(MODEL_KEY,v):localStorage.removeItem(MODEL_KEY);
+      modelSel.dataset.saved=v;
+    };
+    loadModels();
+  }
 
   /* ---- 消息渲染 ---- */
   function addMsg(role,text,extraHtml){
@@ -669,7 +694,7 @@ function initAIChat(){
     const last=msgs.lastElementChild;
     let reply='抱歉，AI 暂时不可用，请稍后再试。';
     try{
-      const r=await WGOAPI.chat(txt,history);
+      const r=await WGOAPI.chat(txt,history,modelSel?modelSel.value:'');
       if(r&&r.ok&&r.reply){ reply=r.reply; history.push({role:'assistant',content:r.reply}); }
       else if(r&&r.reply){ reply=r.reply; }
     }catch(e){ console.warn(e); }
@@ -804,6 +829,10 @@ function initChrome(){
           <button class="ai-close" id="aiClose" type="button" aria-label="关闭">✕</button>
         </div>
         <button class="ai-vidbtn" id="aiPickVideo" type="button">🎬 选择视频分析</button>
+        <div class="ai-model" id="aiModelWrap">
+          <label for="aiModel">模型</label>
+          <select id="aiModel" aria-label="选择 AI 模型"><option value="">默认模型</option></select>
+        </div>
         <div class="ai-msgs" id="aiMsgs"></div>
         <div class="ai-input-row">
           <input id="aiInput" type="text" placeholder="输入旅行问题，回车发送…" autocomplete="off">

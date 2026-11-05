@@ -10,6 +10,73 @@ const KEY = process.env.DOTS_API_KEY || '';
 const CHAT_PATH = process.env.DOTS_CHAT_PATH || '/chat/completions';
 const TIMEOUT = Number(process.env.DOTS_TIMEOUT || 18000);
 
+/* ================= 可选模型列表（自选 AI 模型） =================
+ * 优先调服务端 /models（OpenAI 兼容协议统一有该接口）拿到真实可用模型；
+ * 拉取失败（无 Key / 网络异常）退回 DOTS_MODELS 环境变量或默认模型，
+ * 保证前端下拉框在任何情况下都有内容可选项 */
+const MODEL_INFO = {
+  'glm-4-flash': { label: 'GLM-4-Flash', desc: '免费 · 速度最快' },
+  'glm-4-air': { label: 'GLM-4-Air', desc: '轻量 · 成本低' },
+  'glm-4-airx': { label: 'GLM-4-AirX', desc: '极速 · 高并发更稳' },
+  'glm-4-long': { label: 'GLM-4-Long', desc: '长文本 · 适合整篇攻略' },
+  'glm-4-plus': { label: 'GLM-4-Plus', desc: '高智能 · 规划质量最好' },
+  'glm-4': { label: 'GLM-4', desc: '通用旗舰版' },
+  'dots3-note-prev': { label: 'Dots3 Note', desc: '默认 · 笔记与攻略理解' }
+};
+
+/* 白名单：远端列表 + 环境变量列表 + 默认模型 */
+let CATALOG = (process.env.DOTS_MODELS || '').split(',').map(s => s.trim()).filter(Boolean);
+if (!CATALOG.length) CATALOG = [MODEL];
+
+let CATALOG_AT = 0;   /* 上次刷新时间，10 分钟内不重复请求远端 */
+let CATALOG_TASK = null;
+
+/* 远端模型列表（带 10 分钟缓存），返回 [{id,label,desc}] */
+function loadCatalog() {
+  const fresh = CATALOG_AT && Date.now() - CATALOG_AT < 10 * 60 * 1000;
+  if (fresh || CATALOG_TASK) return CATALOG_TASK || Promise.resolve(CATALOG);
+  CATALOG_TASK = (async () => {
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 5000);
+      const r = await fetch(`${BASE}/models`, {
+        headers: KEY ? { Authorization: `Bearer ${KEY}` } : {},
+        signal: ctl.signal
+      });
+      clearTimeout(timer);
+      const j = await r.json();
+      const ids = ((j && j.data) || []).map(m => m && m.id).filter(Boolean);
+      if (ids.length) {
+        CATALOG = ids;
+        CATALOG_AT = Date.now();
+      }
+    } catch (e) { /* 保持旧列表 */ }
+    return CATALOG;
+  })().finally(() => { CATALOG_TASK = null; });
+  return CATALOG_TASK;
+}
+
+/* 校验客户端传来的模型名，只允许白名单内的值 */
+function pickModel(m) {
+  const v = String(m || '').trim();
+  return CATALOG.includes(v) ? v : MODEL;
+}
+
+/* 供前端下拉框使用：当前可用模型 + 默认值 */
+async function modelList() {
+  const ids = await loadCatalog();
+  return {
+    default: MODEL,
+    configured: !!KEY,
+    list: ids.map(id => ({
+      id,
+      label: (MODEL_INFO[id] && MODEL_INFO[id].label) || id,
+      desc: (MODEL_INFO[id] && MODEL_INFO[id].desc) || '服务端可用模型'
+    }))
+  };
+}
+
+
 const SYSTEM = `你是旅游攻略信息抽取引擎。请从用户给出的攻略文本中抽取三类实体：
 1) places 地名/景点（如「洱海」「故宫博物院」「伏见稻荷大社」）
 2) foods 美食物产（如「过桥米线」「烤鸭」「鲜花饼」）
@@ -23,8 +90,9 @@ mention 表示该实体在文本中出现的次数（估算即可，最少 1）�
  * @param {string} system 系统提示词
  * @param {string} user   用户内容
  */
-async function chatJson(system, user, timeout) {
+async function chatJson(system, user, timeout, model) {
   if (!KEY) return null;
+  const useModel = pickModel(model);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout || TIMEOUT);
   try {
@@ -32,7 +100,7 @@ async function chatJson(system, user, timeout) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
       body: JSON.stringify({
-        model: MODEL,
+        model: useModel,
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         temperature: 0.6
       }),
@@ -55,8 +123,9 @@ async function chatJson(system, user, timeout) {
  * @param {string} text 攻略正文
  * @param {object} ctx  { city, spotNames, cityNames }
  */
-async function extractEntities(text, ctx = {}) {
+async function extractEntities(text, ctx = {}, model) {
   const cfgOk = !!KEY;
+  const useModel = pickModel(model);
 
   if (cfgOk) {
     try {
@@ -69,7 +138,7 @@ async function extractEntities(text, ctx = {}) {
           Authorization: `Bearer ${KEY}`
         },
         body: JSON.stringify({
-          model: MODEL,
+          model: useModel,
           temperature: 0.1,
           stream: false,
           messages: [
@@ -90,7 +159,7 @@ async function extractEntities(text, ctx = {}) {
       const obj = parseJsonLoose(raw);
       if (!obj) throw new Error('AI 返回不是合法 JSON');
       const norm = normalizeAi(obj, { city: ctx.city, spotNames: ctx.spotNames, cityNames: ctx.cityNames, text });
-      return { engine: 'dots', model: MODEL, ...norm };
+      return { engine: 'dots', model: useModel, ...norm };
     } catch (e) {
       const fb = localExtract(text, ctx);
       return { engine: 'local', fallback: true, error: String(e.message || e), ...fb };
@@ -145,8 +214,9 @@ function localReply(message) {
  * @param {string} message 用户输入
  * @param {Array} history 历史消息 [{role,content}]
  */
-async function chat(message, history = []) {
+async function chat(message, history = [], model) {
   const cfgOk = !!KEY;
+  const useModel = pickModel(model);
   if (cfgOk) {
     try {
       const ctl = new AbortController();
@@ -159,7 +229,7 @@ async function chat(message, history = []) {
       const res = await fetch(`${BASE}${CHAT_PATH}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ model: MODEL, temperature: 0.7, stream: false, messages }),
+        body: JSON.stringify({ model: useModel, temperature: 0.7, stream: false, messages }),
         signal: ctl.signal
       });
       clearTimeout(timer);
@@ -170,7 +240,7 @@ async function chat(message, history = []) {
         || (typeof data?.content === 'string' ? data.content : null)
         || data?.data?.content;
       if (!raw) throw new Error('AI 返回为空');
-      return { engine: 'dots', model: MODEL, reply: String(raw) };
+      return { engine: 'dots', model: useModel, reply: String(raw) };
     } catch (e) {
       return { engine: 'local', fallback: true, error: String(e.message || e), reply: localReply(message) };
     }
@@ -178,4 +248,4 @@ async function chat(message, history = []) {
   return { engine: 'local', configured: false, reply: localReply(message) };
 }
 
-module.exports = { extractEntities, aiStatus, chat, chatJson };
+module.exports = { extractEntities, aiStatus, chat, chatJson, modelList, pickModel };
