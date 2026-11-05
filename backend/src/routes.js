@@ -47,10 +47,10 @@ router.get('/health', async (req, res, next) => {
     /* ?ping=1 为前端冷启动探活专用：只回进程状态，不查数据库（PG 冷连接要多等几秒），
      * 保证实例醒来的瞬间就能返回 */
     if (req.query.ping) {
-      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()) });
+      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()), build: 'f31a6ce' });
     }
     res.json({
-      ok: true, time: dbx.now(), db: dbx.dialect, ai: aiStatus(),
+      ok: true, time: dbx.now(), db: dbx.dialect, build: 'f31a6ce', ai: aiStatus(),
       stats: await dbx.stats()
     });
   } catch (e) { next(e); }
