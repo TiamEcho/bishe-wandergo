@@ -47,10 +47,10 @@ function toItem(row, kind) {
 router.get('/health', async (req, res, next) => {
   try {
     if (req.query.ping) {
-      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()) });
+      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()), build: 'f31a6ce' });
     }
     res.json({
-      ok: true, time: dbx.now(), db: dbx.dialect, ai: aiStatus(),
+      ok: true, time: dbx.now(), db: dbx.dialect, build: 'f31a6ce', ai: aiStatus(),
       stats: await dbx.stats()
     });
   } catch (e) { next(e); }
