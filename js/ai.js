@@ -429,6 +429,16 @@ function pickVlogCards(spotIds,destName,cityName){
     };
   });
 }
+/* 视频卡片模板：整张卡只有一层 <a>（HTML 不允许 a 嵌套 a，嵌套会把一张卡拆成多段） */
+function vlogCardHtml(v,i,delay){
+  return `<a class="vlog-card" href="${v.url}" target="_blank" rel="noopener noreferrer" style="animation-delay:${delay+i*.08}s" onclick="event.stopPropagation()">
+      <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}">
+        <span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
+      <div class="vl-body"><h6>${escHtml(v.t)}</h6>
+        <p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span><span class="vl-up-name">${escHtml(v.up)}</span><em>${escHtml(v.upTag||'')}</em></p>
+        <p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
+    </a>`;
+}
 /* 用「候选池 + 打分」为任意目的地生成完整规划（无硬编码行程） */
 function genPlan(e,reqDays){
   const [name,prov,lng,lat,spotNames,rg,days]=e;
@@ -1567,13 +1577,7 @@ function showPlan(plan,f){
   </div>
   <div class="mod col-6 clickable" style="animation-delay:.45s" onclick="openMod('video','${plan.dest}')">
     <h4><span class="mi">🎬</span>打卡视频推荐 · 攻略 vlog<span class="go">查看详情 →</span></h4>
-    <div class="vlog-grid">${plan.videos.map((v,i)=>`<a class="vlog-card" href="${v.url}" target="_blank" rel="noopener noreferrer" style="animation-delay:${.5+i*.08}s" onclick="event.stopPropagation()">
-      <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}">
-        <span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
-      <div class="vl-body"><h6>${escHtml(v.t)}</h6>
-        <p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span><a href="${v.upUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="在 B 站打开 @${escHtml(v.up)}">${escHtml(v.up)}</a><em>${escHtml(v.upTag||'')}</em></p>
-        <p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
-    </a>`).join('')}</div>
+    <div class="vlog-grid">${plan.videos.map((v,i)=>vlogCardHtml(v,i,.5)).join('')}</div>
   </div>
   ${foodModHtml(plan)}
   ${crowdModHtml(plan)}
@@ -1780,10 +1784,7 @@ async function openMod(kind,dest){
   }else if(kind==='video'){
     /* 详情弹窗同样列真实视频卡片，点击直接去 B 站 */
     openModal(`<button class="mx" onclick="closeModal()">✕</button><div style="padding:24px"><h3 style="font-size:18px;font-weight:900;margin-bottom:12px">🎬 ${plan.dest} · 攻略 Vlog</h3>
-    <div class="vlog-grid">${plan.videos.map(v=>`<a class="vlog-card" href="${v.url}" target="_blank" rel="noopener noreferrer">
-      <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}"><span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
-      <div class="vl-body"><h6>${escHtml(v.t)}</h6><p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span>${escHtml(v.up)}<em>${escHtml(v.upTag||'')}</em></p><p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
-    </a>`).join('')}</div>
+    <div class="vlog-grid">${plan.videos.map((v,i)=>vlogCardHtml(v,i,0)).join('')}</div>
     <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 当前为演示素材，均为 B 站公开的旅行 Vlog 视频，点击卡片在新窗口打开。接入视频链接解析后将自动匹配真实相关视频。</p></div>`);
   }else if(kind==='plog'){
     const v=plan.plogs[0];openPlog(v.t,plan.dest,v.img,encodeURIComponent(v.txt));

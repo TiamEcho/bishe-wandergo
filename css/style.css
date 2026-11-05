@@ -705,8 +705,8 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .vl-body h6{font-size:12.5px;font-weight:800;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .vl-up{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-2);font-weight:700}
 .vl-up em{font-style:normal;font-size:9.5px;font-weight:700;color:var(--gold);border:1px solid var(--line-gold);padding:1px 6px;border-radius:99px}
-.vl-up a{color:inherit;border-bottom:1px dashed transparent;transition:.2s}
-.vl-up a:hover{color:var(--gold);border-bottom-color:var(--line-gold)}
+.vl-up-name{color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vlog-card:hover .vl-up-name{color:var(--gold)}
 .vl-ava{width:18px;height:18px;border-radius:50%;background:var(--gold-grad);color:var(--accent-ink);display:grid;place-items:center;font-size:10px;font-weight:900;flex:none}
 .vl-meta{font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
 .vl-go{color:var(--gold);font-weight:700;white-space:nowrap}
