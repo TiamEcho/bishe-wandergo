@@ -1,0 +1,7 @@
+# wrangler 调试输出
+tail.log
+
+# 依赖与本地缓存
+node_modules/
+.wrangler/
+.dev.vars

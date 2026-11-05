@@ -1,0 +1,11 @@
+name = "wandergo-keepalive"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Render 后端地址：换服务时只改这里
+[vars]
+TARGET = "https://wandergo-backend-v2.onrender.com"
+
+# 每 5 分钟唤醒一次，远短于 Render 免费实例 15 分钟的休眠阈值
+[triggers]
+crons = ["*/5 * * * *"]
