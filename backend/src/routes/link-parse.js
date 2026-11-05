@@ -43,8 +43,11 @@ async function getJSON(url, opts) {
 /* 从任意输入里抠出第一个 http(s) 链接（抖音分享文案里带一大堆说明文字） */
 function pickUrl(input) {
   const s = String(input || '');
-  const m = s.match(/https?:\/\/[^\s，。、；"'<>【】]+/);
-  return m ? m[0] : s.trim();
+  /* 分享文案里的链接常紧贴中文（「…xhslink.com/a/abc快来看吧」），
+   * 因此遇到非 ASCII 字符或空白/标点即视为链接结束 */
+  const m = s.match(/https?:\/\/[\x21-\x7e]+/);
+  if (!m) return s.trim();
+  return m[0].replace(/[.,;:!?)\]}'"]+$/, '');
 }
 
 /* ---------------- B 站 ----------------
@@ -77,6 +80,17 @@ async function biliSubtitle(aid, cid, bvid) {
   }
 }
 
+/* view 接口的 data.tag 实测恒为空数组，标签另走 x/tag/archive/tags */
+async function biliTags(bvid, aid) {
+  try {
+    const q = bvid ? `bvid=${bvid}` : `aid=${aid}`;
+    const j = await getJSON(`https://api.bilibili.com/x/tag/archive/tags?${q}`, { headers: BILI_HEADERS });
+    return ((j && j.data) || []).map(t => t && (t.tag_name || t.name)).filter(Boolean);
+  } catch (e) {
+    return [];
+  }
+}
+
 async function parseBilibili(rawUrl) {
   const url = pickUrl(rawUrl);
   const id = biliId(url);
@@ -87,7 +101,8 @@ async function parseBilibili(rawUrl) {
     return { type: 'bilibili', url, error: (j && j.message) || '解析失败' };
   }
   const d = j.data;
-  const tags = (d.tag || []).map(t => t.tag_name).filter(Boolean);
+  let tags = (d.tag || []).map(t => t.tag_name).filter(Boolean);
+  if (!tags.length) tags = await biliTags(d.bvid, d.aid);
   const subtitle = await biliSubtitle(d.aid, d.cid, d.bvid);
   return {
     type: 'bilibili',
@@ -200,16 +215,74 @@ function douyinFromHtml(html) {
   const desc = ($('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '').trim();
   const author = ($('meta[property="og:author"]').attr('content') || '').trim();
   if (!title && !desc) return null;
+  /* 风控骨架页只有站点通用文案（「在抖音记录美好生活…」），不是作品内容，按失败处理 */
+  if (/在抖音记录美好生活|记录美好生活/.test(title + desc) && !author) return null;
   return { title, desc, author };
+}
+
+/* 移动分享页（iesdouyin /share/video/<id>/）服务端渲染，带 window._ROUTER_DATA，
+ * 里面是完整作品数据；桌面 www.douyin.com/video/<id> 现在只返回加密壳，没有数据 */
+const UA_MOBILE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+function douyinFromRouterData(html) {
+  const m = html.match(/window\._ROUTER_DATA\s*=\s*(\{[\s\S]*?\})\s*<\/script>/);
+  if (!m) return null;
+  let data;
+  try {
+    data = JSON.parse(m[1]);
+  } catch (e) {
+    return null;
+  }
+  const loader = (data && data.loaderData) || {};
+  /* video_(id)/page.presentInfo.infoList[0] = 作品信息，desc 在 item.desc */
+  for (const k of Object.keys(loader)) {
+    const page = loader[k];
+    if (!page || typeof page !== 'object') continue;
+    const list = (page.videoInfoRes && page.videoInfoRes.item_list) || (page.presentInfo && page.presentInfo.infoList) || [];
+    const item = list.map(x => x && (x.item || x.aweme)).find(Boolean);
+    if (item) {
+      const au = item.author || {};
+      const desc = item.desc || '';
+      return {
+        title: desc.split('\n')[0].slice(0, 80) || desc,
+        desc,
+        author: au.nickname || ''
+      };
+    }
+  }
+  return null;
+}
+
+/* 短链 → 作品 id：跟随跳转后从最终 URL 里取数字 id */
+function douyinId(url) {
+  /* www.douyin.com/video/<id>、iesdouyin.com/share/video/<id>、/note/<id> */
+  const m = String(url).match(/(?:video|note)\/(\d{8,})/);
+  return m ? m[1] : '';
+}
+
+async function douyinShare(id) {
+  const html = await getText(`https://www.iesdouyin.com/share/video/${id}/`, { ua: UA_MOBILE });
+  return douyinFromRouterData(html) || douyinFromHtml(html);
 }
 
 async function parseDouyin(rawUrl) {
   const url = pickUrl(rawUrl);
   try {
-    /* 短链跟随跳转 → 最终作品页 */
-    const r = await get(url, { ua: UA, headers: { referer: 'https://www.douyin.com/' } });
-    const html = await r.text();
-    const d = douyinFromRenderData(html) || douyinFromHtml(html);
+    /* ① 已经是作品页：直接按 id 取移动分享页 */
+    let id = douyinId(url);
+    let d = id ? await douyinShare(id) : null;
+    /* ② 短链或未拿到 id：先跟随跳转，从最终地址里取 id 再试一次 */
+    if (!d || !(d.title || d.desc)) {
+      const r = await get(url, { ua: UA_MOBILE, headers: { referer: 'https://www.douyin.com/' } });
+      const finalUrl = r.url || url;
+      id = id || douyinId(finalUrl);
+      if (id) d = await douyinShare(id);
+      /* ③ 兜底：桌面页 RENDER_DATA / og 标签 */
+      if (!d || !(d.title || d.desc)) {
+        const html = await r.text();
+        d = douyinFromRenderData(html) || douyinFromHtml(html);
+      }
+    }
     if (d && (d.title || d.desc)) {
       return { type: 'douyin', url, title: d.title, desc: d.desc, author: d.author || '' };
     }
