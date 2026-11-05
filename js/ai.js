@@ -392,38 +392,40 @@ function splitDays(ids,reqDays,tripType){
   return days;
 }
 /* ================= 打卡视频推荐：B 站旅行 UP 主 demo 素材 =================
- * 现阶段用固定的 B 站旅行 Vlog 链接做演示，卡片封面用景点本地图。
- * 后续接入链接解析后，这里换成后端返回的真实视频（标题 / UP 主 / 封面 / bvid 都由接口给）。
- * ext 是 B 站搜索关键词：没有精确视频时，点卡片也能跳到同主题的真实结果页。 */
+ * 现阶段用 B 站旅行 Vlog 做演示，卡片封面用景点本地图，点击新窗口去 B 站。
+ * 每条素材只给「UP 主 + 个人空间 + 搜索关键词」：不用写死的 bvid，
+ * 避免视频下架/失效后卡片点进去是死链。
+ * 后续接入链接解析后，这里换成后端返回的真实视频（标题 / UP 主 / bvid / 封面）。 */
 const VLOG_UPS={
-  lai:{up:'赖导AboutLai',tag:'人文纪实',bili:'https://space.bilibili.com/1019112796',bvs:['BV1ry4y1L7CR','BV1XR4y1z7dT']},
-  links:{up:'Linksphotograph',tag:'摄影徒步',bili:'https://space.bilibili.com/1867038',bvs:['BV1bG4y1J7kQ','BV1jQ4y1i7yq']},
-  vivi:{up:'万能小维',tag:'深度旅行',bili:'https://space.bilibili.com/352495385',bvs:['BV1LT4y1k7Jv','BV1tK4y1Y7AH']}
+  lai:{up:'赖导AboutLai',tag:'人文纪实',space:'https://space.bilibili.com/1019112796'},
+  links:{up:'Linksphotograph',tag:'摄影徒步',space:'https://space.bilibili.com/1867038'},
+  vivi:{up:'万能小维',tag:'深度旅行',space:'https://space.bilibili.com/352495385'}
 };
-/* 视频标题模板：{s} 景点名、{c} 城市名 */
+/* 每条素材带一个固定的 B 站搜索主题词，点进去一定是真实、相关的结果页 */
 const VLOG_TPL={
-  lai:['在{s}走了一天，人文感拉满','{c}不那么热门的一天｜{s}','{s}：慢慢走才看得见的细节'],
-  links:['{s}的清晨与黄昏｜拍到手软','背着相机爬{s}，值得吗','{c}户外徒步｜{s}沿线记录'],
-  vivi:['{c}深度游｜{s}这一站别错过','{s}到底怎么玩｜本地节奏','从{s}出发，{c}的一天']
+  lai:[{s:'在{s}走了一天，人文感拉满',kw:'{s} 人文'},{s:'{c}不那么热门的一天｜{s}',kw:'{c} 人文纪实'}],
+  links:[{s:'{s}的清晨与黄昏｜拍到手软',kw:'{s} 摄影'},{s:'背着相机去{s}，值得吗',kw:'旅行 vlog 摄影'}],
+  vivi:[{s:'{c}深度游｜{s}这一站别错过',kw:'{c} 深度游'},{s:'{s}到底怎么玩｜本地节奏',kw:'{s} 攻略'}]
 };
+function biliSearch(kw){
+  return 'https://search.bilibili.com/all?keyword='+encodeURIComponent(kw||'旅行 vlog');
+}
 /* 按规划的景点顺序挑 2-3 条视频，UP 主轮换，保证同一个行程里不重复 */
 function pickVlogCards(spotIds,destName,cityName){
   const ids=(spotIds||[]).filter(Boolean).slice(0,3);
   if(!ids.length)return [];
-  const ups=Object.keys(VLOG_UPS);
-  const n=Math.min(3,Math.max(2,ids.length));
-  return ids.slice(0,n).map((sid,i)=>{
-    const up=VLOG_UPS[ups[i%ups.length]];
+  const keys=Object.keys(VLOG_UPS);
+  return ids.map((sid,i)=>{
+    const key=keys[i%keys.length],up=VLOG_UPS[key];
     const s=typeof spotById==='function'?spotById(sid):null;
     const sName=(s&&s.n)||destName;
-    const tpl=VLOG_TPL[ups[i%ups.length]][i%VLOG_TPL[ups[i%ups.length]].length];
-    const title=tpl.replace(/\{s\}/g,sName).replace(/\{c\}/g,cityName||destName);
+    const tpl=VLOG_TPL[key][i%VLOG_TPL[key].length];
+    const title=tpl.s.replace(/\{s\}/g,sName).replace(/\{c\}/g,cityName||destName);
     return {
       t:title,loc:sName,imgs:[sid,sid],
-      up:up.up,upTag:up.tag,upUrl:up.bili,
-      /* bvid 直链 B 站视频页（新窗口打开，不内嵌播放） */
-      url:'https://www.bilibili.com/video/'+(up.bvs[i%up.bvs.length]||''),
-      ext:'https://search.bilibili.com/all?keyword='+encodeURIComponent(sName+' 旅行 vlog')
+      up:up.up,upTag:up.tag,upUrl:up.space,
+      /* 主按钮：直接打开该 UP 主在 B 站的相关搜索，链接永远有效 */
+      url:biliSearch(tpl.kw.replace(/\{s\}/g,sName).replace(/\{c\}/g,cityName||destName))
     };
   });
 }
@@ -1569,7 +1571,7 @@ function showPlan(plan,f){
       <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}">
         <span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
       <div class="vl-body"><h6>${escHtml(v.t)}</h6>
-        <p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span>${escHtml(v.up)}<em>${escHtml(v.upTag||'')}</em></p>
+        <p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span><a href="${v.upUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="在 B 站打开 @${escHtml(v.up)}">${escHtml(v.up)}</a><em>${escHtml(v.upTag||'')}</em></p>
         <p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
     </a>`).join('')}</div>
   </div>
