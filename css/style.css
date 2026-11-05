@@ -689,6 +689,25 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .vcard .vfoot{padding:8px 10px;background:var(--panel-2)}
 .vcard .vfoot h6{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vcard .vfoot p{font-size:10.5px;color:var(--muted)}
+/* ---- 攻略 Vlog 视频卡片网格（真实 B 站链接，不内嵌播放） ---- */
+.vlog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+@media(max-width:560px){.vlog-grid{grid-template-columns:1fr 1fr}}
+.vlog-card{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--panel-2);transition:transform .25s,box-shadow .25s,border-color .25s}
+.vlog-card:hover{transform:translateY(-3px);border-color:var(--line-gold);box-shadow:0 14px 30px -16px rgba(0,0,0,.6)}
+.vl-thumb{position:relative;aspect-ratio:16/9;overflow:hidden;background:var(--panel-3)}
+.vl-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .45s}
+.vlog-card:hover .vl-thumb img{transform:scale(1.07)}
+.vl-play{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,rgba(8,12,22,.05),rgba(8,12,22,.42))}
+.vl-play i{width:42px;height:42px;border-radius:50%;background:rgba(231,199,109,.94);color:#1d2434;display:grid;place-items:center;font-size:15px;font-style:normal;box-shadow:0 6px 18px -6px rgba(0,0,0,.7);transition:transform .25s}
+.vlog-card:hover .vl-play i{transform:scale(1.15)}
+.vl-bili{position:absolute;right:7px;bottom:7px;font-size:10px;font-weight:800;letter-spacing:.04em;background:rgba(251,114,153,.92);color:#fff;padding:2px 7px;border-radius:6px}
+.vl-body{padding:9px 11px 11px;display:flex;flex-direction:column;gap:6px}
+.vl-body h6{font-size:12.5px;font-weight:800;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vl-up{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-2);font-weight:700}
+.vl-up em{font-style:normal;font-size:9.5px;font-weight:700;color:var(--gold);border:1px solid var(--line-gold);padding:1px 6px;border-radius:99px}
+.vl-ava{width:18px;height:18px;border-radius:50%;background:var(--gold-grad);color:var(--accent-ink);display:grid;place-items:center;font-size:10px;font-weight:900;flex:none}
+.vl-meta{font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.vl-go{color:var(--gold);font-weight:700;white-space:nowrap}
 /* ================= 社区 ================= */
 .filter-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
 .filter-tabs button{font-size:12.5px;font-weight:700;color:var(--muted);border:1px solid var(--line);background:var(--glass);padding:6.5px 17px;border-radius:999px;transition:.22s}

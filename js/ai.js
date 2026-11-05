@@ -391,6 +391,42 @@ function splitDays(ids,reqDays,tripType){
   }));
   return days;
 }
+/* ================= 打卡视频推荐：B 站旅行 UP 主 demo 素材 =================
+ * 现阶段用固定的 B 站旅行 Vlog 链接做演示，卡片封面用景点本地图。
+ * 后续接入链接解析后，这里换成后端返回的真实视频（标题 / UP 主 / 封面 / bvid 都由接口给）。
+ * ext 是 B 站搜索关键词：没有精确视频时，点卡片也能跳到同主题的真实结果页。 */
+const VLOG_UPS={
+  lai:{up:'赖导AboutLai',tag:'人文纪实',bili:'https://space.bilibili.com/1019112796',bvs:['BV1ry4y1L7CR','BV1XR4y1z7dT']},
+  links:{up:'Linksphotograph',tag:'摄影徒步',bili:'https://space.bilibili.com/1867038',bvs:['BV1bG4y1J7kQ','BV1jQ4y1i7yq']},
+  vivi:{up:'万能小维',tag:'深度旅行',bili:'https://space.bilibili.com/352495385',bvs:['BV1LT4y1k7Jv','BV1tK4y1Y7AH']}
+};
+/* 视频标题模板：{s} 景点名、{c} 城市名 */
+const VLOG_TPL={
+  lai:['在{s}走了一天，人文感拉满','{c}不那么热门的一天｜{s}','{s}：慢慢走才看得见的细节'],
+  links:['{s}的清晨与黄昏｜拍到手软','背着相机爬{s}，值得吗','{c}户外徒步｜{s}沿线记录'],
+  vivi:['{c}深度游｜{s}这一站别错过','{s}到底怎么玩｜本地节奏','从{s}出发，{c}的一天']
+};
+/* 按规划的景点顺序挑 2-3 条视频，UP 主轮换，保证同一个行程里不重复 */
+function pickVlogCards(spotIds,destName,cityName){
+  const ids=(spotIds||[]).filter(Boolean).slice(0,3);
+  if(!ids.length)return [];
+  const ups=Object.keys(VLOG_UPS);
+  const n=Math.min(3,Math.max(2,ids.length));
+  return ids.slice(0,n).map((sid,i)=>{
+    const up=VLOG_UPS[ups[i%ups.length]];
+    const s=typeof spotById==='function'?spotById(sid):null;
+    const sName=(s&&s.n)||destName;
+    const tpl=VLOG_TPL[ups[i%ups.length]][i%VLOG_TPL[ups[i%ups.length]].length];
+    const title=tpl.replace(/\{s\}/g,sName).replace(/\{c\}/g,cityName||destName);
+    return {
+      t:title,loc:sName,imgs:[sid,sid],
+      up:up.up,upTag:up.tag,upUrl:up.bili,
+      /* bvid 直链 B 站视频页（新窗口打开，不内嵌播放） */
+      url:'https://www.bilibili.com/video/'+(up.bvs[i%up.bvs.length]||''),
+      ext:'https://search.bilibili.com/all?keyword='+encodeURIComponent(sName+' 旅行 vlog')
+    };
+  });
+}
 /* 用「候选池 + 打分」为任意目的地生成完整规划（无硬编码行程） */
 function genPlan(e,reqDays){
   const [name,prov,lng,lat,spotNames,rg,days]=e;
@@ -436,7 +472,7 @@ function genPlan(e,reqDays){
     transport:transport,dist:rg==='ab'?0:far?2600:900,
     planB:{rain:'如遇降雨，改走'+name+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而通透出片。',rest:'逛累了找一家当地咖啡馆 / 茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就砍掉最远的一个点位，核心景区慢游半天也是完整的一天。'},
     crowd:{kid:'带娃优先选缆车 / 观光车接驳的点位，少走台阶；备齐防晒与常用药。',elder:'行程节奏放缓，每天核心点位不超过 2 个；'+(far?'高原 / 长途注意身体状况，行前做基础检查。':'注意景区接驳车末班时间。'),couple:name+'的日出 / 日落时段人少光好，适合拍照；可安排一顿当地特色晚餐。'},
-    videos:[{t:name+'旅行记录 · 打卡合集',loc:name,imgs:[spots[0],spots[1]||spots[0]]},{t:name+'慢节奏 vlog',loc:name,imgs:[spots[1]||spots[0],spots[2]||spots[0]]}],
+    videos:pickVlogCards(spots,name,city),
     plogs:[{t:'在'+name+'的慢时光',img:spots[0],txt:name+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。更多真实打卡可去社区搜索「'+name+'」看看大家怎么玩。'}],
     tips:'该目的地由 AI 模板库即时生成规划：点位为代表性推荐，订票前请用上方平台比价核价；社区里有大量「'+name+'」相关真实打卡与评论可参考。'
   };
@@ -847,7 +883,7 @@ function matchPlan(q,reqDays,opt){
     dist:meta.dist||0,
     planB:meta.planB||{rain:'如遇降雨，改走'+city+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而更通透。',rest:'逛累了就近找一家咖啡馆或茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就把最远的点位砍掉，核心景区慢游半天也算完整的一天。'},
     crowd:meta.crowd||{kid:'带娃优先选有观光车接驳的点位，少走台阶，备齐防晒与常用药。',elder:'每天核心点位不超过 2 个，注意景区接驳车末班时间。',couple:city+'的日出 / 日落时段人少光好，适合拍照。'},
-    videos:[{t:dest+'旅行记录 · 打卡合集',loc:city,imgs:[spots[0],spots[1]||spots[0]]},{t:city+'慢节奏 vlog',loc:city,imgs:[spots[1]||spots[0],spots[2]||spots[0]]}],
+    videos:pickVlogCards(spots,dest,city),
     plogs:[{t:'在'+city+'的慢时光',img:spots[0],txt:city+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。'}],
     tips:(meta.tips?meta.tips+' ':'')+(interestNote?interestNote+' ':'')+'行程由「景点库候选池 + 兴趣打分」实时生成：共 '+spots.length+' 个打卡点，分 '+reqD+' 天排布，每天 = 打卡点 + 三餐 + 住宿建议；开放时间与预约政策请以景区当日公告为准。'
   };
@@ -1529,7 +1565,13 @@ function showPlan(plan,f){
   </div>
   <div class="mod col-6 clickable" style="animation-delay:.45s" onclick="openMod('video','${plan.dest}')">
     <h4><span class="mi">🎬</span>打卡视频推荐 · 攻略 vlog<span class="go">查看详情 →</span></h4>
-    <div class="vcards">${plan.videos.map((v,i)=>`<div class="vcard" onclick="event.stopPropagation();openVideo({t:'${v.t}',loc:'${v.loc}',imgs:['${v.imgs.join("','")}']})"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy"><span class="play"><i>▶</i></span><div class="vfoot"><h6>${v.t}</h6><p>📍 ${v.loc}</p></div></div>`).join('')}</div>
+    <div class="vlog-grid">${plan.videos.map((v,i)=>`<a class="vlog-card" href="${v.url}" target="_blank" rel="noopener noreferrer" style="animation-delay:${.5+i*.08}s" onclick="event.stopPropagation()">
+      <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}">
+        <span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
+      <div class="vl-body"><h6>${escHtml(v.t)}</h6>
+        <p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span>${escHtml(v.up)}<em>${escHtml(v.upTag||'')}</em></p>
+        <p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
+    </a>`).join('')}</div>
   </div>
   ${foodModHtml(plan)}
   ${crowdModHtml(plan)}
@@ -1734,7 +1776,13 @@ async function openMod(kind,dest){
     <div class="crowd-row"><span class="cw">💑 情侣</span><span>${plan.crowd.couple}</span></div>
     <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 按人群生成的安全与健康提示，出发前记得再核对天气与景区公告。</p></div>`);
   }else if(kind==='video'){
-    openVideo(plan.videos[0]);
+    /* 详情弹窗同样列真实视频卡片，点击直接去 B 站 */
+    openModal(`<button class="mx" onclick="closeModal()">✕</button><div style="padding:24px"><h3 style="font-size:18px;font-weight:900;margin-bottom:12px">🎬 ${plan.dest} · 攻略 Vlog</h3>
+    <div class="vlog-grid">${plan.videos.map(v=>`<a class="vlog-card" href="${v.url}" target="_blank" rel="noopener noreferrer">
+      <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}"><span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
+      <div class="vl-body"><h6>${escHtml(v.t)}</h6><p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span>${escHtml(v.up)}<em>${escHtml(v.upTag||'')}</em></p><p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
+    </a>`).join('')}</div>
+    <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 当前为演示素材，均为 B 站公开的旅行 Vlog 视频，点击卡片在新窗口打开。接入视频链接解析后将自动匹配真实相关视频。</p></div>`);
   }else if(kind==='plog'){
     const v=plan.plogs[0];openPlog(v.t,plan.dest,v.img,encodeURIComponent(v.txt));
   }
