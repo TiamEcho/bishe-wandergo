@@ -41,16 +41,23 @@ function toItem(row, kind) {
   };
 }
 
-/* 健康检查 / 演示用状态 */
+/* 健康检查 / 演示用状态
+ * ?ping=1 为前端冷启动探活专用：只回进程状态，不查数据库（PG 冷连接要多等几秒），
+ * 保证 ping 在实例醒来的瞬间就能返回 */
+/* 线上实际部署的 commit：Render 每次部署会自动注入 RENDER_GIT_COMMIT，
+ * 本地开发没有该变量，退回 package.json 版本号 */
+const BUILD = (process.env.RENDER_GIT_COMMIT || '').slice(0, 7)
+  || require('../package.json').version;
+
 router.get('/health', async (req, res, next) => {
   try {
     /* ?ping=1 为前端冷启动探活专用：只回进程状态，不查数据库（PG 冷连接要多等几秒），
      * 保证实例醒来的瞬间就能返回 */
     if (req.query.ping) {
-      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()), build: 'f31a6ce' });
+      return res.json({ ok: true, ping: true, time: dbx.now(), db: dbx.dialect, up: Math.round(process.uptime()), build: BUILD });
     }
     res.json({
-      ok: true, time: dbx.now(), db: dbx.dialect, build: 'f31a6ce', ai: aiStatus(),
+      ok: true, time: dbx.now(), db: dbx.dialect, build: BUILD, ai: aiStatus(),
       stats: await dbx.stats()
     });
   } catch (e) { next(e); }
