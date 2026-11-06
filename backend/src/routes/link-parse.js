@@ -166,8 +166,12 @@ function xhsFromHtml(html) {
 /* 风控/登录拦截页：正文只有站内通用文案（「登录」「扫码」「你访问的页面不见了」等），
  * 不是笔记内容，按失败处理，避免把登录页当成解析成功 */
 const XHS_BLOCKED = /登录后查看|请登录|扫码登录|安全验证|访问异常|你访问的页面不见了|页面不存在|登录小红书/;
+/* 站点登录页标题固定是「登录 - rednote - share, connect, love」这类，开头就是「登录」 */
+const XHS_LOGIN_TITLE = /^\s*登录\s*[-–—|·]\s*rednote/i;
 function xhsIsBlocked(html, r) {
-  if (XHS_BLOCKED.test(r.title || '') || XHS_BLOCKED.test(r.content || '')) return true;
+  const title = r.title || '';
+  if (XHS_BLOCKED.test(title) || XHS_BLOCKED.test(r.content || '')) return true;
+  if (XHS_LOGIN_TITLE.test(title)) return true;
   /* 整页几乎没内容、且命中验证页特征，也按拦截处理 */
   return html.length < 20000 && /登录|验证/.test(html) && !/noteDetailMap/.test(html);
 }
