@@ -1214,7 +1214,7 @@ function sweepBrokenImgs(root){
 /* ================= 公共初始化 ================= */
 document.addEventListener('DOMContentLoaded',()=>{
   initChrome();
-  initTheme();initTopnav();initUser();initSearch();initAIChat();
+  initTheme();initTopnav();initUser();initSearch();initAIChat();initGuide();
   $$('[data-img]').forEach(el=>{
     const size=el.dataset.size||'landscape_4_3';
     watchImg(el,el.dataset.img,size);
@@ -1227,4 +1227,117 @@ document.addEventListener('DOMContentLoaded',()=>{
   /* 首屏直出的本地图如果已经加载失败，watchImgs 会把它们标成 __watching
    * 从而绕开 error 兜底，所以这里在挂完监听后统一补扫一次 */
   sweepBrokenImgs();
+});
+
+/* =========================================================
+ * 首页新手引导（P1-C）
+ * 首次访问自动弹出一次；关闭后写 localStorage 不再自动弹；
+ * 右下角常驻悬浮按钮可随时重新打开；?guide=1 强制演示且不写状态
+ * ========================================================= */
+const GUIDE_KEY='wgo_guide_done';
+let guideEl=null,guidePrevFocus=null;
+
+function guideCardHtml(){
+  return `
+    <button class="guide-x" type="button" aria-label="关闭引导">✕</button>
+    <div class="guide-kicker">✦ WANDERGO ✦</div>
+    <h2 class="guide-title" id="guideTitle">3 步生成<em>专属攻略</em></h2>
+    <p class="guide-sub">选好偏好，AI 帮你排景点、比交通、拆预算</p>
+    <div class="guide-steps">
+      <div class="guide-step"><b>1</b><span>填写<br>偏好</span></div>
+      <div class="guide-step"><b>2</b><span>AI 智能<br>匹配</span></div>
+      <div class="guide-step"><b>3</b><span>生成<br>攻略</span></div>
+    </div>
+    <div class="guide-feats">
+      <div class="guide-feat"><i>📝</i><span>三步偏好表单，出发地、预算、兴趣一次填完</span></div>
+      <div class="guide-feat"><i>🤖</i><span>AI 智能匹配兴趣，按口味挑景点排行程</span></div>
+      <div class="guide-feat"><i>🌐</i><span>多源攻略聚合，B站与站内真实攻略一起看</span></div>
+    </div>
+    <div class="guide-btns">
+      <button class="guide-btn primary" type="button" id="guideGo">开始规划</button>
+      <button class="guide-btn ghost" type="button" id="guideLater">稍后再说</button>
+    </div>`;
+}
+
+function closeGuide(remember){
+  if(!guideEl) return;
+  const el=guideEl; guideEl=null;
+  if(remember) localStorage.setItem(GUIDE_KEY,'1');
+  el.classList.remove('show');
+  setTimeout(()=>{ if(el.parentNode) el.remove(); },240);
+  document.body.style.overflow='';
+  if(guidePrevFocus&&guidePrevFocus.focus) guidePrevFocus.focus();
+  guidePrevFocus=null;
+}
+
+function openGuide(){
+  closeGuide(false);
+  guidePrevFocus=document.activeElement;
+  const el=document.createElement('div');
+  el.className='guide-ovl';
+  el.innerHTML=`<div class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle">${guideCardHtml()}</div>`;
+  document.body.appendChild(el);
+  document.body.style.overflow='hidden';
+  guideEl=el;
+  requestAnimationFrame(()=>el.classList.add('show'));
+
+  el.querySelector('.guide-x').onclick=()=>closeGuide(true);
+  el.querySelector('#guideLater').onclick=()=>closeGuide(true);
+  el.querySelector('#guideGo').onclick=()=>{
+    /* 先写标记再跳转，避免导航抢先导致标记丢失 */
+    sessionStorage.setItem('wgo_plan_flash','1');
+    closeGuide(true);
+    WGO.go('ai.html',{});
+  };
+  /* 点遮罩空白处关闭，点卡片内部不关 */
+  el.addEventListener('click',e=>{ if(e.target===el) closeGuide(true); });
+  /* 焦点锁在弹窗内 */
+  el.addEventListener('keydown',e=>{
+    if(e.key!=='Tab') return;
+    const f=[...el.querySelectorAll('button')].filter(b=>!b.disabled);
+    if(!f.length) return;
+    const first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  });
+  setTimeout(()=>{ const b=el.querySelector('#guideGo'); if(b) b.focus(); },60);
+}
+
+function initGuide(){
+  if(!document.getElementById('moduleGrid')) return;   /* 只在首页启用 */
+  const force=WGO.q('guide')==='1';
+
+  /* 常驻悬浮入口 */
+  const fab=document.createElement('button');
+  fab.type='button';
+  fab.className='guide-fab';
+  fab.title='新手引导';
+  fab.setAttribute('aria-label','打开新手引导');
+  fab.textContent='?';
+  fab.onclick=openGuide;
+  document.body.appendChild(fab);
+
+  if(force){ openGuide(); return; }
+  if(!localStorage.getItem(GUIDE_KEY)){
+    /* 延迟弹出，避开 3D 地球首屏渲染 */
+    setTimeout(()=>{ if(!guideEl) openGuide(); },800);
+  }
+}
+
+/* Esc 关闭引导：并入全局键盘监听 */
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&guideEl) closeGuide(true);
+});
+
+/* 从「开始规划」跳到 ai.html 后，给偏好表单加高亮 */
+document.addEventListener('DOMContentLoaded',()=>{
+  if(sessionStorage.getItem('wgo_plan_flash')!=='1') return;
+  sessionStorage.removeItem('wgo_plan_flash');
+  const form=document.getElementById('aiForm');
+  if(!form) return;
+  setTimeout(()=>{
+    form.scrollIntoView({behavior:'smooth',block:'center'});
+    form.classList.add('plan-flash');
+    setTimeout(()=>form.classList.remove('plan-flash'),1800);
+  },120);
 });
