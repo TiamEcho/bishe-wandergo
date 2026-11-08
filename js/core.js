@@ -527,11 +527,46 @@ function openSpot(id){
     <p class="coord-note">坐标获取方式：爬虫抓取公开地理数据 + 高德/百度坐标拾取器校准（demo 演示数据）。</p>
     <div class="dbtns">
       <button class="btn line" onclick="favSpot('${s.id}')">♥ 收藏</button>
-      <button class="btn line" onclick="WGO.go('map.html',{spot:'${s.id}'})">🗺 在地图中查看</button>
+      <button class="btn line" onclick="WGO.go('map-city.html',{city:cityCanon('${s.city}'),spot:'${s.id}'})">🗺 在地图中查看</button>
       <button class="btn gold" onclick="WGO.go('ai.html',{dest:'${s.city}'})">🤖 让 AI 规划这里</button>
-      <button class="btn gold" onclick="WGO.go('checkin.html',{dest:'${s.id}'})">📸 去打卡</button>
+      <button class="btn gold" onclick="WGO.go('map-city.html',{city:cityCanon('${s.city}'),spot:'${s.id}',ck:1})">📸 去打卡</button>
     </div>
   </div>`,true);
+}
+/* ================= 城市名统一（P2 地图页） =================
+ * SPOTS 里的城市名写法不统一（"北京"/"北京市"、"丽江 · 盐源" 这类复合值），
+ * 这里用映射表把展示名归一到同一个 key，不改原始数据。 */
+const CITY_ALIAS={
+  '北京市':'北京','上海市':'上海','天津市':'天津','重庆市':'重庆','西安市':'西安',
+  '成都市':'成都','杭州市':'杭州','广州市':'广州','深圳市':'深圳','南京市':'南京',
+  '苏州市':'苏州','大理市':'大理','丽江市':'丽江','三亚市':'三亚','厦门市':'厦门',
+  '长沙市':'长沙','武汉市':'武汉','青岛市':'青岛','昆明市':'昆明','哈尔滨市':'哈尔滨',
+  '黄山市':'黄山','阿坝':'阿坝州','呼伦贝尔市':'呼伦贝尔','桂林市':'桂林','阳朔县':'阳朔',
+  '敦煌市':'敦煌','张家界市':'张家界','凤凰县':'凤凰','都江堰市':'都江堰','香格里拉市':'香格里拉'
+};
+function cityCanon(name){
+  const raw=String(name||'').trim();
+  if(!raw)return '';
+  /* 复合写法（"丽江 · 盐源"）取第一段作为主城市 */
+  const first=raw.split(/\s*[·・\/]\s*/)[0].trim();
+  return CITY_ALIAS[first]||CITY_ALIAS[raw]||first;
+}
+/* 同一城市下的所有景点（按归一后的城市名匹配） */
+function spotsOfCity(city){
+  const key=cityCanon(city);
+  const list=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>cityCanon(s.city)===key);
+  return {key,list};
+}
+/* 全部城市（归一后去重，按景点数降序） */
+function allCities(){
+  const map=new Map();
+  (typeof SPOTS!=='undefined'?SPOTS:[]).forEach(s=>{
+    const k=cityCanon(s.city);
+    if(!k)return;
+    if(!map.has(k))map.set(k,{city:k,count:0,rg:s.rg});
+    map.get(k).count++;
+  });
+  return [...map.values()].sort((a,b)=>b.count-a.count);
 }
 function favSpot(id){toast('已收藏「'+spotById(id).n+'」⭐')}
 function askAI(city){WGO.go('ai.html',{dest:city})}
@@ -803,6 +838,7 @@ const TOPNAV=[
    ['recommend.html','路线推荐','多条路线对比'],
    ['ai.html?mode=budget','时间预算','开始时间 + 结束时间 + 费用预估']]},
  {t:'地图打卡',ico:'🗺',items:[
+   ['map-city.html','城市地图','Leaflet + OSM · 景点标点 · 图文打卡'],
    ['map.html','点亮地图','中国 / 世界切换'],
    ['checkin.html','景点打卡','小游戏 + 成就徽章'],
    ['memories.html','旅程故事','旅行记录时间线']]},

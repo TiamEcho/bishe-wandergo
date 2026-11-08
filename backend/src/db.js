@@ -147,6 +147,11 @@ CREATE TABLE IF NOT EXISTS checkin(
   cost       DOUBLE PRECISION DEFAULT 0,
   cover      TEXT,
   source     TEXT DEFAULT 'web',
+  user_id    TEXT,
+  spot_id    TEXT,
+  city_name  TEXT,
+  rating     DOUBLE PRECISION DEFAULT 0,
+  imgs       TEXT,
   created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS entity(
@@ -291,6 +296,11 @@ CREATE TABLE IF NOT EXISTS checkin(
   cost       REAL DEFAULT 0,
   cover      TEXT,
   source     TEXT DEFAULT 'web',
+  user_id    TEXT,
+  spot_id    TEXT,
+  city_name  TEXT,
+  rating     REAL DEFAULT 0,
+  imgs       TEXT,
   created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS entity(
@@ -760,6 +770,13 @@ async function seed() {
       await impl.exec(`ALTER TABLE post ADD COLUMN ${col} ${type}`);
     } catch (e) { /* 列已存在 */ }
   }
+  /* 老库升级：checkin 建表早于 P2 地图打卡，补 user_id / spot_id / city_name / rating / imgs */
+  for (const [col, type] of [['user_id', 'TEXT'], ['spot_id', 'TEXT'], ['city_name', 'TEXT'],
+    ['rating', impl.dialect === 'postgres' ? 'DOUBLE PRECISION DEFAULT 0' : 'REAL DEFAULT 0'], ['imgs', 'TEXT']]) {
+    try {
+      await impl.exec(`ALTER TABLE checkin ADD COLUMN ${col} ${type}`);
+    } catch (e) { /* 列已存在 */ }
+  }
   await seedSpots();
   /* 内置管理员账号：管理端接口需要 role='admin'，没有则补一个，已存在则不动 */
   try {
@@ -921,15 +938,37 @@ async function searchEntities(q, limit = 30) {
 
 async function addCheckin(d) {
   const u = impl.dialect === 'postgres' ? '"user",' : 'user,';
+  /* P2 地图打卡：imgs 存 JSON 字符串（图片以 dataURL 形式直接进库，不落本地磁盘） */
+  const imgs = Array.isArray(d.imgs) ? JSON.stringify(d.imgs.slice(0, 4)) : (d.imgs || '');
   const r = await impl.run(
-    `INSERT INTO checkin (${u}city,spot,text,mood,cost,cover,source,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO checkin (${u}city,spot,text,mood,cost,cover,source,user_id,spot_id,city_name,rating,imgs,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       d.user || '匿名旅行者', d.city || '', d.spot || '', d.text || '',
-      d.mood || '😌 治愈放松', Number(d.cost) || 0, d.cover || '', d.source || 'web', now()
+      d.mood || '😌 治愈放松', Number(d.cost) || 0, d.cover || '', d.source || 'web',
+      d.userId || '', d.spotId || '', d.cityName || d.city || '',
+      Number(d.rating) || 0, imgs, now()
     ]
   );
   return impl.get('SELECT * FROM checkin WHERE id = ?', [r.lastId]);
+}
+
+/* 某城市的全部打卡（地图页展示已打卡标记 + 打卡记录墙） */
+async function listCheckinsByCity(city) {
+  return impl.all(
+    `SELECT * FROM checkin WHERE (city_name = ? OR city = ?) AND spot_id IS NOT NULL AND spot_id <> ''
+     ORDER BY id DESC LIMIT 300`, [city, city]);
+}
+
+/* 某用户打卡过的 spot_id 列表（地图页给已打卡景点换色）
+ * 传两个键：登录 uid 与未登录时的 nick:昵称，合并查询 */
+async function listMyCheckinSpots(userId, nickKey) {
+  const keys = [userId, nickKey].filter(Boolean);
+  if (!keys.length) return [];
+  const where = keys.map(() => 'user_id = ?').join(' OR ');
+  return impl.all(
+    `SELECT DISTINCT spot_id FROM checkin WHERE (${where}) AND spot_id IS NOT NULL AND spot_id <> ''`,
+    keys);
 }
 
 /* 攻略入库（返回是否新增，用于采集去重统计） */
@@ -1329,7 +1368,7 @@ module.exports = {
   raw: impl.raw,
   all: impl.all, get: impl.get, run: impl.run,
   seed, stats, searchGuides, searchCheckins, searchEntities,
-  addCheckin, addGuide, addEntities, crawlCandidates,
+  addCheckin, listCheckinsByCity, listMyCheckinSpots, addGuide, addEntities, crawlCandidates,
   hashPwd, findUser, findUserById, createUser, verifyUser,
   addRating, toggleFavorite, logBehavior, allBehaviors,
   listPosts, getPost, addPost, listPostComments, addPostComment, addPostLike, hasPostLike,

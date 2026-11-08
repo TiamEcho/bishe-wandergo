@@ -80,6 +80,10 @@ const WGOAPI=(()=>{
     recommend(n=8){return req('/api/recommend?nick='+encodeURIComponent(curNick())+'&n='+n)},
     /* 打卡上报数据库（成功与否都不阻塞本地保存） */
     pushCheckin(rec){return req('/api/checkin/add',{method:'POST',body:rec})},
+    /* P2 地图打卡：图文打卡（imgs 为压缩后的 dataURL 数组，直接进库） */
+    postCheckin(body){return req('/api/checkin',{method:'POST',body},15000)},
+    checkinsByCity(city){return req('/api/checkin/city?city='+encodeURIComponent(city||''),{},8000)},
+    myCheckinSpots(nick){return req('/api/checkin/mine?nick='+encodeURIComponent(nick||''),{},5000)},
     /* 评分上报：写入 MySQL 评分矩阵，反哺协同过滤 */
     rate(spotId,score){return req('/api/rating/add',{method:'POST',body:{nick:curNick(),spotId,score}})},
     spots(){return req('/api/spot/list')},

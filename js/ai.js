@@ -1237,7 +1237,7 @@ function tlRowHtml(c,di,order){
     const pt=poiTypeOf(p);
     const ptTag=pt?`<span class="tl-type t-${POI_CLS[pt]||'spot'}">${pt}</span>`:'';
     const restHtml=rests.length?`<div class="tl-near"><span class="tl-near-l">🍽 附近餐饮</span>${rests.map(r=>`<span class="tl-near-i">${escHtml(r.name)}${r.rating?' ⭐'+r.rating:''}${r.price?' · '+escHtml(String(r.price)):''}</span>`).join('')}</div>`:'';
-    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${ptTag}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(p.id)}" data-key="${escHtml(p.id)}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`;
+    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${ptTag}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(p.id)}" data-key="${escHtml(p.id)}" alt="${escHtml(p.n)}" loading="lazy" referrerpolicy="no-referrer"><div class="tl-acts"><button type="button" class="journey-pin" data-map="${escHtml(p.id)}" data-city="${escHtml(p.city||'')}" title="在城市地图中定位">📍 地图定位</button><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></div></li>`;
   }
   if(c.t==='eat'){
     const it=c.it;
@@ -1479,6 +1479,13 @@ function renderItinerary3col(plan){
       item.onclick=()=>select(index,false);
     });
     cards.querySelectorAll('[data-open]').forEach(b=>b.onclick=e=>{e.stopPropagation();openSpot(b.dataset.open)});
+    /* pin：跳到城市地图页并自动定位到该景点（city 走映射表统一后的名字） */
+    cards.querySelectorAll('[data-map]').forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      const sid=b.dataset.map;
+      const c=(typeof cityCanon==='function'?cityCanon(b.dataset.city||''):b.dataset.city)||'全部';
+      location.href='map-city.html?city='+encodeURIComponent(c)+'&spot='+encodeURIComponent(sid);
+    });
     /* 时刻回填：重排后的时间写在 data-slot 对应的时间列 */
     fillTimes(plan,cards);
     bindDrag(plan,cards,()=>paintDay(__itinCurDay));

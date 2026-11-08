@@ -233,28 +233,66 @@ router.post('/posts/:id/like', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-/* ② POST /api/checkin —— 新增打卡（同时保留 /api/checkin/add 兼容旧前端） */
+/* ② POST /api/checkin —— 新增打卡（同时保留 /api/checkin/add 兼容旧前端）
+ * P2 地图打卡新增字段：user_id / spot_id / city_name / content / rating / imgs
+ * 图片以 dataURL 数组直接存库（express.json 默认 2mb，前端已压到 760px / 0.72） */
 async function createCheckin(req, res, next) {
   try {
     const b = req.body || {};
-    if (!b.city && !b.spot && !b.text) {
+    if (!b.city && !b.spot && !b.text && !b.content) {
       return res.status(400).json({ ok: false, message: 'city / spot / text 至少填一项' });
     }
+    const imgs = Array.isArray(b.imgs) ? b.imgs.filter(x => typeof x === 'string').slice(0, 4) : [];
+    /* 落库的 user_id 优先取 JWT 里的 uid，匿名请求再按 nick 反查 */
+    const uid = userOf(req) || await resolveUser(b.user || b.nick || '');
     const row = await dbx.addCheckin({
       user: b.user || b.nick || '旅行者',
-      city: b.city || dbx.guessCity(`${b.spot || ''} ${b.text || ''}`, ''),
+      city: b.city || b.cityName || dbx.guessCity(`${b.spot || ''} ${b.text || ''}`, ''),
       spot: b.spot || '',
-      text: b.text || '',
+      text: b.content || b.text || '',
       mood: b.mood || '😌 治愈放松',
       cost: b.cost || b.total || 0,
-      cover: b.cover || (Array.isArray(b.imgs) ? b.imgs[0] : ''),
-      source: b.source || 'web'
+      cover: b.cover || imgs[0] || '',
+      source: b.source || 'web',
+      userId: uid || ('nick:' + (b.user || b.nick || '旅行者')),
+      spotId: b.spotId || b.spot_id || '',
+      cityName: b.cityName || b.city_name || b.city || '',
+      rating: b.rating || 0,
+      imgs
     });
     res.status(201).json({ ok: true, id: row.id, checkin: row, stats: await dbx.stats() });
   } catch (e) { next(e); }
 }
 router.post('/checkin', createCheckin);
 router.post('/checkin/add', createCheckin);
+
+/* ②-b GET /api/checkin/city?city=大理 —— 城市打卡墙 */
+router.get('/checkin/city', async (req, res, next) => {
+  try {
+    const city = String(req.query.city || '').trim();
+    if (!city) return res.status(400).json({ ok: false, message: 'city 不能为空' });
+    const list = (await dbx.listCheckinsByCity(city)).map(r => ({
+      id: r.id, userId: r.user_id || '', user: r.user || r.user_id || '旅行者',
+      spotId: r.spot_id || '', spot: r.spot || '', city: r.city_name || r.city || '',
+      content: r.text || '', rating: Number(r.rating) || 0,
+      imgs: (() => { try { return JSON.parse(r.imgs || '[]') } catch { return [] } })(),
+      createdAt: r.created_at || ''
+    }));
+    res.json({ ok: true, list, total: list.length });
+  } catch (e) { next(e); }
+});
+
+/* ②-c GET /api/checkin/mine —— 当前用户打卡过的 spot_id（地图标记换色）
+ * 登录用户按 JWT uid 查；未登录按 nick 查（写入时 user_id 记为 nick:昵称） */
+router.get('/checkin/mine', async (req, res, next) => {
+  try {
+    const uid = userOf(req) || await resolveUser(req.query.nick || '');
+    const nick = String(req.query.nick || '').trim();
+    if (!uid && !nick) return res.json({ ok: true, list: [] });
+    const rows = await dbx.listMyCheckinSpots(uid || '', nick ? 'nick:' + nick : '');
+    res.json({ ok: true, list: rows.map(r => r.spot_id) });
+  } catch (e) { next(e); }
+});
 
 /* ③ POST /api/collect-guide —— 关键词触发采集 + AI 实体抽取 */
 router.post('/collect-guide', async (req, res) => {
