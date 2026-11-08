@@ -229,6 +229,18 @@ function localImg(id){
   if(!m)return null;
   const key=String(id);
   if(m[key])return 'img/spots/'+m[key]+'.webp';
+  /* 别名：老数据和精选卡片里用的是英文地名（santorini / bali），
+   * 清单里存的是短键（oia / ubud），直接查会落空并回落到文生图接口 */
+  const ALIAS={santorini:'oia',bali:'ubud',maldive:'maldives',kyoto:'inari',marina:'mbs',
+    rome:'opera',chicago:'cp',iceland:'ice',paris:'paris',xian:'wall',beijing:'gugong',
+    shanghai:'bund',hangzhou:'xihu',lijiang:'ys',guilin:'ylw',qinghai:'qhh',palawan:'pala',
+    seno:'senso',tibet:'pala',ubud:'ubud',cappadocia:'cbs',queenstown:'queenstown',
+    rovaniemi:'rovaniemi',sagrada:'sagrada',dubai:'dubai',chiangmai:'chiangmai'};
+  const a=ALIAS[key.toLowerCase()];
+  if(a&&m[a])return 'img/spots/'+m[a]+'.webp';
+  /* 传进来的已经是本地图片路径（img/covers/xxx.webp、img/spots/xxx.webp）时直接返回，
+   * 否则会整段路径被当成提示词去请求文生图接口 */
+  if(/^\.{0,2}\/?img\/[a-z0-9_\-\/]+\.(webp|jpe?g|png)$/i.test(key))return key.replace(/^\.\//,'');
   const s=typeof SPOTS!=='undefined'&&SPOTS.find(x=>x.id===key);
   const name=s?s.n:(typeof spotById==='function'&&spotById(key)||{}).n;
   if(name){
@@ -491,13 +503,18 @@ POSTS.push(
  {id:'p9',u:'北极星旅记',c:'#2f4f7f',loc:'冰岛 · 黄金圈',rg:'ab',type:'video',time:'3 天前',txt:'追到极光那晚，整片天空都在跳舞。4K 直出，记得开最高清晰度 🌌',likes:689,cmts:94,imgs:['ice','cp'],bgm:'calm',real:true,plat:'yt',topics:['t1']},
  {id:'p10',u:'高迪迷弟',c:'#8f7ac9',loc:'巴塞罗那 · 圣家堂',rg:'ab',type:'img',time:'4 天前',txt:'下午四点半的受立面，光透过彩窗洒进来的瞬间，全场安静了 ⛪',likes:344,cmts:48,imgs:['sagrada'],real:true,plat:'ins',topics:['t2']}
 );
-const POST_EXTRA={
- p1:{plat:'douyin',topics:['t1'],full:'凌晨五点半从才村码头下水，日出把整片洱海染成金色。路线：才村码头 → 龙龛生态廊道，骑行 12km 约 2 小时；花费：电动车 40/天 + 早餐 15；建议 6:30 前到，人少光好。'},
+const POST_EXTRA={ p1:{plat:'douyin',topics:['t1'],full:'凌晨五点半从才村码头下水，日出把整片洱海染成金色。路线：才村码头 → 龙龛生态廊道，骑行 12km 约 2 小时；花费：电动车 40/天 + 早餐 15；建议 6:30 前到，人少光好。'},
  p2:{plat:'douyin',topics:['t6'],full:'滚滚看完直接地铁 3 号线去春熙路，套餐 88 两人吃到扶墙。熊猫基地 7:30 开园就进，上午滚滚最活跃，门票 55。'},
  p3:{plat:'yt',topics:['t5'],full:'涩谷十字路口站了半小时，就等一个红灯变绿的瞬间。回程绕去黄金街居酒屋，人均 120。东京地铁 72h 票是穷游神器。'},
  p4:{plat:'xhs',topics:['t5'],full:'西宁租车 120/天，环湖西路 G109 沿途全是机位；加油站泡面 12 块配雪山景观位，值回票价。7-8 月油菜花开最美。'},
  p5:{plat:'ins',topics:['t3'],full:'伊亚悬崖酒店无线泳池提前 3 个月订，住 3 晚均 2200/晚；落日位要 18:30 前去蓝顶教堂占位；ATV 租车最划算。'},
- p6:{plat:'kuaishou',topics:[],full:'夜爬城墙票 45，从永宁门上，骑一圈 14km 约 1.5 小时；灯笼 19:00 亮灯，护城河倒影机位在南门东侧桥上。'}
+ p6:{plat:'kuaishou',topics:[],full:'夜爬城墙票 45，从永宁门上，骑一圈 14km 约 1.5 小时；灯笼 19:00 亮灯，护城河倒影机位在南门东侧桥上。'},
+ /* covers：后端帖子表的封面。旧爬虫数据里存的是 B站 CDN 外链，B站按 Referer 防盗链，
+    从 GitHub Pages 打开会 403，这里换成站内本地景点图做兜底 */
+ p7:{covers:'zjj'},
+ p8:{covers:'chiangmai'},
+ p9:{covers:'ice'},
+ p10:{covers:'sagrada'}
 };
 POSTS.forEach(p=>{if(POST_EXTRA[p.id])Object.assign(p,POST_EXTRA[p.id])});
 const FEATURED=[

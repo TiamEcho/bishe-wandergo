@@ -676,6 +676,15 @@ async function seedCrawlPosts() {
     if (/kuaishou\.com/i.test(u)) return 'kuaishou';
     return '';
   };
+  /* B站封面按 Referer 防盗链，从 GitHub Pages 打开会 403；爬虫数据和历史库里的
+     hdslb / bilivideo 外链统一落成站内 img/spots/<景点>.webp，前端按相对路径直接用 */
+  const localCover = (cover, spotKey) => {
+    const c = String(cover || '');
+    if (!/^https?:\/\//i.test(c)) return c;
+    if (!/(^|\.)(hdslb|bilivideo|douyinpic|byteimg|unsplash|pexels|picsum)\./i.test(c)) return c;
+    const k = String(spotKey || '').trim() || 'erhai';
+    return 'img/spots/' + k.replace(/[^a-z0-9_\-]/gi, '') + '.webp';
+  };
   let n = 0;
   for (const p of posts) {
     const srcUrl = String(pick(p, 'sourceUrl', 'source_url') || '');
@@ -684,15 +693,17 @@ async function seedCrawlPosts() {
     if (!title) continue;
     const plat = platOf(srcUrl) || platOf(pick(p, 'videoUrl', 'video_url'))
       || (pick(p, 'source') === 'user' ? 'go' : String(pick(p, 'source') || 'bilibili'));
+    const spotKey = pick(p, 'spotId', 'spot_key');
+    const cover = localCover(pick(p, 'cover'), spotKey);
     const vals = [
       title, String(pick(p, 'content') || '') === '-' ? '' : String(pick(p, 'content') || ''),
-      pick(p, 'cover'), JSON.stringify(p.images || (p.cover ? [p.cover] : [])),
+      cover, JSON.stringify(cover ? [cover] : []),
       pick(p, 'location'), pick(p, 'topics'), pick(p, 'type') || 'plog',
       plat, pick(p, 'bgm'), pick(p, 'nick') || '旅行者',
       String(pick(p, 'nick') || 'B').slice(0, 1),
       plat === 'go' ? 'user' : 'crawl', srcUrl,
       pick(p, 'videoUrl', 'video_url'), '',
-      pick(p, 'spotId', 'spot_key'),
+      spotKey,
       Number(pick(p, 'likeCount', 'likes')) || 0,
       Number(pick(p, 'viewCount', 'views')) || 0,
       Number(pick(p, 'quality')) || 0,
@@ -762,6 +773,22 @@ async function seed() {
   } catch (e) { /* 表结构异常时忽略，不影响主流程 */ }
   /* 爬虫帖单独灌，且每次都跑：新抓的数据能立刻进来，不受 guide 表是否已初始化影响 */
   const nCrawl = await seedCrawlPosts();
+  /* 历史库里存量的外链封面一并订正（上面只影响本次种子数据） */
+  try {
+    if (impl.dialect === 'postgres') {
+      await impl.run(
+        `UPDATE post SET cover = 'img/spots/' || COALESCE(NULLIF(spot_key, ''), 'erhai') || '.webp'
+         WHERE cover ~* '^https?://(i[0-9]\\.)?(hdslb|bilivideo|douyinpic|byteimg|unsplash|pexels|picsum)\\.'`
+      );
+    } else {
+      for (const d of ['hdslb.com', 'bilivideo.com', 'douyinpic.com', 'byteimg.com', 'unsplash.com', 'pexels.com', 'picsum.photos']) {
+        await impl.run(
+          `UPDATE post SET cover = 'img/spots/' || COALESCE(NULLIF(spot_key, ''), 'erhai') || '.webp'
+           WHERE cover LIKE ?`, ['%' + d + '%']
+        );
+      }
+    }
+  } catch (e) { /* 订正失败不影响主流程 */ }
 
   const g = await impl.get('SELECT COUNT(*) AS c FROM guide');
   const guideCount = Number(g ? g.c : 0);

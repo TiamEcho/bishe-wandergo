@@ -27,7 +27,9 @@ const TW = {
   /* 封面兜底：爬虫帖有 cover，站内帖只有 spotId，就用景点图库里的图 */
   cover(p) {
     const c = p.cover || p.img || (p.images && p.images[0]) || '';
-    if (/^(https?:|data:)/.test(c)) return c;
+    /* 爬虫封面已本地化为 img/covers/xxx.webp 相对路径，原样输出 */
+    if (/^(https?:|data:|\/|\.{0,2}\/?(img|images|assets)\/)/.test(c)) return c;
+    if (/^[a-z0-9_\-]+\.(webp|jpe?g|png)$/i.test(c)) return 'img/spots/' + c;
     if (p.spotId) return IMG(p.spotId);
     if (c) return IMG(c);
     if (typeof P !== 'undefined' && P.erhai) return IMG('erhai');

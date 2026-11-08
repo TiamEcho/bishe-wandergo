@@ -1,23 +1,10 @@
-# 临时产物与工具目录，不进仓库
-.trae-html-share-packages/
-.screenshots/
-runs/
-site-deploy/
-
-# MediaCrawler 独立爬虫项目（体积大，且 browser_data 含登录态，不进仓库）
-tools/MediaCrawler/
-
-# 后端运行时产物
+node_modules/
 backend/node_modules/
 backend/data/
-backend/.env
 backend/.env.production
-# 抓取脚本的断点进度（每台机器跑出来的不一样，不该进仓库）
-backend/scripts/completed_cities.json
-
-# 根目录构建工具依赖（sharp / semver 等，体积大且可由 package.json 还原）
-node_modules/
-
-# 打包交付物与调试日志（体积过大，不进仓库）
-*.zip
-debug.log
+site-deploy/
+.screenshots/
+.trae-html-share-packages/
+.runs/
+runs/
+*.log

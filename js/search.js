@@ -83,7 +83,8 @@ function srCover(p){
    * 种子数据用的 Unsplash 图同理（海外 CDN，国内加载常常超时）。
    * 这些域名一律不用外链封面，直接走下面 srFallbackCover 的本地景点图库。 */
   const c=p.cover||'';
-  if(!/^https?:/.test(c))return '';
+  /* 相对路径说明封面已经本地化（img/covers/、img/spots/），直接用 */
+  if(!/^([a-z]+:)?\/\//i.test(c))return c;
   if(/hdslb\.com|bilivideo\.com|douyinpic\.com|douyinvod\.com|ixigua\.com|kuaishou\.com|unsplash\.com|pexels\.com|picsum\.photos/i.test(c))return '';
   return c;
 }

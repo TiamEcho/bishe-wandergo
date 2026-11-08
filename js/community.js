@@ -90,8 +90,8 @@ function decoratePost(p){
   const pl=PLAT[p.plat||'go']||PLAT.go;
   const names=window.TW_TOPIC_NAMES||{};
   return Object.assign({},p,{
-    /* 与 renderFeed 保持同一套封面规则：dataURL / http(s) 直接用，否则当景点 id 交给 IMG() */
-    img:(()=>{const r=p.img||(p.imgs&&p.imgs[0])||'';return /^(https?:|data:)/.test(r)?r:(r?IMG(r):'')})(),
+    /* 与 renderFeed 保持同一套封面规则：相对路径 / dataURL / http(s) 直接用，否则当景点 id 交给 IMG() */
+    img:(()=>{const r=p.img||(p.imgs&&p.imgs[0])||'';return /^(https?:|data:|\/|\.{0,2}\/)/.test(r)?r:(r?IMG(r):'')})(),
     /* 外站 CDN 防盗链导致 onerror 时，Vue 模版绑定这个兜底图 */
     imgFb:(()=>{const f=typeof TW!=='undefined'&&TW.coverFallback?TW.coverFallback({title:p.txt||p.title||'',location:p.loc||'',spotId:p.spotId||''}):IMG(p.spotId||'erhai');return String(f||'').replace(/'/g,'&#39;')})(),
     platName:pl.n,platIcon:pl.i,platKey:p.plat||'go',
@@ -184,7 +184,7 @@ async function renderFeed(){
     /* 封面优先级：用户上传的真实照片 > imgs 里的图（可能是 URL 也可能是景点 id）> 宠物图兜底。
        imgs 里若是景点 id，交给 IMG(id) 按名字出图；直接拼 IMG(P[id]) 会得到 prompt=undefined */
     const rawImg=p.img||(p.imgs&&p.imgs[0])||'';
-    const img=/^(https?:|data:)/.test(rawImg)
+    const img=/^(https?:|data:|\/|\.{0,2}\/)/.test(rawImg)
       ?rawImg
       :IMG(rawImg||'erhai');
     /* 外站 CDN 有防盗链，onerror 时换一张按名字生成的图，而不是留白 */
@@ -240,12 +240,12 @@ if($('#twSearchGo')){
 function likePost(el,id){el.classList.toggle('liked');const n=el.querySelector('.ln');n.textContent=+n.textContent+(el.classList.contains('liked')?1:-1);el.firstChild.textContent=el.classList.contains('liked')?'♥ ':'♡ '}
 /* ---- 精选 4K 摄影 ---- */
 function renderFeatured(){
-  $('#featStrip').innerHTML=FEATURED.map((f,i)=>`<div class="feat-card" onclick="openFeat(${i})"><img src="${IMG(P[f.img],'landscape_16_9')}" loading="lazy" style="cursor:zoom-in" onclick="event.stopPropagation();openViewer(this,'${f.t.replace(/'/g,'')} · ${f.loc.replace(/'/g,'')}')"><span class="plat pb-${f.plat}">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fourk">4K</span><div class="fc-info"><h5>${f.t}</h5><p>📍 ${f.loc} · 📷 ${f.by}</p></div></div>`).join('');
+  $('#featStrip').innerHTML=FEATURED.map((f,i)=>`<div class="feat-card" onclick="openFeat(${i})"><img src="${IMG(f.img,'landscape_16_9')}" loading="lazy" style="cursor:zoom-in" onclick="event.stopPropagation();openViewer(this,'${f.t.replace(/'/g,'')} · ${f.loc.replace(/'/g,'')}')"><span class="plat pb-${f.plat}">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fourk">4K</span><div class="fc-info"><h5>${f.t}</h5><p>📍 ${f.loc} · 📷 ${f.by}</p></div></div>`).join('');
   if(typeof watchImgs==='function')watchImgs($('#featStrip'));
 }
 function openFeat(i){
   const f=FEATURED[i];if(!f)return;
-  const src=IMG(P[f.img],'landscape_16_9');
+  const src=IMG(f.img,'landscape_16_9');
   openModal(`<div class="fd-img big" onclick="openViewer(this.querySelector('img'),'${f.t.replace(/'/g,'')} · ${f.loc.replace(/'/g,'')}')"><img src="${src}" style="cursor:zoom-in"><span class="fourk">4K ULTRA HD</span><span class="plat pb-${f.plat}" style="position:absolute;top:10px;right:44px">${PLAT[f.plat].i} ${PLAT[f.plat].n}</span><span class="fd-zoom">🔍 点击看大图</span></div>
     <div class="dbody"><h3 style="font-size:18px;font-weight:900">${f.t}</h3>
     <div class="fd-meta">📍 ${f.loc} · 📷 ${f.by}</div>
