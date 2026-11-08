@@ -60,7 +60,7 @@ function regionColors(map){
 /* ---- 图标（普通 / 点亮金圈发光版） ---- */
 /* 标点图标见下方 spotPin：按景点类型给专属 emoji + 配色，做成手帐风贴纸 */
 function spotSeries(list,litIds){
-  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,rippleEffect:{brushType:'stroke',scale:3.4},
+  return {id:'wgo-spots',type:'effectScatter',coordinateSystem:'geo',geoIndex:0,rippleEffect:{brushType:'stroke',scale:3.4},
     symbolSize:9,itemStyle:{color:'#ff6b57',shadowBlur:12,shadowColor:'rgba(255,107,87,.7)'},
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id})),zlevel:2};
 }
@@ -376,18 +376,44 @@ function createWanderMap(elId,mode,opts){
     if(p.data&&p.data.id){ /* 标点：详情 + 镜头飞过去 */
       flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
       if(opts.onSpot)opts.onSpot(p.data.id);
-    }else if(p.componentType==='geo'&&p.name){ /* 空白省份：飞到省中心 */
-      try{
-        const f=echarts.getMap(mode==='cn'?'china':mode).geoJson.features.find(f=>(f.properties.name||'')===p.name);
-        const cp=f&&f.properties&&f.properties.cp;
-        if(cp)flyTo(c,[cp[0],cp[1]],2.4);
-      }catch(e){}
+    }else if(p.componentType==='geo'&&p.name&&isChinaMap(c)){
+      /* 点省份/城市空白处：层级下钻（P2）
+       * 国家级点「重庆」→ 进入重庆市级视图；省级点区县名 → 进入该城市视图 */
+      const geoNow=c.getOption().geo[0]||{};
+      const onCity=DRILL.lvl==='prov'&&geoNow.map!=='china';
+      if(onCity&&isMunicipality(DRILL.code)){
+        /* 直辖市：点击区县只飞过去定位，不再换底图（区县级边界未收录） */
+        try{
+          const nm=geoNow.map;
+          const f=echarts.getMap(nm).geoJson.features.find(f=>(f.properties.name||'')===p.name);
+          if(f&&f.properties&&f.properties.cp)flyTo(c,[f.properties.cp[0],f.properties.cp[1]],3.2);
+        }catch(e){}
+      }else if(onCity){
+        const city=(typeof cityCanon==='function')?cityCanon(p.name):p.name;
+        drillTo(c,{lvl:'city',code:DRILL.code,name:p.name,prov:DRILL.code,city});
+      }else{
+        /* 国家级：按 DataV 省级要素名反查 adcode（名字→简称走 CITY_ALIAS 同一个归一表） */
+        const short=(typeof cityCanon==='function')?cityCanon(p.name):p.name;
+        const code=PROV_ADCODE[short]||PROV_ADCODE[short.replace(/(省|市|自治区|壮族自治区|回族自治区|维吾尔自治区|特别行政区)/g,'')];
+        if(code){
+          drillTo(c,{lvl:'prov',code,name:p.name,prov:code,city:''});
+        }else{
+          /* 没有本地边界（如台湾）：退化为原来的飞行定位 */
+          try{
+            const f=echarts.getMap(geoNow.map).geoJson.features.find(f=>(f.properties.name||'')===p.name);
+            const cp=f&&f.properties&&f.properties.cp;
+            if(cp)flyTo(c,[cp[0],cp[1]],2.4);
+          }catch(e){}
+        }
+      }
     }
   });
   /* 单层 geo 下 ECharts 自己维护 zoom / center，无需在 georoam 里再 setOption。
      旧代码每次滚轮都同步重绘全部 geo 层，是缩放卡顿的主因。 */
   bindSmoothWheel(c);
-  c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06}};
+  c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06},
+    flights:opts.flights?{data:opts.flights===true?(opts.spots||[]).map(s=>({coords:[[104.5,36.5],[s.lng,s.lat]]})):[]}:null};
+  if(mode==='cn'||mode==='china'){DRILL={root:c,lvl:'cn',code:'100000',name:'中国',stack:[]}}
   CHARTS[elId]=c;
   return c;
 }
@@ -467,6 +493,160 @@ function zoomBy(chart,factor){
   flyTo(chart,t.center&&t.center[0]!=null?t.center:c,z,450);
 }
 function resetView(chart){if(!chart)return;const d=chart.__wgo.default;flyTo(chart,d.center,d.zoom,700)}
+
+/* 判断实例是否为中国地图（含下钻后的省/市级，地图名都独立注册） */
+function isChinaMap(c){
+  try{
+    const g=(c.getOption().geo||[])[0];if(!g)return false;
+    return g.map==='cn'||g.map==='china'||String(g.map).indexOf('wgo-lvl-')===0;
+  }catch(e){return false}
+}
+/* ================= 层级下钻（P2）：全国 → 省 → 市 =================
+ * 底图来源：scripts/fetch-prov.js 从阿里云 DataV GeoAtlas 预下载
+ *   geo/prov/100000.json    全国省级轮廓（含 cp 中心点）
+ *   geo/prov/{省adcode}.json 该省下辖市/区县轮廓
+ *   geo/prov/{市adcode}.json 单个城市轮廓（市级下钻底图）
+ *   geo/prov/manifest.js    window.WGO_PROV 清单
+ * 每层把对应 GeoJSON 注册成独立地图名（wgo-prov-xxx），切换时 setOption 换 geo.map，
+ * 标点按「本层范围内的景点」重算，已打卡的用金色实心钉区分（spotPin(lit=true)）。
+ * 全部资源本地化，运行时零外部请求：离线 / 答辩现场也能完整下钻。 */
+const LVL_MAPS={};           /* adcode → 注册后的地图名（一次性注册，重复进层直接复用） */
+const LVL_GEO={};            /* adcode → GeoJSON（内存缓存，避免来回切换重复 fetch） */
+const LVL_LOADING={};
+let DRILL={root:null,lvl:'cn',code:'100000',name:'中国',stack:[]};
+/* 城市名 → 省级 adcode（地名归一走 core 的 cityCanon / CITY_PROV / PROV_NAME） */
+const PROV_ADCODE={'北京':'110000','上海':'310000','天津':'120000','重庆':'500000','河北':'130000','山西':'140000',
+  '内蒙古':'150000','辽宁':'210000','吉林':'220000','黑龙江':'230000','江苏':'320000','浙江':'330000','安徽':'340000',
+  '福建':'350000','江西':'360000','山东':'370000','河南':'410000','湖北':'420000','湖南':'430000','广东':'440000',
+  '广西':'450000','海南':'460000','四川':'510000','贵州':'520000','云南':'530000','西藏':'540000','陕西':'610000',
+  '甘肃':'620000','青海':'630000','宁夏':'640000','新疆':'650000','台湾':'710000','香港':'810000','澳门':'820000'};
+/* cityCanon 后的城市名 → 省简称（只补 CITY_PROV 没覆盖到的写法） */
+const CITY2PROV_EXTRA={'九寨沟':'四川','敦煌':'甘肃','喀什':'新疆','凤凰':'湖南','张家界':'湖南','香格里拉':'云南'};
+function provShort(city){
+  if(!city)return '';
+  const c=(typeof cityCanon==='function')?cityCanon(city):city;
+  const p=(typeof CITY_PROV!=='undefined'&&CITY_PROV[c])||CITY2PROV_EXTRA[c]||'';
+  return p;
+}
+function provAdcodeOf(city){
+  const p=provShort(city);
+  return PROV_ADCODE[p]||'';
+}
+/* 省级 GeoJSON 里某个城市对应的要素名（「杭州市」→「杭州市」/「杭州」；直辖市→「渝中区」这种区级不从城市名推） */
+function cityInProv(adcode,city){
+  const meta=(window.WGO_PROV||{})[adcode];
+  if(!meta)return '';
+  const c=(typeof cityCanon==='function')?cityCanon(city):city;
+  const hit=(meta.cities||[]).find(x=>x.name===c||x.name===c+'市'||x.name.indexOf(c)===0);
+  return hit?hit.name:'';
+}
+/* 取一份边界，注册成 ECharts 地图名。cb(mapName|null) */
+function loadLevelGeo(code,cb){
+  if(code==='100000')return cb(LVL_GEO['100000']?'wgo-cn-provinces':null);
+  if(LVL_MAPS[code])return cb(LVL_MAPS[code]);
+  if(LVL_LOADING[code]){LVL_LOADING[code].push(cb);return}
+  LVL_LOADING[code]=[cb];
+  const done=geo=>{
+    let name=null;
+    if(geo&&geo.features&&geo.features.length){
+      name='wgo-lvl-'+code;
+      LVL_GEO[code]=geo;
+      try{
+        if(!(echarts.getMap&&echarts.getMap(name)))echarts.registerMap(name,geo);
+        LVL_MAPS[code]=name;
+      }catch(e){name=null}
+    }
+    (LVL_LOADING[code]||[]).forEach(f=>f(name));
+    delete LVL_LOADING[code];
+  };
+  if(typeof fetch!=='function')return done(null);
+  fetch('geo/prov/'+code+'.json',{cache:'force-cache'})
+    .then(r=>r.ok?r.json():null).then(done).catch(()=>done(null));
+}
+/* 当前层级可见的景点 */
+function spotsInLevel(st){
+  st=st||DRILL;
+  const all=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn');
+  if(st.lvl==='cn')return all;
+  if(st.lvl==='prov'){
+    return all.filter(s=>provAdcodeOf(s.city)===st.code);
+  }
+  /* 市级：同省 + 城市名匹配（避免「朝阳区」这类同名跨省误判）。
+   * 直辖市（北京/上海/天津/重庆）的「市」就是省级本身，此时全市景点都算这一层 */
+  return all.filter(s=>{
+    if(provAdcodeOf(s.city)!==st.prov)return false;
+    const c=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+    return isMunicipality(st.prov)||c===st.city;
+  });
+}
+/* 直辖市：省级 adcode 末两位为 01（北京/天津/上海/重庆 主城区） */
+function isMunicipality(code){
+  return ['110000','120000','310000','500000'].indexOf(String(code))>=0;
+}
+/* 换底图 + 换标点（不动整体外观，只换 geo.map 与三个标点层的 data） */
+function applyLevel(chart,st,fit){
+  if(!chart)return;
+  const paint=mapName=>{
+    const lit=(typeof litSet==='function')?litSet():new Set();
+    const list=spotsInLevel(st);
+    const isCn=st.lvl==='cn';   /* 全国层：回到默认镜头；省/市级按边界 fit */
+    /* 换底图：只改 geo.map / regions / label 字号，配色、虚线边界、字体全部沿用原视觉 */
+    chart.setOption({geo:{map:mapName,regions:regionColors(mapName),
+      zoom:isCn?1.18:1,center:isCn?[104.5,36.5]:null,
+      label:{fontSize:st.lvl==='cn'?10.5:(st.lvl==='prov'?9:10)}}},false);
+    chart.setOption({series:[
+      {id:'wgo-spots',data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))},
+      {id:'wgo-icons',data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))},
+      {id:'wgo-lit',data:list.filter(s=>lit.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))}
+    ]},false);
+    /* 航线只在国家级展示：进省后航线会横穿全省、糊住标点 */
+    const fl=chart.__wgo&&chart.__wgo.flights;
+    if(fl&&!isCn)chart.setOption({series:[{id:'wgo-flights',data:[]}]},{lazyUpdate:true});
+    else if(fl&&isCn)chart.setOption({series:[{id:'wgo-flights',data:fl.data||[]}]},{lazyUpdate:true});
+    if(fit)isCn?flyTo(chart,[104.5,36.5],1.18,700):fitLevel(chart,LVL_GEO[st.code]||null);
+    if(typeof updateDrillUI==='function')updateDrillUI(st,list.length);
+    if(typeof refreshLitMarkers==='function')refreshLitMarkers();
+  };
+  if(st.lvl==='cn'){
+    if(!chart.__wgo||chart.__wgo.mode!=='cn')return;  /* 世界图不参与下钻 */
+    paint(LVL_GEO['100000']?'wgo-cn-provinces':'cn');   /* 省级边界加载完成前先退回内置 china */
+    return;
+  }
+  loadLevelGeo(st.code,name=>{
+    if(!name){toast('「'+st.name+'」边界数据缺失，请稍后重试','err');return}
+    paint(name);
+  });
+}
+/* 按边界外接矩形把视野对准本层范围（复用上方 geoBBox） */
+function fitLevel(chart,geo){
+  if(!chart)return;
+  const bb=geo?geoBBox(geo):null;
+  if(!bb)return;
+  chart.setOption({geo:{center:bb.center,zoom:1}},false);
+  /* 经验拟合：省级边界约占画布宽度的 1/1.9，市级占 1/2.6；
+   * 用外接框宽度换算，再夹在 1~4 之间，避免重庆这种窄长省份被拉得过近 */
+  const w=Math.max(.5,bb.max[0]-bb.min[0]);
+  const z=Math.max(1.05,Math.min(3.4,90/Math.max(6,w)));
+  flyTo(chart,bb.center,z,760);
+}
+/* 进入某一层（st: {lvl:'prov'|'city', code, name, prov?, city?}） */
+function drillTo(chart,st){
+  DRILL.stack.push({lvl:DRILL.lvl,code:DRILL.code,name:DRILL.name,prov:DRILL.prov,city:DRILL.city});
+  Object.assign(DRILL,st);
+  applyLevel(chart,DRILL,true);
+}
+/* 返回上一级；已在国家级则返回 false */
+function drillBack(chart){
+  if(!DRILL.stack.length)return false;
+  const prev=DRILL.stack.pop();
+  Object.assign(DRILL,{lvl:'cn',code:'100000',name:'中国',prov:'',city:''},prev);
+  applyLevel(chart,DRILL,true);
+  return true;
+}
+function resetDrill(chart){
+  DRILL={root:chart,lvl:'cn',code:'100000',name:'中国',stack:[]};
+  applyLevel(chart,DRILL,true);
+}
 
 /* ================= 浅色「百度风」路线图 liteRouteMap =================
  * 白底 + 蓝色路线 + 行程区域自动聚焦（把那一块地区单独框出来）
