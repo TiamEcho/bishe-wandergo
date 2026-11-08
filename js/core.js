@@ -1032,6 +1032,12 @@ function imgFallback(el){
   el.__chainIdx=i;
   el.src=IMGAPI+encodeURIComponent(chain[i])+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_4_3')+'&r='+i;
 }
+/* 统一的 <img> 属性串：懒加载 + 不发送 Referer（外站 CDN 如 B 站 hdslb
+ * 对 Referer 白名单校验，从 Pages/自定义域带 Referer 请求会直接 403），
+ * 动态拼接的图片一律走这里，避免以后新增 <img> 又漏掉 referrerpolicy */
+function imgAttrs(extra){
+  return 'loading="lazy" referrerpolicy="no-referrer"'+(extra?' '+extra:'');
+}
 /* 占位图：宽高相等（实测 1832×1832，与 landscape / portrait 的正常出图都不同） */
 function imgIsPlaceholder(el){
   return el.naturalWidth>200 && Math.abs(el.naturalWidth-el.naturalHeight)<4;
