@@ -66,7 +66,8 @@ function spotSeries(list,litIds){
 }
 function iconSeries(list,litIds){
   litIds=litIds||new Set();
-  return {type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:34,cursor:'pointer',
+  /* id 固定：core.js 拉到后端打卡记录后按 id 局部重刷 symbol，不用重建整张图 */
+  return {id:'wgo-icons',type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:34,cursor:'pointer',
     emphasis:{scale:1.3},
     symbol:(v,p)=>spotPin(p.data.id,litIds.has(p.data.id)),
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))};
@@ -75,7 +76,7 @@ function iconSeries(list,litIds){
 function litSeries(list,litIds){
   litIds=litIds||new Set();
   const data=list.filter(s=>litIds.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}));
-  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:2.5,rippleEffect:{brushType:'stroke',scale:5.2,period:3.2},
+  return {id:'wgo-lit',type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:2.5,rippleEffect:{brushType:'stroke',scale:5.2,period:3.2},
     symbolSize:16,itemStyle:{color:'#ffd76a',shadowBlur:22,shadowColor:'rgba(255,205,88,.9)'},
     data,z:5};
 }
@@ -385,9 +386,48 @@ function createWanderMap(elId,mode,opts){
   });
   /* 单层 geo 下 ECharts 自己维护 zoom / center，无需在 georoam 里再 setOption。
      旧代码每次滚轮都同步重绘全部 geo 层，是缩放卡顿的主因。 */
+  bindSmoothWheel(c);
   c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06}};
   CHARTS[elId]=c;
   return c;
+}
+/* ================= 滚轮缩放（P2：逐级 + 惯性补间） =================
+ * 原生 roam:'scale' 的滚轮是一次性跳变（跟鼠标滚轮的 delta 一步到位），滚起来一顿一顿。
+ * 这里只接管滚轮：按滚轮方向换算成「一级」缩放目标（每级 ×1.18），
+ * 再用 rAF 以指数逼近的方式补间过去，连续滚动会不断刷新目标值，视觉上是平滑的连续放大。
+ * 手势缩放（触屏 pinch）仍交给 ECharts 自己的 roam 处理，逻辑不重复。 */
+const WHEEL_STEP=1.18, WHEEL_MIN=.8, WHEEL_MAX=8;
+function bindSmoothWheel(chart){
+  const el=chart.getDom&&chart.getDom();
+  if(!el&&!chart.getZr)return;
+  const host=el||chart.getZr().painter.getViewportRoot();
+  if(!host||host.__wgoWheel)return;
+  host.__wgoWheel=true;
+  let target=null,rafId=0,lastT=0;
+  const jump=z=>{try{chart.setOption({geo:{zoom:Math.min(WHEEL_MAX,Math.max(WHEEL_MIN,z))}},{lazyUpdate:true,silent:true})}catch(e){}};
+  const tick=now=>{
+    const t=(chart.getOption().geo||[])[0]||{};
+    const curZ=+t.zoom||1;
+    const dt=Math.min(64,now-(lastT||now));lastT=now;
+    /* 每 16ms 走掉剩余距离的 22%，整体约 150~200ms 到位，既不拖沓也不生硬 */
+    const k=1-Math.pow(.78,dt/16);
+    const next=curZ+(target-curZ)*k;
+    jump(next);
+    if(Math.abs(target-next)<.004){jump(target);rafId=0;target=null;lastT=0;return}
+    rafId=requestAnimationFrame(tick);
+  };
+  const onWheel=e=>{
+    /* 触控板横向滑动不缩放 */
+    if(Math.abs(e.deltaY)<Math.abs(e.deltaX))return;
+    e.preventDefault();
+    const t=(chart.getOption().geo||[])[0]||{};
+    const curZ=target!=null?target:(+t.zoom||1);
+    /* 滚动幅度换算级数：鼠标滚轮常见 deltaY=100，一次即一级；触控板小 delta 也能平滑累积 */
+    const steps=Math.max(-3,Math.min(3,-e.deltaY/100));
+    target=Math.min(WHEEL_MAX,Math.max(WHEEL_MIN,curZ*Math.pow(WHEEL_STEP,steps)));
+    if(!rafId){lastT=0;rafId=requestAnimationFrame(tick)}
+  };
+  host.addEventListener('wheel',onWheel,{passive:false});
 }
 /* ================= AI 路线层：按 Day 分色连线 + 起点旗标 + 顺序标号 ================= */
 const DAY_COLORS=['#e7c76d','#7ea6d9','#6cc47a','#e58fb1','#9a86d9'];

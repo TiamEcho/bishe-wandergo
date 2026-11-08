@@ -1479,12 +1479,14 @@ function renderItinerary3col(plan){
       item.onclick=()=>select(index,false);
     });
     cards.querySelectorAll('[data-open]').forEach(b=>b.onclick=e=>{e.stopPropagation();openSpot(b.dataset.open)});
-    /* pin：跳到城市地图页并自动定位到该景点（city 走映射表统一后的名字） */
+    /* pin（P2）：跳到 ECharts 环球地图页并自动定位到该景点、放大展示。
+     * map.html 已支持 ?spot= 深链（飞到坐标 + 打开详情弹窗），
+     * 这里额外带 zoom 参数控制放大级别，city 仍走 cityCanon 映射表统一写法 */
     cards.querySelectorAll('[data-map]').forEach(b=>b.onclick=e=>{
       e.stopPropagation();
       const sid=b.dataset.map;
-      const c=(typeof cityCanon==='function'?cityCanon(b.dataset.city||''):b.dataset.city)||'全部';
-      location.href='map-city.html?city='+encodeURIComponent(c)+'&spot='+encodeURIComponent(sid);
+      const c=(typeof cityCanon==='function'?cityCanon(b.dataset.city||''):b.dataset.city)||'';
+      location.href='map.html?spot='+encodeURIComponent(sid)+'&zoom=3.6'+(c?'&city='+encodeURIComponent(c):'');
     });
     /* 时刻回填：重排后的时间写在 data-slot 对应的时间列 */
     fillTimes(plan,cards);

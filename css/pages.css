@@ -601,3 +601,28 @@
 .lightbox .lb-x:hover{background:var(--gold);color:#1d2434}
 @media(max-width:700px){.lightbox{padding:12px}.lightbox .lb-stage{max-height:70vh}}
 
+
+/* ================= P2 地图标点弹窗 + 图文打卡 ================= */
+.mspot-hero{position:relative}
+.mspot-hcap{padding:14px 18px 4px}
+.mspot-hcap h3{margin:0;font-size:19px;font-weight:900;color:var(--ink)}
+.mspot-meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--muted)}
+.mspot-meta b{color:var(--gold);font-size:13px}
+.mspot-ck{margin-top:14px;padding:14px;border-radius:14px;background:rgba(243,218,150,.07);border:1px solid var(--line)}
+.mspot-ck-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.mspot-ck-h b{font-size:13px;color:var(--ink)}
+.mspot-ck-h span{font-size:11px;color:var(--muted)}
+.mspot-ck textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:74px;padding:10px 12px;
+  font:inherit;font-size:13px;color:var(--ink);background:rgba(0,0,0,.18);border:1px solid var(--line);
+  border-radius:12px;outline:none;transition:.2s}
+.mspot-ck textarea:focus{border-color:var(--acc)}
+.mspot-ck-btns{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.ck-upload{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:var(--ink-2);
+  padding:7px 14px;border-radius:99px;border:1px dashed rgba(243,218,150,.5);cursor:pointer;transition:.18s}
+.ck-upload:hover{color:var(--ink);border-color:var(--acc);background:rgba(243,218,150,.12)}
+.ck-pv{display:flex;gap:8px;flex-wrap:wrap}
+.ck-th{position:relative;width:62px;height:62px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.ck-th img{width:100%;height:100%;object-fit:cover;display:block}
+.ck-th .x{position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;
+  display:grid;place-items:center;font-size:10px;cursor:pointer;background:rgba(0,0,0,.66);color:#fff}
+.mspot-ck-acts{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}

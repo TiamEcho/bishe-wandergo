@@ -505,7 +505,39 @@ function litSet(){
   const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
   const names=new Set(albums.map(a=>a.dest));
   const ids=new Set();SPOTS.forEach(s=>{if(names.has(s.n))ids.add(s.id)});
+  /* P2：合并后端打卡记录（/api/checkin/mine）。
+   * 后端结果异步返回后写入这个集合，地图页据此点亮标点；
+   * 只读本地时行为与原来完全一致，不会因为接口慢而阻塞地图渲染。 */
+  SERVER_LIT.forEach(id=>ids.add(id));
   return ids;
+}
+/* 后端打卡过的 spot_id（异步填充，供 litSet 合并） */
+const SERVER_LIT=new Set();
+if(typeof WGOAPI!=='undefined'&&WGOAPI.myCheckinSpots){
+  /* 昵称要等登录态恢复后再取，initUser 是同步读 localStorage 的，这里延后一轮 */
+  setTimeout(()=>{
+    const nick=(typeof user!=='undefined'&&user&&user.nick)?user.nick:(localStorage.getItem('wgo_nick')||'');
+    WGOAPI.myCheckinSpots(nick).then(r=>{
+      if(!r||!r.ok||!Array.isArray(r.list))return;
+      let added=false;
+      r.list.forEach(id=>{if(id&&!SERVER_LIT.has(id)){SERVER_LIT.add(id);added=true}});
+      if(added&&document.getElementById('chinaMap'))refreshLitMarkers();
+    }).catch(()=>{});
+  },600);
+}
+/* 地图页标点重新着色（无地图实例时静默跳过，其他页面无副作用） */
+function refreshLitMarkers(){
+  if(typeof CHARTS==='undefined')return;
+  Object.keys(CHARTS).forEach(k=>{
+    const c=CHARTS[k];if(!c||!c.__wgo)return;
+    const lit=litSet();
+    const list=(c.__wgo.opts.spots)||[];
+    const idx=c.getOption().series.findIndex(s=>s.id==='wgo-icons');
+    if(idx<0)return;
+    c.setOption({series:[{id:'wgo-icons',symbol:(v,p)=>spotPin(p.data.id,lit.has(p.data.id))}]});
+    const li=c.getOption().series.findIndex(s=>s.id==='wgo-lit');
+    if(li>=0)c.setOption({series:[{id:'wgo-lit',data:list.filter(s=>lit.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))}]});
+  });
 }
 function openSpot(id){
   const s=spotById(id);if(!s)return;
@@ -542,7 +574,30 @@ const CITY_ALIAS={
   '苏州市':'苏州','大理市':'大理','丽江市':'丽江','三亚市':'三亚','厦门市':'厦门',
   '长沙市':'长沙','武汉市':'武汉','青岛市':'青岛','昆明市':'昆明','哈尔滨市':'哈尔滨',
   '黄山市':'黄山','阿坝':'阿坝州','呼伦贝尔市':'呼伦贝尔','桂林市':'桂林','阳朔县':'阳朔',
-  '敦煌市':'敦煌','张家界市':'张家界','凤凰县':'凤凰','都江堰市':'都江堰','香格里拉市':'香格里拉'
+  '敦煌市':'敦煌','张家界市':'张家界','凤凰县':'凤凰','都江堰市':'都江堰','香格里拉市':'香格里拉',
+  /* P2 补全：SPOTS 里出现的其余写法（含自治州全称、县/县级市、地级市带「市」） */
+  '延边州':'延边','延边朝鲜族自治州':'延边','湘西':'湘西州','湘西土家族苗族自治州':'湘西州',
+  '甘孜':'甘孜州','甘孜藏族自治州':'甘孜州','阿坝藏族羌族自治州':'阿坝州','黔东南':'黔东南州',
+  '黔东南苗族侗族自治州':'黔东南州','西双版纳傣族自治州':'西双版纳','迪庆藏族自治州':'香格里拉',
+  '恩施土家族苗族自治州':'恩施','大理白族自治州':'大理','昌吉回族自治州':'昌吉',
+  '伊犁哈萨克自治州':'伊犁','吐鲁番市':'吐鲁番','喀什市':'喀什','克拉玛依市':'克拉玛依',
+  '乌鲁木齐市':'乌鲁木齐','拉萨市':'拉萨','林芝市':'林芝','日喀则市':'日喀则','西宁市':'西宁',
+  '兰州市':'兰州','银川市':'银川','太原市':'太原','郑州市':'郑州','开封市':'开封','洛阳市':'洛阳',
+  '济南市':'济南','泰安市':'泰安','烟台市':'烟台','威海市':'威海','大连市':'大连','沈阳市':'沈阳',
+  '长春市':'长春','延吉市':'延吉','呼和浩特市':'呼和浩特','鄂尔多斯市':'鄂尔多斯','福州市':'福州',
+  '泉州市':'泉州','武夷山市':'武夷山','南昌市':'南昌','景德镇市':'景德镇','婺源县':'婺源',
+  '合肥市':'合肥','黄山市':'黄山','无锡市':'无锡','扬州市':'扬州','常州市':'常州','绍兴市':'绍兴',
+  '宁波市':'宁波','温州市':'温州','舟山市':'舟山','嘉兴市':'嘉兴','乌镇':'乌镇','西塘':'西塘',
+  '佛山市':'佛山','珠海市':'珠海','东莞市':'东莞','汕头市':'汕头','惠州市':'惠州','开平市':'开平',
+  '南宁市':'南宁','北海市':'北海','海口市':'海口','万宁市':'万宁','陵水':'陵水','文昌市':'文昌',
+  '贵阳市':'贵阳','安顺市':'安顺','遵义市':'遵义','荔波县':'荔波','凯里市':'凯里','重庆市':'重庆',
+  '乐山市':'乐山','峨眉山市':'峨眉山','九寨沟县':'九寨沟','稻城县':'稻城','康定市':'康定',
+  '雅安市':'雅安','自贡市':'自贡','宜宾市':'宜宾','泸州市':'泸州','绵阳市':'绵阳','南充市':'南充',
+  '广元市':'广元','攀枝花市':'攀枝花','西昌市':'西昌','腾冲市':'腾冲','瑞丽市':'瑞丽',
+  '建水县':'建水','元阳县':'元阳','景洪市':'西双版纳','芒市':'芒市','平安县':'平安',
+  '张家口市':'张家口','承德市':'承德','秦皇岛市':'秦皇岛','保定市':'保定','石家庄市':'石家庄',
+  '邯郸市':'邯郸','大同市':'大同','平遥县':'平遥','五台县':'五台山','延安市':'延安','宝鸡市':'宝鸡',
+  '汉中市':'汉中','天水市':'天水','张掖市':'张掖','嘉峪关市':'嘉峪关','酒泉市':'酒泉','格尔木市':'格尔木'
 };
 function cityCanon(name){
   const raw=String(name||'').trim();
@@ -976,6 +1031,12 @@ function initChrome(){
       <div class="wrap">
         <div class="fb"><span class="tile" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#f3da96,#c8973f);display:inline-grid;place-items:center">✈️</span>WANDERGO · Fly Me to the World</div>
         <div class="fnote">让世界，成为你的下一站 · 原型演示</div>
+      </div>
+      <div class="wrap">
+        <nav class="ffnav">
+          ${NAVS.map(([href,ico,label])=>`<a href="${href}"><i class="ffn-ico">${ico}</i>${label}</a>`).join('')}
+          <a class="ffn-map" href="map.html"><i class="ffn-ico">🗺</i>地图找景点</a>
+        </nav>
       </div>
       <div class="wrap">
         <div class="fdecl">

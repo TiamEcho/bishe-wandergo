@@ -48,8 +48,8 @@
 <script src="geo/manifest.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1162"></script>
-<script src="js/core.js?v=1170"></script>
-<script src="js/map.js?v=1145"></script>
+<script src="js/core.js?v=1171"></script>
+<script src="js/map.js?v=1172"></script>
 <script>
 let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
@@ -70,14 +70,14 @@ function buildMaps(){
   ensureSeedLit();
   const lit=litSet();
   $('#litChip').textContent='✨ 已点亮 '+lit.size+' 处';
-  const opt={spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openSpot};
+  const opt={spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openMapSpot};
   /* 两张图分别初始化：世界图失败不能连带中国图一起白屏 */
   cur=createWanderMap('chinaMap','cn',opt);
   /* createWanderMap 在 echarts 尚未就绪时会返回 null，这里再试一次并报错，
      避免画布只剩纸纹背景、地图整块空白 */
   if(!cur&&window.echarts)cur=createWanderMap('chinaMap','cn',opt);
   if(!cur)throw new Error('中国地图初始化失败：echarts 或 china.js 未就绪');
-  try{world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openSpot})}
+  try{world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openMapSpot})}
   catch(e){console.warn('[map] 世界地图初始化失败',e);world=null}
 }
 function toggleLabels(btn){
@@ -95,8 +95,103 @@ $$('#mapTabs button').forEach(b=>b.onclick=()=>{
   if(target){requestAnimationFrame(()=>requestAnimationFrame(()=>syncMapGeo(target)))}
 });
 let world=null;
+/* ================= P2 地图标点弹窗 + 图文打卡 =================
+ * 点击标点不再直接走 core 的通用景点详情，而是弹出本页专用卡片：
+ * 名称 / 评分 / 图片 + 「📸 打卡」按钮，打卡记录走后端 /api/checkin 入库。 */
+let MAP_CK_IMGS=[];       /* 已压缩的 dataURL（最多 4 张） */
+const CK_MAX=4, CK_W=800, CK_Q=.7;
+function mapSpotImg(s){
+  /* 只认本地图库；缺图时按类型给分级占位图，避免弹窗顶部一块空白 */
+  const u=(typeof localImg==='function'&&localImg(s.id))||'';
+  return u||(typeof imgPlaceholderSvg==='function'?imgPlaceholderSvg('spot'):'');
+}
+function openMapSpot(id){
+  const s=spotById(id);if(!s)return;
+  MAP_CK_IMGS=[];
+  const lit=litSet().has(id);
+  const img=mapSpotImg(s);
+  openModal(`<button class="mx" onclick="closeModal()">✕</button>
+  <div class="mspot-hero"><img class="zoomable" src="${img}" data-key="${s.id}" alt="${s.n}" style="width:100%;height:210px;object-fit:cover;display:block">
+    <div class="mspot-hcap"><h3>${s.n}${lit?' <span class="tagpill lit">✨ 已点亮</span>':''}</h3>
+      <div class="mspot-meta"><span>⭐ <b>${s.rating}</b></span><span>📍 ${s.city}</span><span>${s.tag}</span></div></div></div>
+  <div class="dbody">
+    <div class="kv">
+      <div class="item">🏠 景点地址<b>${s.addr}</b></div>
+      <div class="item">🌐 经纬度坐标<b class="gold">${s.lng.toFixed(3)}, ${s.lat.toFixed(3)}</b></div>
+      <div class="item">⏱ 建议游玩时长<b>${s.hrs}</b></div>
+      <div class="item">💰 门票参考<b class="gold">${s.price}</b></div>
+    </div>
+    <div class="mspot-ck" id="mspotCk">
+      <div class="mspot-ck-h"><b>📸 在这里打卡</b><span>图文同步到「我的打卡」与后端数据库</span></div>
+      <textarea id="ckText" rows="3" placeholder="这一站看到了什么？写两句留着纪念…"></textarea>
+      <div class="mspot-ck-btns">
+        <label class="ck-upload">＋ 添加图片<input type="file" id="ckFiles" accept="image/*" multiple hidden onchange="onCkPick(this)"></label>
+        <div class="ck-pv" id="ckPv"></div>
+      </div>
+      <div class="mspot-ck-acts">
+        <button class="btn line" onclick="openSpot('${s.id}')">查看更多详情</button>
+        <button class="btn gold" id="ckSubmit" onclick="submitMapCheckin('${s.id}')">✅ 提交打卡</button>
+      </div>
+    </div>
+  </div>`,true);
+  renderCkPv();
+}
+function renderCkPv(){
+  const box=$('#ckPv');if(!box)return;
+  box.innerHTML=MAP_CK_IMGS.map((u,i)=>`<div class="ck-th"><img src="${u}" alt="打卡图${i+1}"><span class="x" onclick="delCkImg(${i})">✕</span></div>`).join('');
+}
+function delCkImg(i){MAP_CK_IMGS.splice(i,1);renderCkPv()}
+/* 选图：canvas 压到最长边 800px / JPEG 0.7，控制单条记录的 dataURL 体积（后端 JSON 上限 2MB） */
+function onCkPick(input){
+  const files=[...(input.files||[])].slice(0, CK_MAX-MAP_CK_IMGS.length);
+  input.value='';
+  files.forEach(f=>{
+    if(!f.type.startsWith('image/'))return;
+    const r=new FileReader();
+    r.onload=e=>{
+      const im=new Image();
+      im.onload=()=>{
+        const w=Math.min(CK_W,im.width),h=Math.round(im.height*w/im.width);
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(im,0,0,w,h);
+        MAP_CK_IMGS.push(c.toDataURL('image/jpeg',CK_Q));
+        renderCkPv();
+      };
+      im.onerror=()=>toast('图片读取失败，换一张试试','err');
+      im.src=e.target.result;
+    };
+    r.readAsDataURL(f);
+  });
+}
+async function submitMapCheckin(id){
+  const s=spotById(id);if(!s)return;
+  const btn=$('#ckSubmit');if(btn&&btn.disabled)return;
+  const text=($('#ckText')&&$('#ckText').value.trim())||'这一站没有留下太多文字，但照片都记得。';
+  const nick=(typeof user!=='undefined'&&user&&user.nick)||localStorage.getItem('wgo_nick')||'游客';
+  if(btn){btn.disabled=true;btn.textContent='⏳ 提交中…'}
+  const body={user:nick,city:cityCanon(s.city),cityName:s.city,spot:s.n,spotId:s.id,content:text,rating:s.rating,imgs:MAP_CK_IMGS.slice(0,CK_MAX),source:'map'};
+  let ok=false;
+  try{
+    const r=await WGOAPI.postCheckin(body);
+    ok=!!(r&&r.ok);
+  }catch(e){ok=false}
+  /* 本地也留一份：纪念册页 / 离线环境仍能看到这次打卡 */
+  try{
+    const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
+    albums.unshift({id:'ck'+Date.now(),dest:s.n,city:s.city,date:new Date().toISOString().slice(0,10),
+      text,mood:'😌 治愈放松',costs:[],total:0,imgs:MAP_CK_IMGS.slice(0,CK_MAX),hasVideo:false});
+    localStorage.setItem('fmw_albums',JSON.stringify(albums));
+  }catch(e){}
+  /* 点亮：写进后端集合后重刷标点，并同步右上角计数 */
+  SERVER_LIT.add(id);
+  refreshLitMarkers();
+  const chip=$('#litChip');if(chip)chip.textContent='✨ 已点亮 '+litSet().size+' 处';
+  if(btn){btn.disabled=false;btn.textContent='✅ 已打卡'}
+  toast(ok?'打卡成功，已同步到数据库 ✨':'打卡已保存到本地（后端未连接）',ok?'ok':'err');
+  if(ok)setTimeout(()=>{if($('#ckSubmit'))openMapSpot(id)},700);
+}
 /* 首页预览截图钩子（无头浏览器用，交互中不会触发） */
-window.__spotHover=id=>{const s=spotById(id);if(s){flyTo(s.rg==='cn'?cur:world,[s.lng,s.lat],2.6);openSpot(id)}};
+window.__spotHover=id=>{const s=spotById(id);if(s){flyTo(s.rg==='cn'?cur:world,[s.lng,s.lat],2.6);openMapSpot(id)}};
 window.__groundClick=()=>{try{cur&&cur.dispatchAction({type:'geoRoam',zoom:1.12})}catch(e){}};
 loadECharts(ok=>{
   if(!ok){$('#mapFallback').style.display='grid';toast('地图资源加载失败，请检查网络后刷新','err');return}
@@ -112,14 +207,16 @@ loadECharts(ok=>{
     toast('地图初始化失败：'+(e&&e.message||e),'err');
     return;
   }
-  /* 深度链接：map.html?spot=xxx 自动打开详情 */
+  /* 深度链接：map.html?spot=xxx[&zoom=3.6] 自动定位并放大到该景点
+   * 行程卡片的 pin 按钮跳的就是这里（P2） */
   const sid=WGO.q('spot');
   if(sid&&spotById(sid)){
     const s=spotById(sid),c=s.rg==='cn'?cur:world;
+    const z=Math.min(8,Math.max(1.2,+WGO.q('zoom')||3.4));
     if(c){$$('#mapTabs button').forEach(x=>x.classList.toggle('on',x.dataset.m===s.rg));
       $('#chinaMap').style.display=s.rg==='cn'?'block':'none';
       $('#worldMap').style.display=s.rg==='ab'?'block':'none';
-      setTimeout(()=>{flyTo(c,[s.lng,s.lat],3.4);openSpot(sid)},600);
+      setTimeout(()=>{flyTo(c,[s.lng,s.lat],z);openMapSpot(sid)},600);
     }
   }
   if(user&&user.nick&&localStorage.getItem(seedKey)&&!localStorage.getItem('fmw_lit_toast')){
