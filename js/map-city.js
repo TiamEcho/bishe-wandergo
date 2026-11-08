@@ -343,7 +343,10 @@
     const m = state.markers.get(sid);
     if (!s || !m) return;
     state.map.flyTo([s.lat, s.lng], Math.max(state.map.getZoom(), 13), { duration: 0.7 });
-    m.openPopup();
+    /* flyTo 是动画，立即 openPopup 可能在动画首帧就被自动平移关掉，动画结束再开 */
+    const open = () => { if (state.map.getZoom() >= 11) m.openPopup(); };
+    state.map.once('moveend', open);
+    setTimeout(open, 800);
     const li = document.querySelector(`.cm-li[data-go="${sid}"]`);
     if (li) { li.classList.add('hot'); setTimeout(() => li.classList.remove('hot'), 1200); li.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   }
