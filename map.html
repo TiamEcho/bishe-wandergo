@@ -36,6 +36,7 @@
       <button class="tb" onclick="zoomBy(cur,1/1.35)">🔍－ 缩小</button>
       <button class="tb" onclick="toggleLabels(this)">🔤 省份名 开/关</button>
       <span class="lit-chip" id="litChip">✨ 已点亮 0 处</span>
+      <span class="lit-chip" id="provChip" style="display:none">🏅 本省点亮 0 处</span>
     </div>
     <div id="chinaMap" style="height:560px"></div>
     <div id="worldMap" style="height:560px;display:none"></div>
@@ -57,9 +58,9 @@
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1162"></script>
 <script src="js/core.js?v=1171"></script>
-<script src="js/map.js?v=1172"></script>
+<script src="js/map.js?v=1173"></script>
 <script>
-let cur=null,labelsOn=true,mapMode='cn';
+let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
 /* 首次访问点亮 3 处示例足迹（真实打卡会持续增加），可在打卡页删除 */
 function ensureSeedLit(){
@@ -113,8 +114,21 @@ function updateDrillUI(st,count){
     crumb.innerHTML=parts.join('')+'<em>'+count+' 个景点</em>';
   }
   if(back)back.disabled=!DRILL.stack.length;
+  updateProvChip(st);
 }
-function provShortName(n){return String(n||'').replace(/(省|市|自治区|壮族自治区|回族自治区|维吾尔自治区|特别行政区)/g,'')||n}
+/* 本省点亮统计：下钻到省/市层时显示「已打卡 / 本省景点数」，全国层隐藏 */
+function updateProvChip(st){
+  const chip=$('#provChip');if(!chip)return;
+  if(!st||st.lvl==='cn'){chip.style.display='none';return}
+  const pa=st.lvl==='prov'?st.code:st.prov;
+  const allInProv=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn'&&provAdcodeOf(s.city)===pa);
+  const lit=litSet();
+  const n=allInProv.filter(s=>lit.has(s.id)).length;
+  const pName=((window.WGO_PROV||{})[pa]||{}).name||'';
+  chip.style.display='';
+  chip.textContent='🏅 '+provShortName(pName)+'点亮 '+n+' / '+allInProv.length;
+}
+function provShortName(n){return String(n||'').replace(/(壮族自治区|回族自治区|维吾尔自治区|特别行政区|自治区|省|市)/g,'')||n}
 function drillBackClick(){
   if(!cur)return;
   if(!drillBack(cur))toast('已经在最外层啦');
@@ -195,6 +209,7 @@ function mapSpotImg(s){
 function openMapSpot(id){
   const s=spotById(id);if(!s)return;
   MAP_CK_IMGS=[];
+  selectMapSpot(id);            /* 当前地图实例上的弹窗跳转要先把上一枚选中态清掉 */
   const lit=litSet().has(id);
   const img=mapSpotImg(s);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
@@ -216,18 +231,33 @@ function openMapSpot(id){
         <div class="ck-pv" id="ckPv"></div>
       </div>
       <div class="mspot-ck-acts">
-        <button class="btn line" onclick="openSpot('${s.id}')">查看更多详情</button>
+        <button class="btn line" onclick="gotoSpotDetail('${s.id}')">📄 查看详情</button>
+        <button class="btn line" onclick="gotoAIPlan('${s.id}')">🤖 用 AI 规划这一站</button>
         <button class="btn gold" id="ckSubmit" onclick="submitMapCheckin('${s.id}')">✅ 提交打卡</button>
       </div>
     </div>
   </div>`,true);
   renderCkPv();
 }
+/* 标点弹窗的「查看详情」：跳出地图，进入独立的景点详情页（?spot=id 携带景点）
+ * 注意别写回 guide.html——那是「模块导览」页，之前详情按钮跳错页就是这里指错了 */
+function gotoSpotDetail(id){if(id)WGO.go('spot.html?spot='+encodeURIComponent(id))}
+/* 标点弹窗的「AI 规划」：带上景点所在城市，AI 页会自动填充并生成方案 */
+function gotoAIPlan(id){
+  const s=spotById(id);if(!s)return;
+  const city=s.rg==='cn'?cityCanon(s.city):s.city;
+  WGO.go('ai.html?dest='+encodeURIComponent(city));
+}
 function renderCkPv(){
   const box=$('#ckPv');if(!box)return;
   box.innerHTML=MAP_CK_IMGS.map((u,i)=>`<div class="ck-th"><img src="${u}" alt="打卡图${i+1}"><span class="x" onclick="delCkImg(${i})">✕</span></div>`).join('');
 }
 function delCkImg(i){MAP_CK_IMGS.splice(i,1);renderCkPv()}
+/* 弹窗关闭后清掉标点的高亮描边（core 的 closeModal 不感知地图，这里用事件委托兜住所有关闭路径：
+ * ✕ 按钮、点遮罩、Esc 都一样生效；遮罩元素是 #ovl） */
+document.addEventListener('click',e=>{
+  if(e.target&&e.target.id==='ovl'&&SPOT_SEL)selectMapSpot('');
+});
 /* 选图：canvas 压到最长边 800px / JPEG 0.7，控制单条记录的 dataURL 体积（后端 JSON 上限 2MB） */
 function onCkPick(input){
   const files=[...(input.files||[])].slice(0, CK_MAX-MAP_CK_IMGS.length);
@@ -273,6 +303,7 @@ async function submitMapCheckin(id){
   SERVER_LIT.add(id);
   refreshLitMarkers();
   const chip=$('#litChip');if(chip)chip.textContent='✨ 已点亮 '+litSet().size+' 处';
+  updateProvChip(DRILL);
   if(btn){btn.disabled=false;btn.textContent='✅ 已打卡'}
   toast(ok?'打卡成功，已同步到数据库 ✨':'打卡已保存到本地（后端未连接）',ok?'ok':'err');
   if(ok)setTimeout(()=>{if($('#ckSubmit'))openMapSpot(id)},700);
@@ -304,6 +335,22 @@ loadECharts(ok=>{
       $('#chinaMap').style.display=s.rg==='cn'?'block':'none';
       $('#worldMap').style.display=s.rg==='ab'?'block':'none';
       setTimeout(()=>{flyTo(c,[s.lng,s.lat],z);openMapSpot(sid)},600);
+    }
+  }
+  /* 深度链接：map.html?prov=330000 或 ?city=杭州 直接下钻到对应层级
+   * 景点详情页的「在地图上查看」与 AI 行程卡片的 pin 按钮都走这里 */
+  const provCode=WGO.q('prov'),cityQ=WGO.q('city');
+  if(!sid&&cur&&(provCode||cityQ)){
+    const pa=provCode||provAdcodeOf(cityQ);
+    const meta=(window.WGO_PROV||{})[pa];
+    if(meta){
+      DRILL.stack=[];
+      drillTo(cur,{lvl:'prov',code:pa,name:meta.name,prov:pa,city:''});
+      if(cityQ&&!isMunicipality(pa)){
+        const cn=(typeof cityCanon==='function')?cityCanon(cityQ):cityQ;
+        const hit=(meta.cities||[]).find(x=>x.name===cn||x.name===cn+'市'||x.name.indexOf(cn)===0);
+        if(hit)setTimeout(()=>drillTo(cur,{lvl:'city',code:hit.adcode,name:hit.name,prov:pa,city:cn}),700);
+      }
     }
   }
   if(user&&user.nick&&localStorage.getItem(seedKey)&&!localStorage.getItem('fmw_lit_toast')){

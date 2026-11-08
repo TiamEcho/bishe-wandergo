@@ -894,7 +894,8 @@ const TOPNAV=[
    ['ai.html?mode=budget','时间预算','开始时间 + 结束时间 + 费用预估']]},
  {t:'地图打卡',ico:'🗺',items:[
    ['map-city.html','城市地图','Leaflet + OSM · 景点标点 · 图文打卡'],
-   ['map.html','点亮地图','中国 / 世界切换'],
+   ['map.html','点亮地图','中国 / 世界切换 · 省份下钻'],
+   ['spot.html','景点详情','单个景点 · AI 规划入口'],
    ['checkin.html','景点打卡','小游戏 + 成就徽章'],
    ['memories.html','旅程故事','旅行记录时间线']]},
  {t:'社区攻略',ico:'💬',items:[
