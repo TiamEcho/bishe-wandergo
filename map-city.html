@@ -43,6 +43,11 @@
     <div class="cm-mapwrap">
       <div id="cmMap"></div>
       <div class="cm-hint">🖱 滚轮缩放：省 → 市 → 区逐级放大，底图为 OpenStreetMap</div>
+      <div class="cm-zoomtag" id="cmZoomTag">省域视图</div>
+      <div class="cm-layerbox">
+        <label><input type="checkbox" id="cmBorders" checked> 行政边界</label>
+        <label><input type="checkbox" id="cmSpots" checked> 景点标记</label>
+      </div>
     </div>
 
   </div>
@@ -50,7 +55,7 @@
 
 <script src="js/data.js?v=1170"></script>
 <script src="img/spots/manifest.js"></script>
-<script src="geo/manifest.js"></script>
+<script src="geo/manifest.js?v=1170"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>

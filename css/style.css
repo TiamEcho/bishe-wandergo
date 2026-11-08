@@ -592,6 +592,10 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 #itin3col .journey-number{display:inline-flex;align-items:center;justify-content:center;background:#2196F3;color:#fff;width:25px;height:25px;border-radius:50%;margin-right:8px;font-size:12px}
 #itin3col .journey-card p{font-size:14px;font-weight:400;color:#64748B;margin:5px 0;overflow-wrap:anywhere}
 #itin3col .journey-detail{background:none;border:0;padding:4px 0;color:#2196F3;font-size:12px}
+/* 行程卡 pin：跳城市地图页并自动定位到该景点 */
+#itin3col .tl-acts{display:flex;gap:10px;align-items:center}
+#itin3col .journey-pin{background:none;border:0;padding:4px 0;color:#C98A2E;font-size:12px}
+#itin3col .journey-pin:hover{text-decoration:underline}
 #itin3col .journey-map-panel{display:flex;flex-direction:column;min-width:0;height:600px;border:1px solid #E2E8F0;border-radius:16px;overflow:hidden;background:#fff}
 #itin3col .journey-map-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px;flex:none;border-bottom:1px solid #E2E8F0}
 #itin3col .journey-map-head h3{font-size:15px;color:#1E293B}
