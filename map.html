@@ -24,11 +24,19 @@
       <div class="map-legend"><span><i class="lg-red"></i>热门打卡地</span><span><i class="lg-gold"></i>✨ 已点亮（我打卡过）</span><span><i class="lg-line"></i>飞行航线</span><span><i class="lg-mt"></i>手绘山脉</span></div>
     </div>
     <div class="map-toolbar">
+      <button class="tb drill-back" id="drillBack" onclick="drillBackClick()" disabled>← 返回上一级</button>
+      <span class="drill-crumb" id="drillCrumb"><b>中国</b></span>
+      <div class="drill-search">
+        <input id="drillSearch" type="text" placeholder="🔍 搜景点 / 城市，快速定位" autocomplete="off"
+               oninput="onDrillSearch(this.value)" onkeydown="if(event.key==='Enter')onDrillSearch(this.value,true)">
+        <div class="drill-sug" id="drillSug"></div>
+      </div>
       <button class="tb" onclick="resetView(cur)">🎯 重置视角</button>
       <button class="tb" onclick="zoomBy(cur,1.35)">🔍＋ 放大</button>
       <button class="tb" onclick="zoomBy(cur,1/1.35)">🔍－ 缩小</button>
       <button class="tb" onclick="toggleLabels(this)">🔤 省份名 开/关</button>
       <span class="lit-chip" id="litChip">✨ 已点亮 0 处</span>
+      <span class="lit-chip" id="provChip" style="display:none">🏅 本省点亮 0 处</span>
     </div>
     <div id="chinaMap" style="height:560px"></div>
     <div id="worldMap" style="height:560px;display:none"></div>
@@ -37,7 +45,7 @@
       <span><i class="rdot" style="background:#ff6b57"></i>红点 = 热门打卡地</span>
       <span><i class="rdot" style="background:#ffd76a"></i>金环 = 已点亮目的地</span>
       <span><i class="rdot" style="background:#7ea6d9"></i>白字 = 省份 / 国家名（点击名字也能飞过去）</span>
-      <span>🖱 滚轮缩放 · 点击省份或标点飞过去</span>
+      <span>🖱 滚轮缩放 · <b>点省份下钻到市 → 点城市进入区县</b> · 「← 返回上一级」逐级退回</span>
     </div>
     <div class="map-note">📍 坐标获取方式：爬虫抓取公开地理数据 + 高德/百度<b>坐标拾取器</b>（lbs.amap.com/tools/picker）校准 · 地图底图来自 ECharts 在线资源 · <b>手帐风平面</b>绘制，小山纹样按真实地形分布</div>
   </div>
@@ -46,10 +54,11 @@
 <script src="js/data.js?v=1167"></script>
 <script src="img/spots/manifest.js"></script>
 <script src="geo/manifest.js"></script>
+<script src="geo/prov/manifest.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
 <script src="js/api.js?v=1162"></script>
 <script src="js/core.js?v=1171"></script>
-<script src="js/map.js?v=1172"></script>
+<script src="js/map.js?v=1173"></script>
 <script>
 let cur=null,labelsOn=true;
 const seedKey='fmw_lit_seed';
@@ -77,8 +86,100 @@ function buildMaps(){
      避免画布只剩纸纹背景、地图整块空白 */
   if(!cur&&window.echarts)cur=createWanderMap('chinaMap','cn',opt);
   if(!cur)throw new Error('中国地图初始化失败：echarts 或 china.js 未就绪');
+  /* P2：把内置 china 换成带 cp（省份中心点）的省级边界，
+   * 点击省份空白处才能拿到名字触发下钻；底图数据为本地 geo/prov/100000.json */
+  try{
+    fetch('geo/prov/100000.json',{cache:'force-cache'}).then(r=>r.ok?r.json():null).then(g=>{
+      if(!g||!g.features)return;
+      if(!(echarts.getMap&&echarts.getMap('wgo-cn-provinces')))echarts.registerMap('wgo-cn-provinces',g);
+      LVL_GEO['100000']=g;LVL_MAPS['100000']='wgo-cn-provinces';
+      cur.setOption({geo:{map:'wgo-cn-provinces'}},false);
+      updateDrillUI(DRILL,spotsInLevel(DRILL).length);
+    }).catch(()=>{});
+  }catch(e){}
+  updateDrillUI(DRILL,spotsInLevel(DRILL).length);
   try{world=createWanderMap('worldMap','world',{spots:SPOTS.filter(s=>s.rg==='ab'),litIds:lit,flights:true,onSpot:openMapSpot})}
   catch(e){console.warn('[map] 世界地图初始化失败',e);world=null}
+}
+/* ---- 下钻 UI：面包屑 / 返回按钮 ---- */
+function updateDrillUI(st,count){
+  const crumb=$('#drillCrumb'),back=$('#drillBack');
+  if(crumb){
+    const parts=['<b class="'+(st.lvl==='cn'?'cur':'')+'" onclick="goLevel(0)">中国</b>'];
+    if(st.lvl!=='cn'){
+      const pName=st.lvl==='city'?((window.WGO_PROV||{})[st.prov]||{}).name||'':st.name;
+      parts.push('<i>›</i><b class="'+(st.lvl==='prov'?'cur':'')+'" onclick="goLevel(1)">'+provShortName(pName)+'</b>');
+      if(st.lvl==='city')parts.push('<i>›</i><b class="cur">'+st.name+'</b>');
+    }
+    crumb.innerHTML=parts.join('')+'<em>'+count+' 个景点</em>';
+  }
+  if(back)back.disabled=!DRILL.stack.length;
+  updateProvChip(st);
+}
+/* 本省点亮统计：下钻到省/市层时显示「已打卡 / 本省景点数」，全国层隐藏 */
+function updateProvChip(st){
+  const chip=$('#provChip');if(!chip)return;
+  if(!st||st.lvl==='cn'){chip.style.display='none';return}
+  const pa=st.lvl==='prov'?st.code:st.prov;
+  const allInProv=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn'&&provAdcodeOf(s.city)===pa);
+  const lit=litSet();
+  const n=allInProv.filter(s=>lit.has(s.id)).length;
+  const pName=((window.WGO_PROV||{})[pa]||{}).name||'';
+  chip.style.display='';
+  chip.textContent='🏅 '+provShortName(pName)+'点亮 '+n+' / '+allInProv.length;
+}
+function provShortName(n){return String(n||'').replace(/(壮族自治区|回族自治区|维吾尔自治区|特别行政区|自治区|省|市)/g,'')||n}
+function drillBackClick(){
+  if(!cur)return;
+  if(!drillBack(cur))toast('已经在最外层啦');
+}
+/* 面包屑点击：0=全国，1=省份 */
+function goLevel(n){
+  if(!cur)return;
+  if(n===0){if(DRILL.lvl!=='cn'){DRILL.stack=[];resetDrill(cur)}return}
+  if(n===1&&DRILL.lvl==='city'){drillBack(cur)}
+}
+/* ---- 景点搜索：快速定位（补充下钻） ---- */
+let SUG_TIMER=0;
+function onDrillSearch(v,enter){
+  const box=$('#drillSug');if(!box)return;
+  const q=String(v||'').trim().toLowerCase();
+  if(!q){box.style.display='none';box.innerHTML='';return}
+  const hits=SPOTS.filter(s=>s.rg==='cn'&&((s.n||'').toLowerCase().includes(q)||(s.city||'').toLowerCase().includes(q)||(s.tag||'').toLowerCase().includes(q))).slice(0,8);
+  if(!hits.length){box.innerHTML='<div class="sug-empty">没有找到相关景点</div>';box.style.display='block';return}
+  box.innerHTML=hits.map(s=>`<div class="sug-item" onmousedown="locateSpot('${s.id}')">
+    <span class="sug-n">${s.n}</span><span class="sug-c">${s.city}</span>
+    <span class="sug-r">⭐ ${s.rating}</span>${litSet().has(s.id)?'<span class="sug-lit">✨</span>':''}</div>`).join('');
+  box.style.display='block';
+  if(enter)locateSpot(hits[0].id);
+}
+/* 搜索选中的景点：自动切到中国地图 → 下钻到它所属省市 → 飞到标点并弹详情 */
+function locateSpot(id){
+  const s=spotById(id);if(!s)return;
+  const box=$('#drillSug');if(box){box.style.display='none';box.innerHTML=''}
+  const inp=$('#drillSearch');if(inp)inp.value='';
+  if(s.rg!=='cn'){/* 国外景点：回世界图 */
+    mapMode='world';$$('#mapTabs button').forEach(x=>x.classList.toggle('on',x.dataset.m==='world'));
+    $('#chinaMap').style.display='none';$('#worldMap').style.display='block';
+    setTimeout(()=>{if(world){syncMapGeo(world);flyTo(world,[s.lng,s.lat],3.6);openMapSpot(id)}},260);
+    return;
+  }
+  mapMode='cn';$$('#mapTabs button').forEach(x=>x.classList.toggle('on',x.dataset.m==='cn'));
+  $('#chinaMap').style.display='block';$('#worldMap').style.display='none';
+  const pa=provAdcodeOf(s.city);
+  if(!cur||!pa){flyTo(cur,[s.lng,s.lat],3.4);openMapSpot(id);return}
+  /* 直接跳到该景点所在市级层，再飞到标点 */
+  DRILL.stack=[];
+  const provName=((window.WGO_PROV||{})[pa]||{}).name||provShort(s.city);
+  drillTo(cur,{lvl:'prov',code:pa,name:provName,prov:pa,city:''});
+  setTimeout(()=>{
+    const cn=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+    const meta=(window.WGO_PROV||{})[pa]||{};
+    const cityName=(meta.cities||[]).find(x=>x.name===cn||x.name===cn+'市')||null;
+    /* 直辖市没有「市」这一层：只下到省级，再飞标点 */
+    if(cityName&&!isMunicipality(pa))drillTo(cur,{lvl:'city',code:cityName.adcode,name:cityName.name,prov:pa,city:cn});
+    setTimeout(()=>{flyTo(cur,[s.lng,s.lat],4.2);openMapSpot(id)},700);
+  },500);
 }
 function toggleLabels(btn){
   labelsOn=!labelsOn;
@@ -108,6 +209,7 @@ function mapSpotImg(s){
 function openMapSpot(id){
   const s=spotById(id);if(!s)return;
   MAP_CK_IMGS=[];
+  selectMapSpot(id);            /* 当前地图实例上的弹窗跳转要先把上一枚选中态清掉 */
   const lit=litSet().has(id);
   const img=mapSpotImg(s);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
@@ -129,18 +231,32 @@ function openMapSpot(id){
         <div class="ck-pv" id="ckPv"></div>
       </div>
       <div class="mspot-ck-acts">
-        <button class="btn line" onclick="openSpot('${s.id}')">查看更多详情</button>
+        <button class="btn line" onclick="gotoSpotDetail('${s.id}')">📄 查看详情</button>
+        <button class="btn line" onclick="gotoAIPlan('${s.id}')">🤖 用 AI 规划这一站</button>
         <button class="btn gold" id="ckSubmit" onclick="submitMapCheckin('${s.id}')">✅ 提交打卡</button>
       </div>
     </div>
   </div>`,true);
   renderCkPv();
 }
+/* 标点弹窗的「查看详情」：跳出地图，进入独立的景点详情页（?spot=id 携带景点） */
+function gotoSpotDetail(id){if(id)WGO.go('guide.html?spot='+encodeURIComponent(id))}
+/* 标点弹窗的「AI 规划」：带上景点所在城市，AI 页会自动填充并生成方案 */
+function gotoAIPlan(id){
+  const s=spotById(id);if(!s)return;
+  const city=s.rg==='cn'?cityCanon(s.city):s.city;
+  WGO.go('ai.html?dest='+encodeURIComponent(city));
+}
 function renderCkPv(){
   const box=$('#ckPv');if(!box)return;
   box.innerHTML=MAP_CK_IMGS.map((u,i)=>`<div class="ck-th"><img src="${u}" alt="打卡图${i+1}"><span class="x" onclick="delCkImg(${i})">✕</span></div>`).join('');
 }
 function delCkImg(i){MAP_CK_IMGS.splice(i,1);renderCkPv()}
+/* 弹窗关闭后清掉标点的高亮描边（core 的 closeModal 不感知地图，这里用事件委托兜住所有关闭路径：
+ * ✕ 按钮、点遮罩、Esc 都一样生效；遮罩元素是 #ovl） */
+document.addEventListener('click',e=>{
+  if(e.target&&e.target.id==='ovl'&&SPOT_SEL)selectMapSpot('');
+});
 /* 选图：canvas 压到最长边 800px / JPEG 0.7，控制单条记录的 dataURL 体积（后端 JSON 上限 2MB） */
 function onCkPick(input){
   const files=[...(input.files||[])].slice(0, CK_MAX-MAP_CK_IMGS.length);
@@ -186,6 +302,7 @@ async function submitMapCheckin(id){
   SERVER_LIT.add(id);
   refreshLitMarkers();
   const chip=$('#litChip');if(chip)chip.textContent='✨ 已点亮 '+litSet().size+' 处';
+  updateProvChip(DRILL);
   if(btn){btn.disabled=false;btn.textContent='✅ 已打卡'}
   toast(ok?'打卡成功，已同步到数据库 ✨':'打卡已保存到本地（后端未连接）',ok?'ok':'err');
   if(ok)setTimeout(()=>{if($('#ckSubmit'))openMapSpot(id)},700);
@@ -217,6 +334,22 @@ loadECharts(ok=>{
       $('#chinaMap').style.display=s.rg==='cn'?'block':'none';
       $('#worldMap').style.display=s.rg==='ab'?'block':'none';
       setTimeout(()=>{flyTo(c,[s.lng,s.lat],z);openMapSpot(sid)},600);
+    }
+  }
+  /* 深度链接：map.html?prov=330000 或 ?city=杭州 直接下钻到对应层级
+   * 景点详情页的「在地图上查看」与 AI 行程卡片的 pin 按钮都走这里 */
+  const provCode=WGO.q('prov'),cityQ=WGO.q('city');
+  if(!sid&&cur&&(provCode||cityQ)){
+    const pa=provCode||provAdcodeOf(cityQ);
+    const meta=(window.WGO_PROV||{})[pa];
+    if(meta){
+      DRILL.stack=[];
+      drillTo(cur,{lvl:'prov',code:pa,name:meta.name,prov:pa,city:''});
+      if(cityQ&&!isMunicipality(pa)){
+        const cn=(typeof cityCanon==='function')?cityCanon(cityQ):cityQ;
+        const hit=(meta.cities||[]).find(x=>x.name===cn||x.name===cn+'市'||x.name.indexOf(cn)===0);
+        if(hit)setTimeout(()=>drillTo(cur,{lvl:'city',code:hit.adcode,name:hit.name,prov:pa,city:cn}),700);
+      }
     }
   }
   if(user&&user.nick&&localStorage.getItem(seedKey)&&!localStorage.getItem('fmw_lit_toast')){

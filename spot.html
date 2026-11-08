@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>景点详情 · WANDERGO</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css?v=1170">
+<link rel="stylesheet" href="css/pages.css?v=1130">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">SPOT DETAIL</div>
+  <h2 id="spTitle">景点详情</h2>
+</div></section>
+
+<style>
+/* 详情页只保留一处卡片裁切，其余样式（sp-hero / sp-nb 等）已并入 css/pages.css */
+.sp-detail{overflow:hidden}
+</style>
+
+<section class="sec" style="padding-top:6px"><div class="wrap">
+  <div id="spMain"></div>
+</div></section>
+
+<script src="js/data.js?v=1167"></script>
+<script src="img/spots/manifest.js"></script>
+<script src="geo/manifest.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1162"></script>
+<script src="js/core.js?v=1171"></script>
+<script>
+/* =========================================================
+ * 景点详情页（独立页面）
+ * 入口：地图弹窗「查看详情」→ spot.html?spot=xxx
+ * 出口：「AI 规划」→ ai.html?dest=城市（auto-generate）
+ *       「去打卡」→ checkin.html?dest=景点id
+ *       「在地图上看看」→ map.html?spot=xxx
+ * 无参数或 id 无效时给空态 + 返回地图，不白屏。
+ * ========================================================= */
+const SP_ID=WGO.q('spot')||'';
+const sp=SP_ID?spotById(SP_ID):null;
+
+function spImg(s){
+  const u=(typeof localImg==='function'&&localImg(s.id))||'';
+  return u||(typeof imgPlaceholderSvg==='function'?imgPlaceholderSvg('spot'):'');
+}
+/* 同城其他景点：详情页底部的「顺便看看」，从全量 SPOTS 里挑评分最高的 4 个 */
+function spNeighbors(s){
+  return SPOTS.filter(x=>x.id!==s.id&&x.rg===s.rg&&cityCanon(x.city)===cityCanon(s.city))
+    .sort((a,b)=>b.rating-a.rating).slice(0,4);
+}
+function spRender(){
+  const box=document.getElementById('spMain');
+  if(!sp){
+    document.getElementById('spTitle').textContent='景点详情';
+    box.innerHTML='<div class="map-card" style="text-align:center;padding:40px 20px">'
+      +'<div style="font-size:34px">🧭</div>'
+      +'<h4 style="margin:10px 0 6px">没有找到这个景点</h4>'
+      +'<p style="font-size:12px;color:var(--muted)">链接可能过期了，回地图上重新选一个吧。</p>'
+      +'<button class="btn gold" style="margin-top:14px" onclick="WGO.go(\'map.html\')">← 回到点亮地图</button></div>';
+    return;
+  }
+  document.title=sp.n+' · 景点详情 · WANDERGO';
+  document.getElementById('spTitle').textContent=sp.n;
+  const lit=litSet().has(sp.id);
+  const nb=spNeighbors(sp);
+  /* 定位链接：带 spot 参数，地图页会自动下钻到所属省市并弹出标点 */
+  const mapHref='map.html?spot='+encodeURIComponent(sp.id);
+  box.innerHTML=`
+  <div class="map-card sp-detail">
+    <div class="sp-hero">
+      <img class="zoomable" src="${spImg(sp)}" alt="${sp.n}" onclick="if(typeof openViewer==='function')openViewer(this,'${sp.n.replace(/'/g,'')}')">
+      <div class="sp-hero-cap">
+        <h3>${sp.n} <span class="tagpill ${sp.rg}" style="vertical-align:3px">${sp.rg==='cn'?'国内':'国外'}</span>
+        ${lit?'<span class="tagpill lit">✨ 已点亮</span>':''}</h3>
+        <div class="sp-meta"><span>⭐ <b>${sp.rating}</b></span><span>📍 ${sp.city}</span><span>${sp.tag}</span></div>
+      </div>
+    </div>
+    <div class="dbody">
+      <p class="desc">${sp.desc||'这一站的介绍还在整理中，先把坐标和实用信息留给你。'}</p>
+      <div class="kv">
+        <div class="item">🏠 景点地址<b>${sp.addr||'—'}</b></div>
+        <div class="item">🌐 经纬度坐标<b class="gold">${sp.lng.toFixed(3)}, ${sp.lat.toFixed(3)}</b></div>
+        <div class="item">⏱ 建议游玩时长<b>${sp.hrs||'—'}</b></div>
+        <div class="item">🚄 交通衔接<b>${sp.traf||'—'}</b></div>
+        <div class="item">💰 门票参考<b class="gold">${sp.price||'—'}</b></div>
+        <div class="item">📷 景点标签<b>${sp.tag||'—'}</b></div>
+      </div>
+      <div class="dbtns sp-btns">
+        <button class="btn gold" onclick="WGO.go('ai.html?dest='+encodeURIComponent('${sp.city.replace(/'/g,'')}'))">🤖 AI 规划这一站</button>
+        <button class="btn line" onclick="WGO.go('checkin.html?dest=${sp.id}')">📸 去打卡</button>
+        <button class="btn line" onclick="WGO.go('${mapHref}')">🗺 在地图上看看</button>
+        <button class="btn line" onclick="WGO.go('community.html')">💬 看别人怎么说</button>
+      </div>
+      <p class="coord-note">坐标来源：公开地理数据 + 坐标拾取器校准（演示数据）；图片来自本地图库，缺失时显示占位插画。</p>
+    </div>
+  </div>
+  ${nb.length?`<div class="blk-head" style="margin-top:22px"><h4>📍 同城顺便看看</h4><span class="blk-sub">${sp.city} 附近评分最高的几站</span></div>
+  <div class="sp-nb">
+    ${nb.map(s=>`<div class="sp-nb-card" onclick="WGO.go('spot.html?spot=${s.id}')">
+      <img src="${spImg(s)}" alt="${s.n}" onerror="this.style.visibility='hidden'">
+      <div><b>${s.n}</b><span>⭐ ${s.rating} · ${s.tag}</span></div>
+    </div>`).join('')}
+  </div>`:''}`;
+}
+spRender();
+/* 打卡图库加载不到时不留破图：统一交给 canvas 生成占位（map 页同款兜底思路） */
+document.querySelectorAll('#spMain img').forEach(im=>{
+  im.addEventListener('error',()=>{im.style.visibility='hidden'});
+});
+</script>
+</body>
+</html>
