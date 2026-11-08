@@ -257,7 +257,6 @@
     if (sliceKey === code && slicePromise) return slicePromise;
     sliceKey = code;
     state.border.dist.clearLayers();
-    state.border.city.clearLayers();
     slicePromise = loadScript('geo/cities/' + code + '.js?v=1170').then(() => {
       const sl = window.GEO_SLICE;
       if (!sl || sl.c !== code) return;
