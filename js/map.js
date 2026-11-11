@@ -69,6 +69,11 @@ function regionColors(map,st){
       /* 直辖市：区县边界下没有单独景点数据，整块都算「有景点」 */
       if(isMunicipality(prov.code))feats.forEach(f=>hotNames.add(f.properties.name));
     }
+    /* 区县层：桌面只有这一个市，用「景点坐标落在哪个区县」来点亮对应区县 */
+    if(st&&st.lvl==='dist'){
+      const spots=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn'&&provAdcodeOf(s.city)===st.prov);
+      hotNames=new Set(feats.filter(f=>spots.some(s=>featHasPoint(f,[s.lng,s.lat]))).map(f=>f.properties.name));
+    }
     return feats.map(f=>{
       const n=f.properties.name||'';let h=0;for(let i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0;
       const base=GEO_PAL[h%GEO_PAL.length];
@@ -76,6 +81,22 @@ function regionColors(map,st){
       return {name:n,itemStyle:{areaColor:hot?'#f3e3b4':base}};
     });
   }catch(e){return []}
+}
+/* 判断一个经纬点是否落在某个 geo 要素内（射线法）。
+ * 只用于「这件要素有没有景点」的着色提示，不需要高精度，
+ * MultiPolygon 逐环求和即可；落在洞里也照样算「内有景点」，对提示来说够用。 */
+function featHasPoint(f,pt){
+  const g=f&&f.geometry;if(!g)return false;
+  const polys=g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[];
+  return polys.some(poly=>(poly[0]||[]).length>2&&ringHas(poly[0],pt));
+}
+function ringHas(ring,pt){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    if(((yi>pt[1])!==(yj>pt[1]))&&(pt[0]<(xj-xi)*(pt[1]-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
 }
 /* ---- 图标（普通 / 点亮金圈发光版） ---- */
 /* 标点图标见下方 spotPin：按景点类型给专属 emoji + 配色，做成手帐风贴纸 */
@@ -416,8 +437,12 @@ function createWanderMap(elId,mode,opts){
   c.on('click',p=>{
     /* 标点 / 省份 / 城市 三种点击都由顶层统一分发，保证下钻与弹窗顺序一致 */
     if(p.data&&p.data.id){
-      flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
-      if(opts.onSpot)opts.onSpot(p.data.id);
+      /* 顺序：先下钻定位到该景点所在城市，落位后再回调弹窗（避免弹窗挡住下钻动画） */
+      const moved=opts.onSpotCity?opts.onSpotCity(c,p.data.id):false;
+      if(!moved){
+        flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
+        if(opts.onSpot)opts.onSpot(p.data.id);
+      }
       return;
     }
     if(p.componentType!=='geo'||!p.name||!isChinaMap(c))return;
@@ -446,6 +471,9 @@ const WHEEL_STEP=1.18, WHEEL_MIN=.8, WHEEL_MAX=8;
  * 所以全国层最多 4 倍（够看清省份名与省会），省/市层边界精度更高，允许 8 倍看清街道级布局。 */
 function geoZoomLimit(map){
   if(map==='china'||map==='cn'||map==='wgo-cn-provinces')return {min:.8,max:4};
+  /* 区县底图本身就比整市大一圈，允许放到更大，保证「越钻越近」的手感 */
+  if(String(map).indexOf('wgo-lvl-d')===0)return {min:.8,max:14};
+  if(String(map).indexOf('wgo-lvl-')===0)return {min:.8,max:8};
   return {min:.8,max:8};
 }
 function bindSmoothWheel(chart){
@@ -551,8 +579,24 @@ const PROV_ADCODE={'北京':'110000','上海':'310000','天津':'120000','重庆
   '福建':'350000','江西':'360000','山东':'370000','河南':'410000','湖北':'420000','湖南':'430000','广东':'440000',
   '广西':'450000','海南':'460000','四川':'510000','贵州':'520000','云南':'530000','西藏':'540000','陕西':'610000',
   '甘肃':'620000','青海':'630000','宁夏':'640000','新疆':'650000','台湾':'710000','香港':'810000','澳门':'820000'};
-/* cityCanon 后的城市名 → 省简称（只补 CITY_PROV 没覆盖到的写法） */
-const CITY2PROV_EXTRA={'九寨沟':'四川','敦煌':'甘肃','喀什':'新疆','凤凰':'湖南','张家界':'湖南','香格里拉':'云南'};
+/* cityCanon 后的城市名 → 省简称
+ * 这里必须覆盖 map 上全部标点所在的城市，否则 provAdcodeOf 返回空串，
+ * 景点会在全国层之后的所有层级里「消失」（筛选不到任何一层）。
+ * 前半段是 SPOTS 老数据补丁，后半段是「全国省份覆盖补全」新增景点的城市。 */
+const CITY2PROV_EXTRA={
+  '九寨沟':'四川','敦煌':'甘肃','喀什':'新疆','凤凰':'湖南','张家界':'湖南','香格里拉':'云南',
+  /* 全国覆盖补全 */
+  '承德':'河北','大同':'山西','五台山':'山西','平遥':'山西','呼伦贝尔':'内蒙古','大连':'辽宁',
+  '安图':'吉林','扬州':'江苏','宁波':'浙江','舟山':'浙江','绍兴':'浙江','合肥':'安徽','黄山':'安徽',
+  '南昌':'江西','景德镇':'江西','婺源':'江西','威海':'山东','开封':'河南','恩施':'湖北','南宁':'广西',
+  '北海':'广西','荔波':'贵州','林芝':'西藏','延安':'陕西','张掖':'甘肃','西宁':'青海','共和':'青海',
+  '银川':'宁夏','阿勒泰':'新疆','伊犁':'新疆','台北':'台湾','高雄':'台湾','香港':'香港','澳门':'澳门',
+  '中卫':'宁夏','嘉峪关':'甘肃','天水':'甘肃','酒泉':'甘肃','格尔木':'青海',
+  /* 自治州 / 县级市补丁（数据里存的是州名或县名） */
+  '阿坝':'四川','海北':'青海','延边':'吉林','安图':'吉林','湘西':'湖南','共和':'青海',
+  '黔东南':'贵州','黔南':'贵州','大理':'云南','西双版纳':'云南','甘孜':'四川','甘南':'甘肃',
+  '广州':'广东','佛山':'广东','珠海':'广东','潮汕':'广东','深圳':'广东'
+};
 function provShort(city){
   if(!city)return '';
   const c=(typeof cityCanon==='function')?cityCanon(city):city;
@@ -591,9 +635,13 @@ function loadLevelGeo(code,cb){
     delete LVL_LOADING[code];
   };
   if(typeof fetch!=='function')return done(null);
-  fetch('geo/prov/'+code+'.json',{cache:'force-cache'})
+  /* 区县层读 {市adcode}.districts.json；省/市层读 {adcode}.json */
+  const file=String(code).indexOf('d')===0?String(code).slice(1)+'.districts.json':code+'.json';
+  fetch('geo/prov/'+file,{cache:'force-cache'})
     .then(r=>r.ok?r.json():null).then(done).catch(()=>done(null));
 }
+/* 区县层的地图键：'d'+市adcode，与省/市层的 adcode 区分开，避免同一市两种底图撞名 */
+function districtKey(cityCode){return 'd'+cityCode}
 /* 当前层级可见的景点 */
 function spotsInLevel(st){
   st=st||DRILL;
@@ -602,6 +650,16 @@ function spotsInLevel(st){
   if(st.lvl==='prov'){
     return all.filter(s=>provAdcodeOf(s.city)===st.code);
   }
+  /* 区县层：同省 + 同市。区县名只用于底部提示，景点数据本身没有区县字段，
+   * 所以这一层按「整个市」渲染，保证放大的同时不丢标点 */
+  if(st.lvl==='dist'){
+    return all.filter(s=>{
+      if(provAdcodeOf(s.city)!==st.prov)return false;
+      if(isMunicipality(st.prov))return true;
+      const c=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+      return !st.city||c===st.city;
+    });
+  }
   /* 市级：同省 + 城市名匹配（避免「朝阳区」这类同名跨省误判）。
    * 直辖市（北京/上海/天津/重庆）的「市」就是省级本身，此时全市景点都算这一层 */
   return all.filter(s=>{
@@ -609,6 +667,23 @@ function spotsInLevel(st){
     const c=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
     return isMunicipality(st.prov)||c===st.city;
   });
+}
+/* 当前层级是「市级」时，取该市下辖区县底图需要的市 adcode；取不到返回空串 */
+function cityAdcodeOf(st){
+  st=st||DRILL;
+  if(st.lvl==='city'){
+    const meta=(window.WGO_PROV||{})[st.prov];
+    if(!meta)return '';
+    /* 直辖市：市 = 省本身；其余按全省城市清单里名字匹配 */
+    if(isMunicipality(st.prov))return st.prov;
+    const hit=(meta.cities||[]).find(c=>c.name===st.name||c.name.indexOf(st.city||'')===0||c.name.indexOf(st.name)===0);
+    return hit?hit.adcode:'';
+  }
+  if(st.lvl==='dist'){
+    /* 区县层：底图键本身已经带了市 adcode */
+    return String(st.code||'').replace(/^d/,'');
+  }
+  return '';
 }
 /* 直辖市：省级 adcode 末两位为 01（北京/天津/上海/重庆 主城区） */
 function isMunicipality(code){
@@ -645,14 +720,63 @@ function handleGeoClick(chart,name,cp){
     return true;
   }
   if(DRILL.lvl==='prov'){
-    if(isMunicipality(DRILL.code))return false;   /* 直辖市点击只定位，不换底图 */
+    if(isMunicipality(DRILL.code)){
+      /* 直辖市：省级底图本身就是区县轮廓，点区县再放大一级（区县底图用同省的 districts） */
+      drillTo(chart,{lvl:'dist',code:districtKey(DRILL.code),name:name,prov:DRILL.code,city:DRILL.code});
+      return true;
+    }
     const city=(typeof cityCanon==='function')?cityCanon(name):name;
     drillTo(chart,{lvl:'city',code:DRILL.code,name:name,prov:DRILL.code,city});
     return true;
   }
+  if(DRILL.lvl==='city'){
+    /* 市级再下一层：区县底图（{市adcode}.districts.json）。
+     * 数据没下载到就不换层，只把镜头对准点击的区县，保证「点哪儿看哪儿」不落空 */
+    const cad=cityAdcodeOf(DRILL);
+    if(!cad)return false;
+    drillTo(chart,{lvl:'dist',code:districtKey(cad),name:name,prov:DRILL.prov,city:DRILL.city,dist:name});
+    return true;
+  }
   return false;
 }
-/* 换底图 + 换标点（不动整体外观，只换 geo.map 与三个标点层的 data） */
+/* 点景区标点 → 先把底图下钻到该景点所在城市，再弹简要信息弹窗。
+ * 顺序不能反：弹窗先出来会挡住下钻动画，用户看到的是「点了一下什么都没动」。
+ * 省级 / 市级底图都是异步加载的，所以每一步用 setTimeout 串行，落位后再居中到景点。 */
+function focusSpotCity(chart,id){
+  const s=(typeof spotById==='function')?spotById(id):null;
+  if(!chart||!s||s.rg!=='cn')return false;
+  const prov=provAdcodeOf(s.city);
+  if(!prov)return false;
+  const target=[s.lng,s.lat];
+  const city=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+  const centerOnSpot=()=>{
+    const z=Math.max(2.4,Math.min(4.2,((chart.getOption().geo||[])[0]||{}).zoom||2.4));
+    flyTo(chart,target,z,620);
+  };
+  const pname=provinceName(prov);
+  const inCity=cityInProv(prov,city);
+  const goCity=()=>{
+    if(!inCity||inCity===pname){centerOnSpot();return}
+    drillTo(chart,{lvl:'city',code:prov,name:inCity,prov,city});
+    setTimeout(centerOnSpot,760);
+  };
+  if(DRILL.lvl==='cn'||DRILL.prov!==prov){
+    DRILL.stack=[];
+    drillTo(chart,{lvl:'prov',code:prov,name:pname,prov,city:''});
+    setTimeout(goCity,780);
+    return true;
+  }
+  if(DRILL.lvl==='prov'){goCity();return true}
+  /* 已在市级但市不对（比如从大理点到了丽江的景点）：先换市再居中 */
+  if(DRILL.lvl==='city'&&cityCanon(DRILL.city||DRILL.name||'')!==city){goCity();return true}
+  centerOnSpot();
+  return true;
+}
+/* 省 adcode → 中文省名（用 WGO_PROV 清单，没加载到就退回 adcode） */
+function provinceName(code){
+  const m=(window.WGO_PROV||{})[code];
+  return (m&&m.name)||String(code);
+}
 function applyLevel(chart,st,fit){
   if(!chart)return;
   const paint=mapName=>{
@@ -672,7 +796,7 @@ function applyLevel(chart,st,fit){
     const fl=chart.__wgo&&chart.__wgo.flights;
     if(fl&&!isCn)chart.setOption({series:[{id:'wgo-flights',data:[]}]},{lazyUpdate:true});
     else if(fl&&isCn)chart.setOption({series:[{id:'wgo-flights',data:fl.data||[]}]},{lazyUpdate:true});
-    if(fit){if(isCn)fitLevel(chart,LVL_GEO['100000']||null);else fitLevel(chart,LVL_GEO[st.code]||null)}
+    if(fit){if(isCn)fitLevel(chart,LVL_GEO['100000']||null);else fitLevel(chart,LVL_GEO[st.code]||null,st.lvl)}
     if(typeof updateDrillUI==='function')updateDrillUI(st,list.length);
     if(typeof refreshLitMarkers==='function')refreshLitMarkers();
   };
@@ -689,14 +813,16 @@ function applyLevel(chart,st,fit){
   });
 }
 /* 按边界外接矩形把视野对准本层范围（复用上方 geoBBox） */
-function fitLevel(chart,geo){
+function fitLevel(chart,geo,lvl){
   if(!chart)return;
   const bb=geo?geoBBox(geo):null;
   if(!bb)return;
   /* 经验拟合：省级边界约占画布宽度的 1/1.9，市级占 1/2.6；
-   * 用外接框宽度换算，再夹在 1~4 之间，避免重庆这种窄长省份被拉得过近 */
+   * 用外接框宽度换算，再夹在 1~4 之间，避免重庆这种窄长省份被拉得过近。
+   * 区县层范围更小，上限放到 8，保证「每钻一级镜头都更近」 */
   const w=Math.max(.5,bb.max[0]-bb.min[0]);
-  const z=Math.max(1.05,Math.min(3.4,90/Math.max(6,w)));
+  const hi=lvl==='dist'?8:3.4;
+  const z=Math.max(1.05,Math.min(hi,90/Math.max(6,w)));
   flyTo(chart,bb.center,z,760);
 }
 /* 进入某一层（st: {lvl:'prov'|'city', code, name, prov?, city?}） */

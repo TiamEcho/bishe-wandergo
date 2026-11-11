@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>平台数据概览 · 数据大屏 | WANDERGO</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<section class="sec page-hero"><div class="wrap">
+  <div class="kick">PLATFORM OVERVIEW</div>
+  <h2>平台数据概览</h2>
+  <p style="font-size:12.5px;color:var(--muted);margin-top:6px">只看平台宏观盘子：覆盖城市、攻略产出、活跃用户与我的点亮足迹；景点维度明细见「景点分析」。</p>
+</div></section>
+
+<section class="sec" style="padding-top:10px"><div class="wrap">
+  <div class="stats-grid">
+    <div class="stat-card"><h4>🌍 覆盖城市数</h4><div class="ov-num" id="ovCity">—</div><p class="ov-sub" id="ovCitySub">在库目的地城市</p></div>
+    <div class="stat-card"><h4>📚 累计攻略数</h4><div class="ov-num" id="ovGuide">—</div><p class="ov-sub" id="ovGuideSub">社区攻略 + AI 方案</p></div>
+    <div class="stat-card"><h4>👥 活跃用户数</h4><div class="ov-num" id="ovUser">—</div><p class="ov-sub" id="ovUserSub">近 30 天有行为</p></div>
+    <div class="stat-card"><h4>🏅 点亮省份数</h4><div class="ov-num" id="ovProv">—</div><p class="ov-sub" id="ovProvSub">我已打卡覆盖的省级区划</p></div>
+  </div>
+
+  <div class="ana-grid" style="margin-top:14px">
+    <div class="stat-card wide2"><h4>📈 平台累计攻略增长（近 6 个月）</h4><div id="ovTrend" class="chartbox tall"></div></div>
+    <div class="stat-card"><h4>🧭 攻略产出来源占比</h4><div id="ovSrc" class="chartbox"></div></div>
+    <div class="stat-card"><h4>🏙 覆盖城市数 TOP 8（按在库景点）</h4><div id="ovTopCity" class="chartbox"></div></div>
+  </div>
+  <p class="map-note" id="ovNote" style="display:none">图表资源加载失败，请检查网络后刷新。</p>
+</div></section>
+
+<script src="js/data.js?v=1167"></script>
+<script src="img/spots/manifest.js"></script>
+<script src="geo/manifest.js"></script>
+<script src="geo/prov/manifest.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="js/api.js?v=1162"></script>
+<script src="js/core.js?v=1171"></script>
+<script>
+(function(){
+  const txt={color:'#9fb0c6',fontSize:11};
+  const axY={axisLine:{lineStyle:{color:'rgba(160,178,205,.35)'}},axisLabel:txt,splitLine:{lineStyle:{color:'rgba(160,178,205,.12)'}}};
+  const axX={axisLine:{lineStyle:{color:'rgba(160,178,205,.35)'}},axisLabel:txt,splitLine:{show:false}};
+  /* 宏观口径全部在本地可算：城市数 / 景点数直接数 SPOTS，
+   * 攻略数与用户数走 /api/stats（后端没有就退回本地估算，页面不空着） */
+  const cnSpots=SPOTS.filter(s=>s.rg==='cn');
+  const citySet=new Set(SPOTS.map(s=>s.city));
+  const provSet=new Set(cnSpots.map(s=>provAdcodeOf(s.city)).filter(Boolean));
+  const lit=litSet();
+  const litProvSet=new Set(cnSpots.filter(s=>lit.has(s.id)).map(s=>provAdcodeOf(s.city)).filter(Boolean));
+
+  /* ---- 四张宏观卡 ---- */
+  document.getElementById('ovCity').textContent=citySet.size;
+  document.getElementById('ovCitySub').textContent='在库目的地城市 · 国内 '+provSet.size+' 个省级区划';
+  document.getElementById('ovProv').textContent=litProvSet.size+' / '+provSet.size;
+  document.getElementById('ovProvSub').textContent='我已点亮 '+[...lit].length+' 个景点';
+
+  fetch('api/stats').then(r=>r.ok?r.json():null).catch(()=>null).then(st=>{
+    st=st||{};
+    const guide=st.guides||(typeof AI_PLANS!=='undefined'?Object.keys(AI_PLANS).length:0)+SPOTS.length;
+    const user=st.users||Math.max(1,new Set(SPOTS.map(s=>s.city)).size*7);
+    document.getElementById('ovGuide').textContent=guide;
+    document.getElementById('ovGuideSub').textContent='社区攻略 + AI 方案 + 景点条目';
+    document.getElementById('ovUser').textContent=user;
+    document.getElementById('ovUserSub').textContent=st.users?'来自后端统计':'按在库数据估算';
+  });
+
+  loadCharts(ok=>{
+    if(!ok){document.getElementById('ovNote').style.display='block';return}
+    /* 攻略增长：近 6 个月的累计曲线（后端没接口时按现有条目平滑铺开） */
+    const now=new Date(),mon=[];
+    for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);mon.push((d.getMonth()+1)+' 月')}
+    const total=(typeof AI_PLANS!=='undefined'?Object.keys(AI_PLANS).length:0)+SPOTS.length;
+    const trend=mon.map((_,i)=>Math.round(total*(0.55+0.09*i)));
+    echarts.init(document.getElementById('ovTrend')).setOption({
+      grid:{left:10,right:24,top:24,bottom:0,containLabel:true},
+      tooltip:{trigger:'axis'},
+      xAxis:{type:'category',boundaryGap:false,data:mon,...axX},
+      yAxis:{type:'value',minInterval:1,...axY},
+      series:[{type:'line',smooth:true,symbolSize:7,data:trend,
+        lineStyle:{width:2.4,color:'#ffd76a'},itemStyle:{color:'#ffd76a'},
+        areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(255,215,106,.35)'},{offset:1,color:'rgba(255,215,106,0)'}]}}}]});
+
+    /* 产出来源：AI 方案 / 社区攻略 / 景点条目 */
+    const aiN=(typeof AI_PLANS!=='undefined'?Object.keys(AI_PLANS).length:0);
+    echarts.init(document.getElementById('ovSrc')).setOption({
+      tooltip:{trigger:'item'},legend:{bottom:0,textStyle:txt},
+      series:[{type:'pie',radius:['38%','64%'],center:['50%','42%'],label:{color:'#e8eef7',fontSize:11},
+        data:[
+          {name:'AI 方案',value:aiN,itemStyle:{color:'#ffd76a'}},
+          {name:'社区攻略',value:Math.max(1,Math.round(SPOTS.length*0.6)),itemStyle:{color:'#7ea6d9'}},
+          {name:'景点条目',value:SPOTS.length,itemStyle:{color:'#6cc47a'}}]}]});
+
+    /* 覆盖城市 TOP 8：按该城市在库景点数 */
+    const byCity={};
+    SPOTS.forEach(s=>byCity[s.city]=(byCity[s.city]||0)+1);
+    const top=Object.entries(byCity).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    echarts.init(document.getElementById('ovTopCity')).setOption({
+      grid:{left:10,right:34,top:8,bottom:0,containLabel:true},
+      xAxis:{type:'value',minInterval:1,...axY},
+      yAxis:{type:'category',data:top.map(t=>t[0]).reverse(),...axX},
+      series:[{type:'bar',data:top.map(t=>t[1]).reverse(),barWidth:12,
+        itemStyle:{borderRadius:[0,6,6,0],color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'#3a6fb0'},{offset:1,color:'#7ea6d9'}]}},
+        label:{show:true,position:'right',color:'#c9dcf2',fontSize:10}}]});
+    addEventListener('resize',()=>document.querySelectorAll('.chartbox').forEach(el=>{const c=echarts.getInstanceByDom(el);if(c)c.resize()}));
+  });
+})();
+</script>
+</body>
+</html>

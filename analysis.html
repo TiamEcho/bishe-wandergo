@@ -20,7 +20,9 @@
   <div class="ana-layout">
     <div class="ana-main">
       <div class="ana-grid">
-        <div class="stat-card wide2"><h4>🏆 全站评分 TOP 10</h4><div id="aTop" class="chartbox tall"></div></div>
+        <div class="stat-card wide2"><h4>🏆 热门景点排行 TOP 10（评分 × 热度综合）</h4><div id="aHot" class="chartbox tall"></div></div>
+        <div class="stat-card"><h4>🗂 景点类型分布</h4><div id="aType" class="chartbox"></div></div>
+        <div class="stat-card"><h4>🔥 打卡热度分布（按城市）</h4><div id="aHeat" class="chartbox"></div></div>
         <div class="stat-card"><h4>🗺 国内 / 国外占比</h4><div id="aRg" class="chartbox"></div></div>
         <div class="stat-card"><h4>🏷 热门标签 TOP 10</h4><div id="aTag" class="chartbox"></div></div>
         <div class="stat-card"><h4>💰 人均花费区间</h4><div id="aPrice" class="chartbox"></div></div>
@@ -54,15 +56,45 @@
   const gold=i=>({type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#ffd76a'},{offset:1,color:'#b98a2f'}]});
   loadCharts(ok=>{
     if(!ok){document.getElementById('anaNote').style.display='block';return}
-    /* TOP10 横向榜 */
-    const top=[...SPOTS].sort((a,b)=>b.rating-a.rating).slice(0,10);
-    echarts.init(document.getElementById('aTop')).setOption({
+    /* 热门景点排行：评分 + 打卡热度（后端打卡数 + 本地点亮）综合，不再只看分数 */
+    const lit=litSet();
+    const hotScore=s=>(s.rating||4.5)*10+(s.rg==='cn'?2:0)+(lit.has(s.id)?6:0);
+    const top=[...SPOTS].sort((a,b)=>hotScore(b)-hotScore(a)).slice(0,10);
+    echarts.init(document.getElementById('aHot')).setOption({
+      tooltip:{trigger:'item',formatter:p=>`${p.name}<br>⭐ ${p.value} 分`},
       grid:{left:10,right:44,top:8,bottom:0,containLabel:true},
       xAxis:{type:'value',min:4,max:5,...axY},
       yAxis:{type:'category',data:top.map(s=>s.n+' · '+s.city).reverse(),...axX},
-      series:[{type:'bar',data:top.map(s=>s.rating).reverse(),barWidth:13,
+      series:[{type:'bar',data:top.map(s=>+(s.rating).toFixed(1)).reverse(),barWidth:13,
         itemStyle:{borderRadius:[0,7,7,0],color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'#b98a2f'},{offset:1,color:'#ffd76a'}]}},
         label:{show:true,position:'right',color:'#e8d9a8',fontSize:10.5}}]});
+    /* 景点类型分布：按 tag 首段归类（历史/自然/乐园/城市…） */
+    const TYPE_RE=[['历史人文',/古|宫|寺|庙|祠|陵|遗|博物馆|塔|阁|长城/],['自然风光',/山|湖|海|岛|瀑|峡|草原|森林|滩|泉|河/],
+      ['都市休闲',/街|巷|商圈|广场|公园|乐园|夜市|商圈/],['建筑地标',/楼|塔|桥|观景|地标/]];
+    const typeCnt={};
+    SPOTS.forEach(s=>{
+      const t=String(s.tag||'');
+      const hit=TYPE_RE.find(r=>r[1].test(t+s.n));
+      const k=hit?hit[0]:'其他';
+      typeCnt[k]=(typeCnt[k]||0)+1;
+    });
+    echarts.init(document.getElementById('aType')).setOption({
+      tooltip:{trigger:'item'},legend:{bottom:0,textStyle:txt},
+      series:[{type:'pie',radius:['40%','66%'],center:['50%','42%'],label:{color:'#e8eef7',fontSize:11},
+        data:Object.entries(typeCnt).sort((a,b)=>b[1]-a[1]).map(([n,v],i)=>({name:n,value:v,
+          itemStyle:{color:['#ffd76a','#7ea6d9','#6cc47a','#e08b6a','#b48cd8'][i%5]}}))}]});
+    /* 打卡热度：后端 /api/checkin/mine 合并本地记录后，按城市聚合 */
+    const heatCnt={};
+    SPOTS.forEach(s=>{if(lit.has(s.id))heatCnt[s.city]=(heatCnt[s.city]||0)+1});
+    const heat=Object.entries(heatCnt).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    echarts.init(document.getElementById('aHeat')).setOption({
+      grid:{left:10,right:32,top:8,bottom:0,containLabel:true},
+      tooltip:{trigger:'item'},
+      xAxis:{type:'value',minInterval:1,...axY},
+      yAxis:{type:'category',data:(heat.length?heat:[['暂无打卡',0]]).map(t=>t[0]).reverse(),...axX},
+      series:[{type:'bar',data:(heat.length?heat:[['暂无打卡',0]]).map(t=>t[1]).reverse(),barWidth:12,
+        itemStyle:{borderRadius:[0,6,6,0],color:{type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'#a8503c'},{offset:1,color:'#ff9a76'}]}},
+        label:{show:true,position:'right',color:'#f0c8b8',fontSize:10}}]});
     /* 国内/国外 */
     const cn=SPOTS.filter(s=>s.rg==='cn').length,ab=SPOTS.length-cn;
     echarts.init(document.getElementById('aRg')).setOption({

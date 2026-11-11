@@ -470,6 +470,9 @@
 .stat-card h4{font-size:14px;font-weight:800;margin-bottom:6px}
 .chartbox{height:240px}
 .chartbox.tall{height:320px}
+/* 平台数据概览的四张宏观卡：大数字 + 一行口径说明 */
+.ov-num{font-size:30px;font-weight:900;color:var(--gold);line-height:1.25;letter-spacing:.5px}
+.ov-sub{margin:2px 0 10px;font-size:11.5px;color:var(--muted)}
 .ana-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:18px}
 .ana-grid .wide2{grid-column:1/-1}
 @media(max-width:760px){.ana-grid{grid-template-columns:1fr}}
@@ -660,9 +663,19 @@
 .drill-search input{width:200px;font:inherit;font-size:12px;color:var(--ink);background:rgba(0,0,0,.22);
   border:1px solid var(--line);border-radius:99px;padding:6px 14px;outline:none;transition:.2s}
 .drill-search input:focus{width:250px;border-color:var(--acc)}
-.drill-sug{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:40;min-width:280px;max-height:280px;
+/* 地图工具栏的叠层治理：
+ * 顺序要求 地图底图 < 半透明按钮框 < 弹窗(.ovl z=300) < 其他页面覆盖层。
+ * 工具栏自己建一个叠层上下文（z=1 只在本卡片内生效），把搜索建议的 z-index
+ * 关在这个上下文里，无论写多大都盖不到弹窗上。 */
+.map-toolbar{position:relative;z-index:1}
+/* 卡片自己成为一个独立叠层上下文：内部最多只到 z=1，弹窗(.ovl z=300)永远在卡片之外、之上 */
+.map-card{position:relative;z-index:0;isolation:isolate}
+.drill-search{position:relative;display:inline-flex;align-items:center}
+.drill-sug{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:2;min-width:280px;max-height:280px;
   overflow:auto;padding:6px;border-radius:14px;background:rgba(22,26,34,.97);border:1px solid var(--line);
   box-shadow:0 16px 40px rgba(0,0,0,.45)}
+/* 弹窗打开 / 页面切走时，搜索建议必须收起来，避免浮在弹窗或别的页面之上 */
+body:has(.ovl.show) .drill-sug{display:none!important}
 .sug-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;font-size:12.5px;color:var(--ink-2)}
 .sug-item:hover{background:rgba(243,218,150,.12);color:var(--ink)}
 .sug-n{font-weight:800}
