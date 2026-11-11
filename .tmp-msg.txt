@@ -1,0 +1,8 @@
+feat(map): P2 区县级下钻与打卡弹窗，拆分首页数据概览与景点分析
+
+- 地图新增 全国→省→市→区县 四级 ECharts geoJSON 下钻，区县边界按市预下载
+- 点景点标点先下钻到所在城市再弹窗，弹窗提供「在这里打卡 / 查看详情」
+- 补全重庆/广东景点与 CITY_ALIAS 自治州、县级市归一，34 省景点全覆盖
+- 修复 map-card / map-toolbar 叠层，弹窗与页面覆盖层恒在工具栏之上
+- 新增 overview.html 宏观数据页，analysis.html 改为景点维度分析
+- fetch-prov.js 支持 --districts 批量下载区县边界

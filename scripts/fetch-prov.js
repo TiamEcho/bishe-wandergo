@@ -9,11 +9,14 @@
  *                              —— 省级下钻时给 ECharts 注册的地图
  *   geo/prov/{市adcode}.json   精简后的单个城市轮廓（复用 fetch-geo 的精简规则）
  *                              —— 市级下钻时的底图
+ *   geo/prov/{市adcode}.districts.json  该市下辖区/县边界（--districts 时生成）
+ *                              —— 区县级下钻时的底图
  *   geo/prov/manifest.js       window.WGO_PROV = { 省adcode: {...} }
  *
  * 用法：
- *   node scripts/fetch-prov.js            # 下载清单内全部省份
- *   node scripts/fetch-prov.js 500000     # 只下指定省份
+ *   node scripts/fetch-prov.js                  # 下载清单内全部省份（省→市）
+ *   node scripts/fetch-prov.js 500000           # 只下指定省份
+ *   node scripts/fetch-prov.js --districts      # 顺带下载每个市的区县边界（区县级下钻）
  * 只在开发期跑，成果随仓库发布，运行时不请求任何外部接口。
  * ========================================================= */
 const fs = require('fs');
@@ -100,6 +103,28 @@ async function oneCity(adcode) {
   return { bytes: fs.statSync(f).size };
 }
 
+/* 区县级下钻底图：{市adcode}_full.json 是该市下辖的区/县列表，
+ * 存成 {市adcode}.districts.json（父市轮廓仍留在 {市adcode}.json 里，供上一级使用）。
+ * 直辖市与海南那种「省直辖县级市」在省级层已经是区县，市名与区名一一对应，
+ * 这里用区名匹配景点城市名（容错：去掉「区/县/市」后缀再比）。 */
+async function oneDistricts(adcode) {
+  const f = path.join(OUT, adcode + '.districts.json');
+  if (fs.existsSync(f)) return { skip: true };
+  const raw = await fetchJson(BASE + adcode + '_full.json');
+  const feats = [];
+  for (const x of raw.features || []) {
+    const pr = x.properties || {};
+    const code = String(pr.adcode || '');
+    if (code.length !== 6 || !pr.name) continue;
+    const tf = trimFeature(x, pr.name, code);
+    if (tf) feats.push(tf);
+  }
+  if (!feats.length) throw new Error('区县为空');
+  const fc = { type: 'FeatureCollection', features: feats };
+  fs.writeFileSync(f, JSON.stringify(fc));
+  return { bytes: Buffer.byteLength(JSON.stringify(fc)) };
+}
+
 const PROVINCES = ['110000','120000','130000','140000','150000','210000','220000','230000','310000','320000',
   '330000','340000','350000','360000','370000','410000','420000','430000','440000','450000','460000','500000',
   '510000','520000','530000','540000','610000','620000','630000','640000','650000','710000','810000','820000'];
@@ -110,6 +135,8 @@ async function main() {
     console.warn('缺少 geo/prov/100000.json（全国省级边界），请先执行一次性生成脚本');
   }
   const want = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  /* --districts：顺带下载每个市的区县边界（区县级下钻底图），体积较大，按需开启 */
+  const withDistricts = process.argv.includes('--districts');
   const list = want.length ? want : PROVINCES;
   const manifest = {};
   let totalKB = 0;
@@ -123,6 +150,9 @@ async function main() {
       /* 顺带下载每个市的轮廓，供市级下钻 */
       for (const c of meta.cities) {
         try { await oneCity(c.adcode); } catch (e) { console.warn('    city fail', c.adcode, e.message); }
+        if (withDistricts) {
+          try { await oneDistricts(c.adcode); } catch (e) { }
+        }
         await new Promise(r => setTimeout(r, 120));
       }
     } catch (e) {

@@ -79,7 +79,9 @@ function buildMaps(){
   ensureSeedLit();
   const lit=litSet();
   $('#litChip').textContent='✨ 已点亮 '+lit.size+' 处';
-  const opt={spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openMapSpot};
+  /* onSpotCity：点标点时先下钻到景点所在城市，落位后再弹简要信息弹窗 */
+  const opt={spots:SPOTS.filter(s=>s.rg==='cn'),litIds:lit,flights:true,onSpot:openMapSpot,
+    onSpotCity:(chart,id)=>focusSpotCity(chart,id)&&queueSpotPopup(id)};
   /* 两张图分别初始化：世界图失败不能连带中国图一起白屏 */
   cur=createWanderMap('chinaMap','cn',opt);
   /* createWanderMap 在 echarts 尚未就绪时会返回 null，这里再试一次并报错，
@@ -107,9 +109,16 @@ function updateDrillUI(st,count){
   if(crumb){
     const parts=['<b class="'+(st.lvl==='cn'?'cur':'')+'" onclick="goLevel(0)">中国</b>'];
     if(st.lvl!=='cn'){
-      const pName=st.lvl==='city'?((window.WGO_PROV||{})[st.prov]||{}).name||'':st.name;
+      const pName=((window.WGO_PROV||{})[st.prov]||{}).name||'';
       parts.push('<i>›</i><b class="'+(st.lvl==='prov'?'cur':'')+'" onclick="goLevel(1)">'+provShortName(pName)+'</b>');
       if(st.lvl==='city')parts.push('<i>›</i><b class="cur">'+st.name+'</b>');
+      /* 区县层：省 › 市 › 区县；点「市」就退一层回到市级底图 */
+      if(st.lvl==='dist'){
+        const backCity=(DRILL.stack||[]).slice().reverse().find(x=>x.lvl==='city');
+        const cityLabel=backCity?backCity.name:(st.distCity||st.city||'');
+        if(cityLabel)parts.push('<i>›</i><b onclick="goLevel(2)">'+cityLabel+'</b>');
+        parts.push('<i>›</i><b class="cur">'+st.name+'</b>');
+      }
     }
     crumb.innerHTML=parts.join('')+'<em>'+count+' 个景点</em>';
   }
@@ -137,7 +146,11 @@ function drillBackClick(){
 function goLevel(n){
   if(!cur)return;
   if(n===0){if(DRILL.lvl!=='cn'){DRILL.stack=[];resetDrill(cur)}return}
-  if(n===1&&DRILL.lvl==='city'){drillBack(cur)}
+  /* 面包屑位置 → 要退到的层级：1=省，2=市，3=区县 */
+  const target=['cn','prov','city','dist'][n]||'prov';
+  const rank={cn:0,prov:1,city:2,dist:3};
+  /* 只往回退，不退到比上次更浅的位置 */
+  while(DRILL.stack.length&&rank[DRILL.lvl]>rank[target])drillBack(cur);
 }
 /* ---- 景点搜索：快速定位（补充下钻） ---- */
 let SUG_TIMER=0;
@@ -168,18 +181,10 @@ function locateSpot(id){
   $('#chinaMap').style.display='block';$('#worldMap').style.display='none';
   const pa=provAdcodeOf(s.city);
   if(!cur||!pa){flyTo(cur,[s.lng,s.lat],3.4);openMapSpot(id);return}
-  /* 直接跳到该景点所在市级层，再飞到标点 */
+  /* 与点击标点同一套：先下钻到所在城市，落位后弹窗 */
   DRILL.stack=[];
-  const provName=((window.WGO_PROV||{})[pa]||{}).name||provShort(s.city);
-  drillTo(cur,{lvl:'prov',code:pa,name:provName,prov:pa,city:''});
-  setTimeout(()=>{
-    const cn=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
-    const meta=(window.WGO_PROV||{})[pa]||{};
-    const cityName=(meta.cities||[]).find(x=>x.name===cn||x.name===cn+'市')||null;
-    /* 直辖市没有「市」这一层：只下到省级，再飞标点 */
-    if(cityName&&!isMunicipality(pa))drillTo(cur,{lvl:'city',code:cityName.adcode,name:cityName.name,prov:pa,city:cn});
-    setTimeout(()=>{flyTo(cur,[s.lng,s.lat],4.2);openMapSpot(id)},700);
-  },500);
+  focusSpotCity(cur,id);
+  queueSpotPopup(id);
 }
 function toggleLabels(btn){
   labelsOn=!labelsOn;
@@ -206,6 +211,14 @@ function mapSpotImg(s){
   const u=(typeof localImg==='function'&&localImg(s.id))||'';
   return u||(typeof imgPlaceholderSvg==='function'?imgPlaceholderSvg('spot'):'');
 }
+/* 点标点后的弹窗排队：等地层下钻的补间跑完再弹，避免地图动到一半被遮罩压住 */
+let SPOT_POPUP_T=0;
+function queueSpotPopup(id){
+  clearTimeout(SPOT_POPUP_T);
+  SPOT_POPUP_T=setTimeout(()=>openMapSpot(id),1500);
+  return true;
+}
+/* 简要信息弹窗：名称 / 评分 / 图片 + 「在这里打卡」「查看详情」两个按钮 */
 function openMapSpot(id){
   const s=spotById(id);if(!s)return;
   MAP_CK_IMGS=[];
@@ -217,22 +230,35 @@ function openMapSpot(id){
     <div class="mspot-hcap"><h3>${s.n}${lit?' <span class="tagpill lit">✨ 已点亮</span>':''}</h3>
       <div class="mspot-meta"><span>⭐ <b>${s.rating}</b></span><span>📍 ${s.city}</span><span>${s.tag}</span></div></div></div>
   <div class="dbody">
+    <p class="mspot-desc">${s.desc||''}</p>
     <div class="kv">
       <div class="item">🏠 景点地址<b>${s.addr}</b></div>
-      <div class="item">🌐 经纬度坐标<b class="gold">${s.lng.toFixed(3)}, ${s.lat.toFixed(3)}</b></div>
       <div class="item">⏱ 建议游玩时长<b>${s.hrs}</b></div>
       <div class="item">💰 门票参考<b class="gold">${s.price}</b></div>
+      <div class="item">🌐 经纬度坐标<b class="gold">${s.lng.toFixed(3)}, ${s.lat.toFixed(3)}</b></div>
     </div>
+    <div class="mspot-ck-acts">
+      <button class="btn gold" onclick="openMapCheckin('${s.id}')">📸 在这里打卡</button>
+      <button class="btn line" onclick="gotoSpotDetail('${s.id}')">📄 查看详情</button>
+    </div>
+  </div>`,true);
+}
+/* 「在这里打卡」：在同一个弹窗里展开打卡表单（图片走 dataURL，最多 4 张） */
+function openMapCheckin(id){
+  const s=spotById(id);if(!s)return;
+  MAP_CK_IMGS=[];
+  openModal(`<button class="mx" onclick="closeModal()">✕</button>
+  <div class="dhead"><h3>📸 ${s.n} · 打卡</h3><p>${s.city} · ${s.tag}</p></div>
+  <div class="dbody">
     <div class="mspot-ck" id="mspotCk">
-      <div class="mspot-ck-h"><b>📸 在这里打卡</b><span>图文同步到「我的打卡」与后端数据库</span></div>
+      <div class="mspot-ck-h"><b>写两句留个纪念</b><span>图文同步到「我的打卡」与后端数据库</span></div>
       <textarea id="ckText" rows="3" placeholder="这一站看到了什么？写两句留着纪念…"></textarea>
       <div class="mspot-ck-btns">
         <label class="ck-upload">＋ 添加图片<input type="file" id="ckFiles" accept="image/*" multiple hidden onchange="onCkPick(this)"></label>
         <div class="ck-pv" id="ckPv"></div>
       </div>
       <div class="mspot-ck-acts">
-        <button class="btn line" onclick="gotoSpotDetail('${s.id}')">📄 查看详情</button>
-        <button class="btn line" onclick="gotoAIPlan('${s.id}')">🤖 用 AI 规划这一站</button>
+        <button class="btn line" onclick="openMapSpot('${s.id}')">‹ 返回景点</button>
         <button class="btn gold" id="ckSubmit" onclick="submitMapCheckin('${s.id}')">✅ 提交打卡</button>
       </div>
     </div>
@@ -242,12 +268,6 @@ function openMapSpot(id){
 /* 标点弹窗的「查看详情」：跳出地图，进入独立的景点详情页（?spot=id 携带景点）
  * 注意别写回 guide.html——那是「模块导览」页，之前详情按钮跳错页就是这里指错了 */
 function gotoSpotDetail(id){if(id)WGO.go('spot.html?spot='+encodeURIComponent(id))}
-/* 标点弹窗的「AI 规划」：带上景点所在城市，AI 页会自动填充并生成方案 */
-function gotoAIPlan(id){
-  const s=spotById(id);if(!s)return;
-  const city=s.rg==='cn'?cityCanon(s.city):s.city;
-  WGO.go('ai.html?dest='+encodeURIComponent(city));
-}
 function renderCkPv(){
   const box=$('#ckPv');if(!box)return;
   box.innerHTML=MAP_CK_IMGS.map((u,i)=>`<div class="ck-th"><img src="${u}" alt="打卡图${i+1}"><span class="x" onclick="delCkImg(${i})">✕</span></div>`).join('');

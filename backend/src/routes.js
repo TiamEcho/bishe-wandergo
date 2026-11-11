@@ -235,7 +235,7 @@ router.post('/posts/:id/like', async (req, res, next) => {
 
 /* ② POST /api/checkin —— 新增打卡（同时保留 /api/checkin/add 兼容旧前端）
  * P2 地图打卡新增字段：user_id / spot_id / city_name / content / rating / imgs
- * 图片以 dataURL 数组直接存库（express.json 默认 2mb，前端已压到 760px / 0.72） */
+ * 图片以 dataURL 数组直接存库（express.json 默认 2mb，前端已压到 800px / 0.7、最多 4 张） */
 async function createCheckin(req, res, next) {
   try {
     const b = req.body || {};

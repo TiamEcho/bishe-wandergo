@@ -436,7 +436,19 @@ const SPOT_EXTRA=[
  {id:'chaka',n:'茶卡盐湖',city:'共和县',rg:'cn',addr:'海西州乌兰县茶卡镇',lng:99.080,lat:36.700,hrs:'半天',traf:'西宁包车 3h / 火车茶卡站',price:'¥60',rating:4.6,tag:'盐湖 · 天空之镜',desc:'没风的时候整个天都倒扣在水面上，穿红裙子的人会排成一条线。'},
  {id:'qinghaihu',n:'青海湖·鸟岛',city:'共和县',rg:'cn',addr:'海南州共和县青海湖景区',lng:100.300,lat:36.870,hrs:'1 天',traf:'西宁+环湖包车',price:'¥50',rating:4.8,tag:'湖泊 · 骑行',desc:'环湖公路一圈 360 公里，七八月的油菜花一直开到湖水里。'},
  {id:'shahu',n:'沙湖',city:'银川',rg:'cn',addr:'石嘴山市平罗县沙湖景区',lng:106.350,lat:38.800,hrs:'半天',traf:'银川+景区班车 1h',price:'¥120（含船）',rating:4.5,tag:'沙水相依 · 湿地',desc:'沙丘与芦苇荡只隔一条水线，坐船能看见水鸟在船头起飞。'},
- {id:'chadianzi',n:'那拉提草原',city:'伊犁',rg:'cn',addr:'伊犁州新源县那拉提镇',lng:84.000,lat:43.300,hrs:'1-2 天',traf:'伊宁+包车 3h',price:'¥95',rating:4.8,tag:'草原 · 雪山',desc:'空中草原一路开到雪山脚下，六月野花铺满整面山坡。'}
+ {id:'chadianzi',n:'那拉提草原',city:'伊犁',rg:'cn',addr:'伊犁州新源县那拉提镇',lng:84.000,lat:43.300,hrs:'1-2 天',traf:'伊宁+包车 3h',price:'¥95',rating:4.8,tag:'草原 · 雪山',desc:'空中草原一路开到雪山脚下，六月野花铺满整面山坡。'},
+ /* 重庆 / 广东：此前整省没有景点，全国层下钻后是空的，这里补齐两省标点 */
+ {id:'hongyadong',n:'洪崖洞',city:'重庆',rg:'cn',addr:'重庆市渝中区嘉陵江滨江路88号',lng:106.580,lat:29.562,hrs:'2-3 小时',traf:'地铁1/6号线小什字站步行',price:'免费',rating:4.7,tag:'夜景 · 吊脚楼',desc:'十一层吊脚楼贴着嘉陵江挂下来，夜里亮灯后就是《千与千寻》的汤屋。'},
+ {id:'jiefangbei',n:'解放碑',city:'重庆',rg:'cn',addr:'重庆市渝中区民族路177号',lng:106.577,lat:29.557,hrs:'1-2 小时',traf:'地铁2号线临江门站',price:'免费',rating:4.5,tag:'都市 · 商圈',desc:'山城的心脏，四周高楼像峡谷，抬头永远看不见完整的天。'},
+ {id:'changjiangsuodao',n:'长江索道',city:'重庆',rg:'cn',addr:'重庆市渝中区新华路151号',lng:106.586,lat:29.560,hrs:'1 小时',traf:'地铁1号线小什字站5B口',price:'¥20 单程',rating:4.6,tag:'过江 · 交通奇观',desc:'一只铁盒子吊在江面上横渡，脚下是两条大江汇流。'},
+ {id:'wulong',n:'武隆天生三桥',city:'重庆',rg:'cn',addr:'重庆市武隆区仙女山镇',lng:107.790,lat:29.470,hrs:'1 天',traf:'重庆北站高铁+景区巴士',price:'¥135',rating:4.8,tag:'喀斯特 · 天坑',desc:'三座天然石桥架在天坑之上，《满城尽带黄金甲》就在这里取景。'},
+ {id:'gztower',n:'广州塔',city:'广州',rg:'cn',addr:'广州市海珠区阅江西路222号',lng:113.324,lat:23.106,hrs:'2-3 小时',traf:'地铁3号线广州塔站',price:'¥150 起',rating:4.7,tag:'地标 · 夜景',desc:'小蛮腰扭着腰立珠江边，摩天轮转一圈刚好看完一岸灯火。'},
+ {id:'changlong',n:'长隆旅游度假区',city:'广州',rg:'cn',addr:'广州市番禺区大石镇迎宾路',lng:113.325,lat:22.997,hrs:'1-2 天',traf:'地铁3/7号线汉溪长隆站',price:'¥250 起/园',rating:4.8,tag:'乐园 · 亲子',desc:'野生动物世界加欢乐世界，一天根本玩不完的那种乐园。'},
+ {id:'chenjiaci',n:'陈家祠',city:'广州',rg:'cn',addr:'广州市荔湾区中山七路恩龙里34号',lng:113.246,lat:23.129,hrs:'1-2 小时',traf:'地铁1号线陈家祠站',price:'¥10',rating:4.6,tag:'岭南 · 建筑',desc:'屋脊上密密麻麻的陶塑灰塑，是岭南工艺最铺张的一次炫技。'},
+ {id:'qinghui',n:'清晖园',city:'佛山',rg:'cn',addr:'佛山市顺德区大良清晖路23号',lng:113.248,lat:22.840,hrs:'1-2 小时',traf:'广珠城轨顺德站+打车',price:'¥15',rating:4.5,tag:'园林 · 岭南',desc:'广东四大名园之一，趟栊门和满洲窗把南方的光筛得很软。'},
+ {id:'zuguan',n:'佛山祖庙',city:'佛山',rg:'cn',addr:'佛山市禅城区祖庙路21号',lng:113.115,lat:23.030,hrs:'1-2 小时',traf:'广佛线祖庙站',price:'¥20',rating:4.6,tag:'武术 · 醒狮',desc:'黄飞鸿与叶问的地盘，屋脊上的陶塑群像比戏台还热闹。'},
+ {id:'qingrenlu',n:'情侣路',city:'珠海',rg:'cn',addr:'珠海市香洲区情侣中路',lng:113.590,lat:22.250,hrs:'半天',traf:'公交9/99路海滨公园站',price:'免费',rating:4.5,tag:'海岸 · 骑行',desc:'一条沿海公路串起渔女、灯塔和整片海，骑车吹风最舒服。'},
+ {id:'guangjidaqiao',n:'广济桥',city:'潮汕',rg:'cn',addr:'潮州市湘桥区环城东路',lng:116.640,lat:23.660,hrs:'1-2 小时',traf:'潮汕站+打车 40 分钟',price:'¥20',rating:4.6,tag:'古桥 · 启闭式',desc:'十八梭船二十四洲，中国最早能开合的桥，中间一段至今靠船搭起来。'}
 ];
 SPOT_EXTRA.forEach(s=>{if(!SPOTS.some(x=>x.id===s.id)){SPOTS.push(s);
   if(typeof ICO!=='undefined'&&!ICO[s.id])ICO[s.id]=s.rg==='ab'?'🌍':'🏔️';}});
