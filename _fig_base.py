@@ -78,6 +78,16 @@ def line(ax, pts, lw=LW, color=C_BORDER, dash=False):
                        linestyle=(0, (3, 2)) if dash else "solid"))
 
 
+def arrow(ax, pts, lw=LW, color=C_BORDER, ms=6.5):
+    """折线终点带实心箭头，保证首尾与图形边框相接"""
+    if len(pts) > 2:
+        line(ax, pts[:-1] + [pts[-1]], lw=lw, color=color)
+    a = FancyArrowPatch(pts[-2], pts[-1], arrowstyle="-|>",
+                        mutation_scale=ms, linewidth=lw, color=color,
+                        shrinkA=0, shrinkB=0, zorder=2)
+    ax.add_patch(a)
+
+
 def label(ax, x, y, t, fs=8, color="#000000", bg=C_WHITE, ha="center", va="center"):
     ax.text(x, y, t, fontsize=fs, ha=ha, va=va, color=color, zorder=5,
             bbox=dict(boxstyle="square,pad=0.18", facecolor=bg,
