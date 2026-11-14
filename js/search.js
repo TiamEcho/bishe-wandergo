@@ -14,10 +14,32 @@ const SR_API=(typeof WGOAPI!=='undefined'&&(WGOAPI.base||WGOAPI.BASE))||'http://
 let srAi=null;      // 最近一次 /api/search 返回的实体（地名/美食/商圈）与统计
 
 /* 调用 GET /api/search，成功则用返回结果替换卡片池 */
+/* 搜索页的唤醒提示条：与 ai.js 的 wakeTip 同一套样式，这里单独实现避免跨文件依赖 */
+function srWakeTip(show,sec){
+  let el=document.getElementById('srWakeTip');
+  if(!show){if(el)el.classList.remove('on');return}
+  if(!el){
+    el=document.createElement('div');
+    el.id='srWakeTip';el.className='wake-tip';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<span class="wt-dot"></span><b>正在唤醒服务中…</b>'
+    +'<span class="wt-sub">后端休眠时首次搜索需 30–50 秒'+(sec?'，已等待 '+sec+' 秒':'')
+    +'；本地结果已先展示，服务醒来后自动补充线上帖子</span>';
+  el.classList.add('on');
+}
 async function srSearchApi(kw){
   try{
+    /* 冷启动：先探活，实例未醒就显示唤醒提示并每 3 秒重试（最多 2 分钟），
+     * 醒来的那一刻再发起正式搜索；本地池已经在页面上，用户不会看到空白 */
+    if(typeof WGOAPI!=='undefined'&&WGOAPI.warm&&WGOAPI.status()!==true){
+      const ok=await WGOAPI.warm({max:120000,onWait:sec=>srWakeTip(true,sec)});
+      srWakeTip(false);
+      if(!ok)return null;
+    }
     const ctl=new AbortController();
-    const timer=setTimeout(()=>ctl.abort(),5000);
+    /* 与 api.js 的 T_REQ 对齐：30 秒 */
+    const timer=setTimeout(()=>ctl.abort(),30000);
     const r=await fetch(`${SR_API}/api/search?q=${encodeURIComponent(kw||'')}&limit=80`,{signal:ctl.signal});
     clearTimeout(timer);
     if(!r.ok)return null;
@@ -33,6 +55,7 @@ async function srSearchApi(kw){
     srPage=1;srPaint();
     return d;
   }catch(e){return null}
+  finally{srWakeTip(false)}
 }
 
 function srQ(){try{return WGO.q('kw')||''}catch(e){return''}}
@@ -56,17 +79,112 @@ function srEsc(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function srCover(p){
-  if(p.cover&&/^https?:/.test(p.cover))return p.cover;
-  return '';
+  /* 爬虫收进来的 B站/抖音封面是外站 CDN 地址：带防盗链、会挂、也会拖慢首屏。
+   * 种子数据用的 Unsplash 图同理（海外 CDN，国内加载常常超时）。
+   * 这些域名一律不用外链封面，直接走下面 srFallbackCover 的本地景点图库。 */
+  const c=p.cover||'';
+  /* 相对路径说明封面已经本地化（img/covers/、img/spots/），直接用 */
+  if(!/^([a-z]+:)?\/\//i.test(c))return c;
+  if(/hdslb\.com|bilivideo\.com|douyinpic\.com|douyinvod\.com|ixigua\.com|kuaishou\.com|unsplash\.com|pexels\.com|picsum\.photos/i.test(c))return '';
+  return c;
 }
-/* 兜底封面：外站封面被反爬/跨域拦截时，用本地景点图库的图顶上，卡片不留白 */
+/* 省份/大区 → 景点库里的城市：爬虫标题多写「西藏」「川西」「内蒙」，很少写具体城市 */
+const SR_REGION={'西藏':'拉萨','藏区':'拉萨','川西':'阿坝州','四川':'阿坝州','九寨':'阿坝州',
+  '云南':'大理','大理':'大理','丽江':'丽江 · 盐源','湖南':'张家界','湘西':'湘西','安徽':'黄山市',
+  '黄山':'黄山市','吉林':'延边','长白山':'延边','海南':'三亚','福建':'厦门','江苏':'苏州',
+  '浙江':'杭州','青海':'海北州','广西':'桂林','北京':'北京','上海':'上海','广东':'广州',
+  '新疆':'乌鲁木齐','内蒙':'呼伦贝尔'};
+/* 景点相关度打分：帖子标题/正文/定位里出现越多景点信息，得分越高。
+ * 不只是「全名包含」，还做前缀模糊匹配——爬虫标题写成「故宫半日游」也能命中「故宫博物院」。 */
+function srSpotScore(s,probe){
+  let sc=0;
+  const n=s.n||'';
+  if(n&&probe.includes(n))sc=100+n.length;              /* 景点全名命中，越长越具体 */
+  else if(n.length>=2){
+    for(const L of [3,2]){                              /* 前缀模糊：故宫博物院 ← 故宫 */
+      const pre=n.slice(0,L);
+      if(pre.length>=2&&probe.includes(pre)){sc=60+L;break}
+    }
+  }
+  if(s.city&&probe.includes(s.city))sc+=20;
+  /* 省份别名命中本景点所在城市：西藏→拉萨、川西→阿坝州 */
+  for(const k in SR_REGION){
+    if(probe.includes(k)&&SR_REGION[k]===s.city){sc+=14;break}
+  }
+  if(s.tag){
+    s.tag.split(/[·\s/、]+/).filter(t=>t&&t.length>=2)
+      .forEach(t=>{if(probe.includes(t))sc+=8});
+  }
+  return sc;
+}
+/* 拼音首字母：外滩→WT、故宫博物院→GGBWY。
+ * 用 __PYT 逐字取拼音首字母；查不到映射的字跳过（如「·」）。 */
+function srAbbr(name){
+  if(typeof __PYT==='undefined'||!name)return '';
+  return String(name).split('').map(ch=>{
+    const py=__PYT[ch];
+    return py?py.charAt(0).toUpperCase():'';
+  }).join('');
+}
+/* 封面匹配（P0）：按优先级从帖子文本里找到最佳本地封面景点 id。
+ * 1. 精确：景点全名出现在标题/正文/定位里（多个命中取更具体/评分更高的）
+ * 2. 包含：景点名前缀 2-3 字被文本包含（故宫半日游 → 故宫博物院）
+ * 3. 拼音首字母：文本里的连续大写字母段 == 景点名缩写（如帖子写 GGBWY）
+ * 4. 城市/tag 辅助分（只对 1-3 命中者加权，不能单独导致选图）
+ * 返回 null 表示前三层都没命中。 */
+function srMatchSpot(probe,spotId){
+  if(spotId&&(typeof P!=='undefined')&&P[spotId])return {id:spotId,lv:0};
+  const spots=(typeof SPOTS!=='undefined'?SPOTS:[]);
+  const m=(typeof window!=='undefined'&&window.SPOT_IMG)||{};
+  if(!spots.length||!Object.keys(m).length)return null;
+  const txt=String(probe||''),low=txt.toLowerCase();
+  let best=null;
+  spots.forEach(s=>{
+    if(!m[s.id])return;                       /* 只考虑本地有 webp 的景点 */
+    const n=String(s.n||'');
+    let lv=0;
+    if(n&&txt.includes(n))lv=1;               /* 精确：全名出现 */
+    else if(n.length>=2){
+      for(const L of [3,2]){                  /* 包含：前缀命中 */
+        const pre=n.slice(0,L);
+        if(pre.length>=2&&txt.includes(pre)){lv=2;break}
+      }
+    }
+    if(!lv){                                   /* 拼音首字母：匹配文本里的连续字母段 */
+      const ab=srAbbr(n);
+      if(ab&&ab.length>=2&&low!==low.toUpperCase()){
+        const up=txt.toUpperCase();
+        if(new RegExp('(?<![\\p{L}\\p{N}])'+ab+'(?!\\p{L})','u').test(up))lv=3;
+      }
+    }
+    if(!lv)return;
+    /* 同层内的细化排序：名字更长更具体 + 评分更高优先 */
+    const score=lv*1000+(n.length*2)+((s.rating||4)*10)
+      +(s.city&&txt.includes(s.city)?15:0);
+    if(!best||score>best.score)best={id:s.id,lv,score};
+  });
+  return best;
+}
+/* 兜底封面：外站封面被反爬/跨域拦截时，用本地景点图库的图顶上，卡片不留白。
+ * 优先级：景点名精确匹配 > 前缀包含匹配 > 拼音首字母 > 按相关度/哈希散选 > 全库散选。 */
 function srFallbackCover(p){
-  const probe=(p.title||'')+' '+(p.content||'')+' '+(p.location||'');
+  const probe=(p.title||'')+' '+(p.content||'')+' '+(p.location||'')+' '+(p.topics||'');
+  /* ---- 1-3 级：名字/前缀/拼音首字母直接命中，稳拿该景点封面 ---- */
+  const hit=srMatchSpot(probe,p.spotId);
+  if(hit&&hit.lv<=3)return typeof IMG==='function'?IMG(hit.id,'landscape_4_3'):'';
   let id=p.spotId||'';
   if(!id||typeof P==='undefined'||!P[id]){
-    const s=(typeof SPOTS!=='undefined'?SPOTS:[]).find(x=>x.n&&probe.includes(x.n))||
-            (typeof SPOTS!=='undefined'?SPOTS:[]).find(x=>x.city&&probe.includes(x.city));
-    id=s?s.id:'erhai';
+    const spots=(typeof SPOTS!=='undefined'?SPOTS:[]);
+    const scored=spots.map(s=>[srSpotScore(s,probe),s]).filter(x=>x[0]>0)
+      .sort((a,b)=>b[0]-a[0]).slice(0,4).map(x=>x[1]);
+    if(scored.length){
+      const seed=String(p.id||p.title||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+      id=scored[seed%scored.length].id;
+    }else{
+      /* 一条都没命中：也不要所有帖子都用同一张图，按 id 在全库散列 */
+      const seed=String(p.id||p.title||'x').split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+      id=(spots.length?spots[seed%spots.length]:{id:'erhai'}).id;
+    }
   }
   /* IMG 现在接受景点 id / 中文名，内部按「英文地名 + 场景」生成提示词；
      旧写法 IMG(P[id]) 在 id 不在 P 里时会退化成 prompt=undefined */
@@ -254,7 +372,9 @@ function srPaint(){
     if(filters)filters.style.display='none';
     if(cnt)cnt.textContent=`「${srState.kw||'全部'}」共 ${rows.length} 个词条`;
     grid.innerHTML=rows.length?rows.map(srTopicCard).join('')
-      :`<div class="sr-empty-box">没有匹配的词条 😢<br><span>试试「海岛」「亲子」「穷游」这类词，或切回「全部」看内容</span></div>`;
+      :(typeof emptyArt==='function'
+        ?emptyArt('没有匹配的词条','试试「海岛」「亲子」「穷游」这类词，或切回「全部」看内容；换个城市试试也可以')
+        :`<div class="sr-empty-box">没有匹配的词条 😢</div>`);
     if(more)more.style.display='none';
     return;
   }
@@ -264,7 +384,9 @@ function srPaint(){
   if(cnt)cnt.textContent=`「${srState.kw||'全部'}」共 ${rows.length} 条内容${spots.length+dests.length?' · 地点 '+(spots.length+dests.length)+' 个':''}`;
   const show=rows.slice(0,srPage*SR_PAGE);
   grid.innerHTML=show.length?show.map(srCard).join('')
-    :`<div class="sr-empty-box">没有匹配的内容 😢<br><span>换个关键词，或把「平台 / 地区 / 时间」筛选放宽试试；也可以直接去 <a href="ai.html?dest=${encodeURIComponent(srState.kw)}">AI 规划</a> 生成一份行程</span></div>`;
+    :(typeof emptyArt==='function'
+      ?emptyArt('没有匹配的内容','换个关键词，或把「平台 / 地区 / 时间」筛选放宽试试；也可以直接去 <a href="ai.html?dest='+encodeURIComponent(srState.kw)+'">AI 规划</a> 生成一份行程')
+      :`<div class="sr-empty-box">没有匹配的内容 😢</div>`);
   if(more)more.style.display=rows.length>show.length?'inline-flex':'none';
   /* 图片兜底：外站封面挂了就用本地景点图顶上，不留白 */
   if(typeof watchImgs==='function')watchImgs(grid);

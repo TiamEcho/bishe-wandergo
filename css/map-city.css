@@ -1,0 +1,148 @@
+/* =========================================================
+ * WANDERGO · 城市地图页样式（css/map-city.css）
+ * 配合 js/map-city.js：Leaflet 容器 / 标记 / 弹窗 / 打卡表单 / 记录墙
+ * ========================================================= */
+
+/* ---------- 页头 ---------- */
+.cm-hero{padding:34px 0 8px}
+.cm-hero h2{font-size:26px;font-weight:900;margin-top:4px}
+.cm-hero h2 span{color:var(--gold)}
+.cm-hero p{font-size:13.5px;color:var(--muted);margin-top:4px}
+.cm-main{padding-top:10px}
+
+/* ---------- 布局：左侧列表 + 右侧地图 ---------- */
+.cm-layout{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:stretch}
+.cm-side{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;min-height:620px;box-shadow:var(--shadow)}
+.cm-side-top{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.cm-city{flex:1;min-width:0;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;outline:none}
+.cm-city:focus{border-color:var(--gold)}
+.cm-stat{font-size:11.5px;font-weight:800;color:var(--gold);white-space:nowrap}
+
+.cm-tabs{display:flex;gap:6px;margin:12px 0 10px}
+.cm-tabs button{flex:1;padding:7px 0;border-radius:9px;font-size:12.5px;font-weight:800;color:var(--muted);background:var(--glass);border:1px solid transparent;transition:.2s}
+.cm-tabs button.on{background:var(--gold-grad);color:var(--accent-ink);border-color:transparent}
+
+/* ---------- 景点列表 ---------- */
+.cm-list,.cm-wall{flex:1;overflow-y:auto;max-height:520px;display:flex;flex-direction:column;gap:7px;padding-right:2px}
+.cm-li{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);cursor:pointer;transition:.2s}
+.cm-li:hover{border-color:var(--gold);transform:translateX(2px)}
+.cm-li.on{background:rgba(108,196,122,.12);border-color:rgba(108,196,122,.45)}
+.cm-li.hot{box-shadow:0 0 0 2px var(--gold)}
+.cm-li-no{width:22px;height:22px;border-radius:50%;flex:none;background:var(--gold-grad);color:var(--accent-ink);font-size:12px;font-weight:900;display:grid;place-items:center}
+.cm-li-no.on{background:linear-gradient(180deg,#7ad18a,#4fa864);color:#fff}
+.cm-li-tx{flex:1;min-width:0}
+.cm-li-tx b{display:block;font-size:13px;font-weight:800;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm-li-tx span{font-size:11px;color:var(--muted)}
+.cm-li-ck{flex:none;font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:8px;background:var(--glass);color:var(--gold);border:1px solid var(--line-gold)}
+.cm-li-ck:hover{background:var(--gold-grad);color:var(--accent-ink)}
+
+.cm-empty{text-align:center;color:var(--muted);font-size:13px;padding:36px 10px;line-height:2}
+.cm-empty.small{padding:26px 10px;font-size:12.5px}
+.cm-empty span{font-size:11.5px;opacity:.75}
+
+/* ---------- 打卡记录墙 ---------- */
+.cm-wall-i{display:flex;gap:9px;padding:9px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line)}
+.cm-wall-i img{width:54px;height:54px;border-radius:9px;object-fit:cover;flex:none}
+.cm-wall-no{width:54px;height:54px;border-radius:9px;flex:none;display:grid;place-items:center;background:var(--panel-3);font-size:20px}
+.cm-wall-tx{flex:1;min-width:0}
+.cm-wall-tx b{font-size:12.5px;color:var(--ink);font-weight:800;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm-wall-tx b i{font-style:normal;font-weight:500;color:var(--muted)}
+.cm-wall-tx p{font-size:11.5px;color:var(--ink-2);margin:2px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cm-wall-tx span{font-size:11px;color:var(--gold)}
+
+.cm-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
+.cm-legend span{display:inline-flex;align-items:center;gap:4px}
+.cm-lg{width:9px;height:9px;border-radius:50%;display:inline-block}
+.cm-lg.gold{background:var(--gold)}
+.cm-lg.green{background:#4fa864}
+
+/* ---------- 地图容器 ---------- */
+.cm-mapwrap{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);min-height:620px}
+#cmMap{width:100%;height:100%;min-height:620px;background:#e8e4da;z-index:1}
+.cm-hint{position:absolute;left:12px;bottom:12px;z-index:400;background:rgba(20,26,40,.72);color:#fff;font-size:11.5px;padding:6px 11px;border-radius:9px;backdrop-filter:blur(6px);pointer-events:none}
+/* 缩放层级提示：省 / 市 / 区 / 街区 */
+.cm-zoomtag{position:absolute;left:12px;top:12px;z-index:400;background:rgba(20,26,40,.78);color:var(--gold);
+  font-size:12px;font-weight:700;letter-spacing:.4px;padding:6px 12px;border-radius:999px;backdrop-filter:blur(6px);
+  pointer-events:none;border:1px solid rgba(201,138,46,.45)}
+/* 图层开关 */
+.cm-layerbox{position:absolute;right:12px;bottom:12px;z-index:400;display:flex;gap:14px;align-items:center;
+  background:rgba(20,26,40,.78);color:#fff;font-size:11.5px;padding:6px 12px;border-radius:9px;backdrop-filter:blur(6px)}
+.cm-layerbox label{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+.cm-layerbox input{accent-color:var(--gold);cursor:pointer}
+/* 边界 polygon 的锚点提示 */
+.cm-btip{background:rgba(20,26,40,.86)!important;color:#fff!important;border:none!important;box-shadow:none!important;
+  font-size:11.5px!important;padding:2px 8px!important;border-radius:6px!important}
+.cm-btip::before{display:none!important}
+
+/* Leaflet 控件配色跟随主题 */
+.leaflet-container{font-family:inherit;background:#e8e4da}
+.leaflet-control-zoom a{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
+.leaflet-control-zoom a:hover{background:var(--panel-2)!important;color:var(--gold)!important}
+.leaflet-control-attribution{font-size:10px!important;background:rgba(255,255,255,.78)!important}
+
+/* ---------- 自定义标记 ---------- */
+.cm-ico{background:none;border:none}
+/* 水滴形标记：旋转 -45° 的圆角方块，内部文字再转回来 */
+.cm-dot{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50% 50% 50% 0;
+  transform:rotate(-45deg) translateZ(0);background:var(--gold-grad);border:2px solid #fff;
+  box-shadow:0 4px 10px rgba(0,0,0,.35);color:#3a2f12;font-size:12px;font-weight:900;line-height:1;
+  transition:transform .18s,box-shadow .18s}
+.cm-dot.on{background:linear-gradient(180deg,#7ad18a,#4fa864);color:#fff;font-size:13px}
+/* 标记本体转了 -45°，文字容器转回来保持正立 */
+.cm-dot i{display:block;transform:rotate(45deg);font-style:normal}
+.cm-ico:hover .cm-dot{transform:rotate(-45deg) scale(1.22) translateZ(0);box-shadow:0 6px 16px rgba(0,0,0,.45)}
+
+/* ---------- 弹窗 ---------- */
+.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink);border-radius:14px;padding:0;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.4)}
+.leaflet-popup-content{margin:0;width:auto!important;line-height:1.6}
+.leaflet-popup-tip{background:var(--panel)}
+.leaflet-popup-close-button{color:var(--muted)!important;font-size:18px!important;padding:6px 8px 0 0!important;z-index:5}
+.cm-pop{width:250px}
+.cm-pop-img{height:120px;overflow:hidden;background:var(--panel-2)}
+.cm-pop-img img{width:100%;height:100%;object-fit:cover;display:block}
+.cm-pop-body{padding:10px 12px 12px}
+.cm-pop-body h4{font-size:14px;font-weight:900;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cm-ok{font-size:10px;font-weight:800;color:#fff;background:#4fa864;border-radius:999px;padding:1px 7px}
+.cm-pop-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);margin-top:3px}
+.cm-star{color:var(--gold);font-weight:800}
+.cm-pop-addr{font-size:11px;color:var(--ink-2);margin-top:5px}
+.cm-pop-last{font-size:11px;color:var(--ink-2);margin-top:5px;padding:5px 7px;border-radius:7px;background:var(--panel-2)}
+.cm-pop-btns{display:flex;gap:6px;margin-top:9px}
+.cm-btn{flex:1;padding:6px 0;border-radius:9px;font-size:12px;font-weight:800;background:var(--glass);color:var(--ink-2);border:1px solid var(--line)}
+.cm-btn.gold{background:var(--gold-grad);color:var(--accent-ink);border-color:transparent}
+.cm-btn:hover{filter:brightness(1.06)}
+
+/* ---------- 打卡表单 ---------- */
+.cm-ck{padding:2px}
+.cm-ck-hero{display:flex;gap:12px;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.cm-ck-hero img{width:88px;height:66px;border-radius:11px;object-fit:cover;flex:none}
+.cm-ck-hero h3{font-size:16px;font-weight:900}
+.cm-ck-hero p{font-size:12px;color:var(--muted);margin-top:3px}
+.cm-ck-row{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
+.cm-ck-row>label{width:64px;flex:none;font-size:12.5px;font-weight:800;color:var(--ink-2);padding-top:8px}
+.cm-ck-row input[type=text],.cm-ck-row input:not([type]),.cm-ck-row input[type=file]{flex:1}
+#ckNick{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:8px 11px;color:var(--ink);font-size:13px;outline:none}
+#ckNick:focus{border-color:var(--gold)}
+#ckText{flex:1;min-height:82px;resize:vertical;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--ink);font-size:13px;outline:none}
+#ckText:focus{border-color:var(--gold)}
+.cm-stars{display:flex;gap:4px;padding-top:4px}
+.cm-stars button{font-size:24px;line-height:1;color:var(--panel-3);transition:.15s}
+.cm-stars button.on{color:var(--gold);transform:scale(1.05)}
+.cm-stars button:hover{transform:scale(1.15)}
+.cm-ck-imgs{flex:1;display:flex;flex-wrap:wrap;gap:7px}
+.cm-ck-add{width:62px;height:62px;border-radius:10px;border:1.5px dashed var(--line-gold);display:grid;place-items:center;font-size:22px;color:var(--gold);cursor:pointer;background:var(--glass)}
+.cm-ck-th{position:relative;width:62px;height:62px;border-radius:10px;overflow:hidden}
+.cm-ck-th img{width:100%;height:100%;object-fit:cover}
+.cm-ck-th span{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:11px;display:grid;place-items:center;cursor:pointer}
+.cm-ck-tip{flex-basis:100%;font-size:11px;color:var(--muted);margin-top:-2px}
+.cm-ck-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:12px;border-top:1px solid var(--line)}
+#ckMsg{font-size:11.5px;color:var(--err)}
+.cm-ck-foot .btn{padding:9px 22px;border-radius:11px;font-weight:800}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:960px){
+  .cm-layout{grid-template-columns:1fr}
+  .cm-side{min-height:auto;max-height:none}
+  .cm-list,.cm-wall{max-height:260px}
+  .cm-mapwrap,#cmMap{min-height:420px}
+}

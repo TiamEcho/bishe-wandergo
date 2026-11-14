@@ -1,0 +1,14 @@
+{
+  "name": "wandergo-site",
+  "private": true,
+  "description": "WANDERGO 前端静态站（GitHub Pages）+ 本地资源处理脚本。后端在 backend/ 独立部署。",
+  "scripts": {
+    "covers": "node scripts/localize-covers.js",
+    "covers:force": "node scripts/localize-covers.js --force",
+    "check:images": "node scripts/check-images.js",
+    "spots": "node scripts/fetch-spots.js"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.5"
+  }
+}

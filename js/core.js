@@ -381,10 +381,26 @@ function toggleBgm(name){
   return true;
 }
 function stopBgm(){bgmName=null;clearTimeout(bgmTimer)}
-/* ================= 打卡视频播放器（含 BGM） ================= */
+/* ================= 打卡视频播放器（含 BGM） =================
+ * d.videoSrc 有值时播放后端托管的真实视频文件（任意设备可播）；
+ * 没有时退化为 AI 图片轮播演示。 */
 let vTimer=null,vProgTimer=null,vFrame=0,vData=null;
 function openVideo(d){
   vData=d;vFrame=0;
+  const real=d&&d.videoSrc;
+  if(real){
+    openModal(`<button class="mx" onclick="closeModal()">✕</button>
+    <div class="vplayer">
+      <div class="vmain">
+        <div class="vstage">
+          <video class="vreal" src="${d.videoSrc}" poster="${d.poster||''}" controls autoplay playsinline preload="metadata"></video>
+          <div class="vtitle"><h4>${d.t||'打卡视频'}</h4><p>📍 ${d.loc||''} · 后端托管视频 · 跨设备可播放</p></div>
+        </div>
+      </div>
+    </div>`,true);
+    const box=$('#modalBox');if(box)box.classList.add('vwide');
+    return;
+  }
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
   <div class="vplayer">
     <div class="vmain">
@@ -489,7 +505,39 @@ function litSet(){
   const albums=JSON.parse(localStorage.getItem('fmw_albums')||'[]');
   const names=new Set(albums.map(a=>a.dest));
   const ids=new Set();SPOTS.forEach(s=>{if(names.has(s.n))ids.add(s.id)});
+  /* P2：合并后端打卡记录（/api/checkin/mine）。
+   * 后端结果异步返回后写入这个集合，地图页据此点亮标点；
+   * 只读本地时行为与原来完全一致，不会因为接口慢而阻塞地图渲染。 */
+  SERVER_LIT.forEach(id=>ids.add(id));
   return ids;
+}
+/* 后端打卡过的 spot_id（异步填充，供 litSet 合并） */
+const SERVER_LIT=new Set();
+if(typeof WGOAPI!=='undefined'&&WGOAPI.myCheckinSpots){
+  /* 昵称要等登录态恢复后再取，initUser 是同步读 localStorage 的，这里延后一轮 */
+  setTimeout(()=>{
+    const nick=(typeof user!=='undefined'&&user&&user.nick)?user.nick:(localStorage.getItem('wgo_nick')||'');
+    WGOAPI.myCheckinSpots(nick).then(r=>{
+      if(!r||!r.ok||!Array.isArray(r.list))return;
+      let added=false;
+      r.list.forEach(id=>{if(id&&!SERVER_LIT.has(id)){SERVER_LIT.add(id);added=true}});
+      if(added&&document.getElementById('chinaMap'))refreshLitMarkers();
+    }).catch(()=>{});
+  },600);
+}
+/* 地图页标点重新着色（无地图实例时静默跳过，其他页面无副作用） */
+function refreshLitMarkers(){
+  if(typeof CHARTS==='undefined')return;
+  Object.keys(CHARTS).forEach(k=>{
+    const c=CHARTS[k];if(!c||!c.__wgo)return;
+    const lit=litSet();
+    const list=(c.__wgo.opts.spots)||[];
+    const idx=c.getOption().series.findIndex(s=>s.id==='wgo-icons');
+    if(idx<0)return;
+    c.setOption({series:[{id:'wgo-icons',symbol:(v,p)=>spotPin(p.data.id,lit.has(p.data.id))}]});
+    const li=c.getOption().series.findIndex(s=>s.id==='wgo-lit');
+    if(li>=0)c.setOption({series:[{id:'wgo-lit',data:list.filter(s=>lit.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))}]});
+  });
 }
 function openSpot(id){
   const s=spotById(id);if(!s)return;
@@ -511,11 +559,78 @@ function openSpot(id){
     <p class="coord-note">坐标与简介来自公开地理数据的整理结果，<b>仅供出行参考</b>；具体开放时间、门票与现场情况请以景区官方公告为准。</p>
     <div class="dbtns">
       <button class="btn line" onclick="favSpot('${s.id}')">♥ 收藏</button>
-      <button class="btn line" onclick="WGO.go('map.html',{spot:'${s.id}'})">🗺 在地图中查看</button>
+      <button class="btn line" onclick="WGO.go('map-city.html',{city:cityCanon('${s.city}'),spot:'${s.id}'})">🗺 在地图中查看</button>
       <button class="btn gold" onclick="WGO.go('ai.html',{dest:'${s.city}'})">🤖 让 AI 规划这里</button>
-      <button class="btn gold" onclick="WGO.go('checkin.html',{dest:'${s.id}'})">📸 去打卡</button>
+      <button class="btn gold" onclick="WGO.go('map-city.html',{city:cityCanon('${s.city}'),spot:'${s.id}',ck:1})">📸 去打卡</button>
     </div>
   </div>`,true);
+}
+/* ================= 城市名统一（P2 地图页） =================
+ * SPOTS 里的城市名写法不统一（"北京"/"北京市"、"丽江 · 盐源" 这类复合值），
+ * 这里用映射表把展示名归一到同一个 key，不改原始数据。 */
+const CITY_ALIAS={
+  '北京市':'北京','上海市':'上海','天津市':'天津','重庆市':'重庆','西安市':'西安',
+  '成都市':'成都','杭州市':'杭州','广州市':'广州','深圳市':'深圳','南京市':'南京',
+  '苏州市':'苏州','大理市':'大理','丽江市':'丽江','三亚市':'三亚','厦门市':'厦门',
+  '长沙市':'长沙','武汉市':'武汉','青岛市':'青岛','昆明市':'昆明','哈尔滨市':'哈尔滨',
+  '黄山市':'黄山','阿坝':'阿坝州','呼伦贝尔市':'呼伦贝尔','桂林市':'桂林','阳朔县':'阳朔',
+  '敦煌市':'敦煌','张家界市':'张家界','凤凰县':'凤凰','都江堰市':'都江堰','香格里拉市':'香格里拉',
+  /* P2 补全：SPOTS 里出现的其余写法（含自治州全称、县/县级市、地级市带「市」） */
+  '延边州':'延边','延边朝鲜族自治州':'延边','湘西':'湘西','湘西土家族苗族自治州':'湘西',
+  '甘孜':'甘孜州','甘孜藏族自治州':'甘孜州','阿坝藏族羌族自治州':'阿坝州','黔东南':'黔东南州',
+  '黔东南苗族侗族自治州':'黔东南州','西双版纳傣族自治州':'西双版纳','迪庆藏族自治州':'香格里拉',
+  '恩施土家族苗族自治州':'恩施','大理白族自治州':'大理','昌吉回族自治州':'昌吉',
+  '伊犁哈萨克自治州':'伊犁','吐鲁番市':'吐鲁番','喀什市':'喀什','克拉玛依市':'克拉玛依',
+  '乌鲁木齐市':'乌鲁木齐','拉萨市':'拉萨','林芝市':'林芝','日喀则市':'日喀则','西宁市':'西宁',
+  '兰州市':'兰州','银川市':'银川','太原市':'太原','郑州市':'郑州','开封市':'开封','洛阳市':'洛阳',
+  '济南市':'济南','泰安市':'泰安','烟台市':'烟台','威海市':'威海','大连市':'大连','沈阳市':'沈阳',
+  '长春市':'长春','延吉市':'延吉','呼和浩特市':'呼和浩特','鄂尔多斯市':'鄂尔多斯','福州市':'福州',
+  '泉州市':'泉州','武夷山市':'武夷山','南昌市':'南昌','景德镇市':'景德镇','婺源县':'婺源',
+  '合肥市':'合肥','黄山市':'黄山','无锡市':'无锡','扬州市':'扬州','常州市':'常州','绍兴市':'绍兴',
+  '宁波市':'宁波','温州市':'温州','舟山市':'舟山','嘉兴市':'嘉兴','乌镇':'乌镇','西塘':'西塘',
+  '佛山市':'佛山','珠海市':'珠海','东莞市':'东莞','汕头市':'汕头','惠州市':'惠州','开平市':'开平',
+  '潮州市':'潮汕','潮州':'潮汕','揭阳市':'潮汕','顺德市':'佛山','顺德区':'佛山',
+  '南宁市':'南宁','北海市':'北海','海口市':'海口','万宁市':'万宁','陵水':'陵水','文昌市':'文昌',
+  '贵阳市':'贵阳','安顺市':'安顺','遵义市':'遵义','荔波县':'荔波','凯里市':'凯里','重庆市':'重庆',
+  '乐山市':'乐山','峨眉山市':'峨眉山','九寨沟县':'九寨沟','稻城县':'稻城','康定市':'康定',
+  '雅安市':'雅安','自贡市':'自贡','宜宾市':'宜宾','泸州市':'泸州','绵阳市':'绵阳','南充市':'南充',
+  '广元市':'广元','攀枝花市':'攀枝花','西昌市':'西昌','腾冲市':'腾冲','瑞丽市':'瑞丽',
+  '建水县':'建水','元阳县':'元阳','景洪市':'西双版纳','芒市':'芒市','平安县':'平安',
+  '张家口市':'张家口','承德市':'承德','秦皇岛市':'秦皇岛','保定市':'保定','石家庄市':'石家庄',
+  '邯郸市':'邯郸','大同市':'大同','平遥县':'平遥','五台县':'五台山','延安市':'延安','宝鸡市':'宝鸡',
+  '汉中市':'汉中','天水市':'天水','张掖市':'张掖','嘉峪关市':'嘉峪关','酒泉市':'酒泉','格尔木市':'格尔木',
+  /* 自治州 / 州名不带「市」字，地图按省筛选时也要归一 */
+  '阿坝州':'阿坝','阿坝藏族羌族自治州':'阿坝','海北州':'海北','海北藏族自治州':'海北',
+  '延边':'延边','延边州':'延边','延边朝鲜族自治州':'延边','安图县':'安图','湘西州':'湘西',
+  '湘西土家族苗族自治州':'湘西','共和县':'共和','黔东南州':'黔东南','黔南州':'黔南',
+  '大理州':'大理','大理白族自治州':'大理','西双版纳州':'西双版纳','甘孜州':'甘孜','甘南州':'甘南'
+};
+function cityCanon(name){
+  const raw=String(name||'').trim();
+  if(!raw)return '';
+  /* 复合写法（"丽江 · 盐源"）取第一段作为主城市 */
+  const first=raw.split(/\s*[·・\/]\s*/)[0].trim();
+  /* 二级后缀兜底：数据里同一地名写法不统一（"湘西"/"湘西州"/"湘西土家族苗族自治州"），
+   * 直接按后缀再查一次，免得每个州名都要手写三份别名 */
+  return CITY_ALIAS[first]||CITY_ALIAS[raw]||CITY_ALIAS[first.replace(/土家族苗族|藏族羌族|朝鲜族|白族|布依族苗族|蒙古族藏族|哈尼族彝族|傣族|景颇族|彝族|苗族侗族|布依族|壮族|傣|彝族|傈僳族|自治州|州$/g,'')]
+    ||first;
+}
+/* 同一城市下的所有景点（按归一后的城市名匹配） */
+function spotsOfCity(city){
+  const key=cityCanon(city);
+  const list=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>cityCanon(s.city)===key);
+  return {key,list};
+}
+/* 全部城市（归一后去重，按景点数降序） */
+function allCities(){
+  const map=new Map();
+  (typeof SPOTS!=='undefined'?SPOTS:[]).forEach(s=>{
+    const k=cityCanon(s.city);
+    if(!k)return;
+    if(!map.has(k))map.set(k,{city:k,count:0,rg:s.rg});
+    map.get(k).count++;
+  });
+  return [...map.values()].sort((a,b)=>b.count-a.count);
 }
 function favSpot(id){toast('已收藏「'+spotById(id).n+'」⭐')}
 function askAI(city){WGO.go('ai.html',{dest:city})}
@@ -542,7 +657,13 @@ function doSearch(raw){
   if(shops.length)groups.push({icon:'🎨',name:'小众文创店铺',items:shops.map(s=>({icon:'☕',t:hl(s.name,q),sub:`${s.city} · ${s.type} · ${s.hours}`,run:()=>WGO.go('workbench.html',{shop:s.name})}))});
   const dests=typeof DEST_META!=='undefined'?Object.keys(DEST_META).filter(k=>k.toLowerCase().includes(q)).slice(0,4):[];
   if(dests.length)groups.push({icon:'🤖',name:'AI 行程方案',items:dests.map(k=>({icon:'🧭',t:hl(k,q),sub:(DEST_META[k].mood||'')+' · 点击让 AI 生成行程',run:()=>WGO.go('ai.html',{dest:k})}))});
-  if(!groups.length){R.innerHTML=`<div class="sr-empty">没有找到与「${raw}」相关的内容 😢<br><span>换个词试试，或去社区发布第一条笔记</span></div>`;return}
+  if(!groups.length){
+    /* 与 search.html 结果页共用同一套空状态插画与引导文案 */
+    R.innerHTML=(typeof emptyArt==='function')
+      ?emptyArt('没有找到与「'+raw+'」相关的内容','换个城市或关键词试试，也可以直接去社区发布第一条笔记')
+      :`<div class="sr-empty">没有找到与「${raw}」相关的内容 😢<br><span>换个词试试，或去社区发布第一条笔记</span></div>`;
+    return
+  }
   R.innerHTML=groups.map(g=>`<div class="sr-group"><div class="sr-gtitle">${g.icon} ${g.name}</div>${g.items.map((it,i)=>`<button class="sr-item" data-g="${g.name}" data-i="${i}"><span class="sr-ic">${it.icon}</span><span class="sr-main"><b>${it.t}</b><i>${it.sub||''}</i></span><span class="sr-go">↵</span></button>`).join('')}</div>`).join('');
   $$('.sr-item').forEach(btn=>btn.onclick=()=>{
     const g=groups.find(x=>x.name===btn.dataset.g),it=g.items[+btn.dataset.i];
@@ -777,7 +898,7 @@ const NAVS=[
  ['index.html','🏠','旅行首页'],['novel.html','📖','跟着小说去旅行'],['prince.html','👑','跟着小王子去旅行'],
  ['map.html','🌍','环球地图'],['ai.html','🤖','AI 旅行规划'],['search.html','🔍','全站搜索'],['community.html','💬','旅行社区'],['topic.html','🏷','词条广场'],
  ['checkin.html','📍','我的打卡'],['memories.html','🎬','旅行纪念视频'],['workbench.html','🧳','旅行工作台'],['guide.html','📘','模块导览'],
- ['recommend.html','🎯','猜你喜欢 · 推荐'],['wheel.html','🎡','旅行大转盘']
+ ['recommend.html','🎯','为你推荐'],['wheel.html','🎡','旅行大转盘']
 ];
 const LOGO_SVG='<svg viewBox="0 0 24 24"><path d="M21.5 5.6c-.5-1-1.8-1.4-2.8-.9l-4.3 2.3-8.1-3.4c-.5-.2-1.1-.1-1.5.2l-.9.8c-.5.4-.4 1.2.2 1.5l6.5 3.3-3.7 2-2.9-.6c-.4-.1-.8 0-1.1.3l-.7.6c-.4.4-.3 1 .2 1.2l3.3 1.9 1.9 3.3c.3.5 1 .6 1.3.2l.6-.7c.3-.3.4-.7.3-1.1l-.6-2.9 3.7-2 3.3 6.5c.3.5 1.1.6 1.5.2l.8-.9c.3-.4.4-1 .2-1.5l-3.4-8.1 2.3-4.3c.5-.9.3-2.1-.6-2.6z" transform="scale(.9) translate(1.3,1.3)"/></svg>';
 /* 顶部导航栏：AI规划 / 地图打卡 / 社区攻略 三个下拉 + 登录/用户端 */
@@ -787,12 +908,14 @@ const TOPNAV=[
    ['recommend.html','路线推荐','多条路线对比'],
    ['ai.html?mode=budget','时间预算','开始时间 + 结束时间 + 费用预估']]},
  {t:'地图打卡',ico:'🗺',items:[
-   ['map.html','点亮地图','中国 / 世界切换'],
+   ['map-city.html','城市地图','Leaflet + OSM · 景点标点 · 图文打卡'],
+   ['map.html','点亮地图','中国 / 世界切换 · 省份下钻'],
+   ['spot.html','景点详情','单个景点 · AI 规划入口'],
    ['checkin.html','景点打卡','小游戏 + 成就徽章'],
    ['memories.html','旅程故事','旅行记录时间线']]},
  {t:'社区攻略',ico:'💬',items:[
    ['community.html','攻略视频列表','B站旅游攻略视频'],
-   ['analysis.html','平台数据概览','覆盖城市数 / 累计攻略 / 活跃用户 / 点亮省份'],
+   ['overview.html','平台数据概览','覆盖城市数 / 累计攻略 / 活跃用户 / 点亮省份'],
    ['dest.html','热门目的地推荐','重庆 / 成都 / 西安 / 杭州 等热门城市'],
    ['analysis.html','景点分析','ECharts 可视化大屏 · 评分榜 / 地区 / 标签 / 花费']]}
 ];
@@ -923,7 +1046,19 @@ function initChrome(){
     <footer>
       <div class="wrap">
         <div class="fb"><span class="tile" style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#f3da96,#c8973f);display:inline-grid;place-items:center">✈️</span>WANDERGO · Fly Me to the World</div>
-        <div class="fnote">让世界，成为你的下一站 · 原型演示 · 页面图片由 AI 生成 · 坐标来自高德坐标拾取器 · 主题可切换</div>
+        <div class="fnote">让世界，成为你的下一站 · 原型演示</div>
+      </div>
+      <div class="wrap">
+        <nav class="ffnav">
+          ${NAVS.map(([href,ico,label])=>`<a href="${href}"><i class="ffn-ico">${ico}</i>${label}</a>`).join('')}
+          <a class="ffn-map" href="map.html"><i class="ffn-ico">🗺</i>地图找景点</a>
+        </nav>
+      </div>
+      <div class="wrap">
+        <div class="fdecl">
+          <p><b>数据来源</b>社区 Vlog 与评论由后端爬虫调用 B 站公开接口真实抓取并保留原链接；抖音 / 小红书 / 快手 / Instagram / YouTube 无公开接口，不作为采集来源。图片由 AI 生成，景点坐标为高德坐标拾取器校准。</p>
+          <p><b>使用声明</b>本站为毕业设计演示项目，仅作学习与展示用途，不作商用，内容仅供参考。如涉及权益问题请联系删除。</p>
+        </div>
       </div>
     </footer>
     <div class="ovl" id="ovl"><div class="modal" id="modalBox"></div></div>
@@ -939,6 +1074,8 @@ let __imgBusy=0;
 const IMG_CONCURRENCY=3;
 function imgQueuePush(el,url){
   el.dataset.qsrc=url;
+  /* 排队期间 <img> 没有 src 会塌陷：先挂 shimmer 骨架，加载完成由 load 捕获撤掉 */
+  imgSkeletonOn(el);
   __imgQueue.push(el);
   imgQueuePump();
 }
@@ -977,14 +1114,42 @@ const __imgTried=new WeakMap();
 function imgFallback(el){
   const chain=__imgTried.get(el)||el.__chain||[];
   const i=(el.__chainIdx==null?-1:el.__chainIdx)+1;
+  /* 卡片有本地图（img/spots/{id}.webp）就直接用它收尾：
+   * 出图接口无法保证稳定返回 —— 实测 API、Dali、Yunnan、Chinese garden 这类
+   * 再普通不过的提示词都会返回 1832×1832 近白占位图，且成功与否随时间波动。
+   * 若还去走「场景提示词 → IMGFALLBACK」这条链，用户最后看到的是白框或
+   * 一张和景点无关的通用图；本地图虽少，至少是真实照片。 */
+  const local=(typeof localImg==='function')?localImg(el.dataset.key):null;
+  if(i>0&&local){
+    /* 本地已有该景点图：首次降级就直接切过去，不再打接口 */
+    el.__chainIdx=chain.length;
+    el.classList.remove('img-fail');
+    el.src=local;
+    return
+  }
   if(i>=chain.length){
-    /* 降级链走完还没图：用 16:9 兜底一次性重取（4:3 卡在瀑布流里会留空白） */
-    if(!el.__lastTry){el.__lastTry=1;el.__chainIdx=null;
-      el.src=IMGAPI+encodeURIComponent(IMGFALLBACK)+'&image_size='+(el.dataset.ratio||'landscape_16_9');return}
-    el.classList.add('img-fail');return
+    /* 降级链走完还没图：用 16:9 兜底一次性重取（4:3 卡在瀑布流里会留空白）。
+     * 这里不能用通用的 IMGFALLBACK——它是全站固定的一句提示词，所有景点都会
+     * 落到同一张图上，表现为「推荐卡片图片重复」。改为取链尾的场景提示词，
+     * 至少山、湖、宫等类型之间不会互相重复。 */
+    if(!el.__lastTry){
+      el.__lastTry=1;el.__chainIdx=null;
+      const scene=chain.slice().reverse().find(p=>p&&p!==IMGFALLBACK)||IMGFALLBACK;
+      el.src=IMGAPI+encodeURIComponent(scene)+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_16_9');
+      return
+    }
+    /* 降级链与重试全部失败：换内联 SVG 占位图。
+     * 不能用空的 <img>（浏览器会显示裂图图标），也不能再指回网络地址。 */
+    imgPlaceholder(el);return
   }
   el.__chainIdx=i;
   el.src=IMGAPI+encodeURIComponent(chain[i])+'&image_size='+(el.dataset.ratio||el.dataset.size||'landscape_4_3')+'&r='+i;
+}
+/* 统一的 <img> 属性串：懒加载 + 不发送 Referer（外站 CDN 如 B 站 hdslb
+ * 对 Referer 白名单校验，从 Pages/自定义域带 Referer 请求会直接 403），
+ * 动态拼接的图片一律走这里，避免以后新增 <img> 又漏掉 referrerpolicy */
+function imgAttrs(extra){
+  return 'loading="lazy" referrerpolicy="no-referrer"'+(extra?' '+extra:'');
 }
 /* 占位图：宽高相等（实测 1832×1832，与 landscape / portrait 的正常出图都不同） */
 function imgIsPlaceholder(el){
@@ -1030,19 +1195,268 @@ function watchImgs(root){
         /* 关键：不保留原始 src 让浏览器并发抢，改由队列限流后再赋 */
         imgQueuePush(el,el.getAttribute('src'));
         el.removeAttribute('src');
-      }else el.addEventListener('error',()=>el.classList.add('img-fail'),{once:true});
+      }else{
+        /* 本地/静态图（img/spots、img/shots 等）：失败也走分级占位图，
+         * 否则 .img-fail 只换底色，尺寸小的缩略图会留一块空灰块 */
+        el.addEventListener('error',()=>imgPlaceholder(el));
+        /* 本地/静态图还在下载时也显示骨架，避免闪白 */
+        if(!el.complete)imgSkeletonOn(el);
+      }
+    }
+  });
+}
+/* ================= 图片加载失败兜底 =================
+ * 全站 <img> 统一挂 error 捕获（capture 阶段，能拦到动态插入的图），
+ * 任何一张图最终取不到都换成内联 SVG 占位图：不依赖网络、不会二次失败，
+ * 用户看到的是统一风格的空图块，而不是浏览器裂图图标。
+ * 注意 imgFallback 已经处理了「降级链」；这里只在降级链也失败（img-fail）时兜底。 */
+/* 按图片类型分级：景点 / 餐饮 / 酒店 / 城市各用一套图标和文案，
+ * 不再所有失败图都显示同一张「图片加载失败」通用占位图。 */
+const IMG_KINDS={
+  spot:{icon:'🏛️',text:'景点图暂缺',bg:'#ece7dc',fg:'#a89c85'},
+  food:{icon:'🍴',text:'美食图暂缺',bg:'#f3e8dc',fg:'#b08a63'},
+  hotel:{icon:'🏨',text:'酒店图暂缺',bg:'#e6ece6',fg:'#8a9c88'},
+  city:{icon:'🏙️',text:'城市图暂缺',bg:'#e4e9f0',fg:'#8a97ab'}
+};
+function imgKindOf(el){
+  const explicit=el&&el.dataset&&el.dataset.kind;
+  if(explicit&&IMG_KINDS[explicit])return explicit;
+  /* ai.js 的行程条目用 data-kind="eat|hotel" 标记类型 */
+  if(explicit==='eat')return 'food';
+  if(explicit==='hotel')return 'hotel';
+  const s=[el&&el.dataset&&el.dataset.key,el&&el.alt,el&&el.title].filter(Boolean).join(' ');
+  if(/餐|美食|food|eat|restaurant|咖啡|茶|bar/i.test(s))return 'food';
+  if(/酒店|民宿|住宿|hotel|stay|room|inn/i.test(s))return 'hotel';
+  if(/城市|city|目的地|dest/i.test(s))return 'city';
+  return 'spot';
+}
+function imgPlaceholderSvg(kind){
+  const k=IMG_KINDS[kind]||IMG_KINDS.spot;
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">'
+    +'<rect width="640" height="480" fill="'+k.bg+'"/>'
+    +'<rect x="24" y="24" width="592" height="432" rx="18" fill="none" stroke="'+k.fg+'" stroke-opacity=".35" stroke-width="2" stroke-dasharray="9 7"/>'
+    +'<text x="320" y="248" font-size="76" text-anchor="middle">'+k.icon+'</text>'
+    +'<text x="320" y="306" font-size="26" fill="'+k.fg+'" text-anchor="middle" font-family="sans-serif">'+k.text+'</text>'
+    +'</svg>');
+}
+/* 兼容旧调用：无 kind 时按 alt/data-key 推断 */
+function imgPlaceholder(el){
+  if(!el||el.__phDone)return;
+  el.__phDone=1;
+  const kind=imgKindOf(el);
+  el.classList.remove('img-fail','img-skel');
+  el.classList.add('img-ph');
+  el.dataset.imgKind=kind;
+  el.removeAttribute('srcset');
+  el.removeAttribute('data-src');
+  el.src=imgPlaceholderSvg(kind);
+}
+/* ================= 加载中：骨架屏 =================
+ * watchImg / watchImgs 会把图片的 src 推迟到队列里再赋，
+ * 空 src 的 <img> 会塌成 0 高，这里补一个 shimmer 占位，图到了再撤掉。 */
+function imgSkeletonOn(el){
+  if(!el||el.classList.contains('img-ph'))return;
+  el.classList.add('img-skel');
+}
+document.addEventListener('load',e=>{
+  const el=e.target;
+  if(el&&el.tagName==='IMG')el.classList.remove('img-skel');
+},true);
+/* 兜住所有渲染路径：新增或改 src 时只要还没加载完就挂骨架，
+ * 加载完成由上面的 load 捕获撤掉，失败则转成分级占位图（imgPlaceholder 也会撤掉）。
+ * 只监听 src 属性：旧属性监听（未过滤）会把任何 class / style 改动都当成「重新加载」，
+ * 从而清掉 __phDone 并给已经失败的图重新挂骨架，兜底占位图会被反复重绘。 */
+const __skelSeen=new WeakSet();
+new MutationObserver(muts=>{
+  muts.forEach(m=>{
+    const t=m.target;
+    if(m.type==='attributes'&&t.tagName==='IMG'){
+      t.__phDone=0;
+      if(!t.complete&&t.getAttribute('src'))imgSkeletonOn(t);
+      return;
+    }
+    m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      const list=n.tagName==='IMG'?[n]:n.querySelectorAll('img');
+      list.forEach(el=>{
+        if(el.complete||el.classList.contains('img-ph'))return;
+        if(__skelSeen.has(el)&&el.getAttribute('src')===el.dataset.skelSrc)return;
+        __skelSeen.add(el);el.dataset.skelSrc=el.getAttribute('src')||'';
+        imgSkeletonOn(el);
+      });
+    });
+  });
+}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
+document.addEventListener('error',e=>{
+  const el=e.target;
+  if(!el||el.tagName!=='IMG')return;
+  /* 出图接口的降级链还在跑（core 里自己接管），交给 imgFallback 处理 */
+  if(typeof imgFallback==='function'&&(el.__watching||__imgTried.has(el))&&!el.__lastTry)return;
+  /* watchImgs 给没有 data-key 的图也挂了 error 监听（只为加 .img-fail），
+   * 不能因为 __watching 为真就放过，否则本地图 404 会一直停在裂图状态 */
+  imgPlaceholder(el);
+},true);
+/* DOM 里写死的 onerror="this..."（历史写法，如 dest.html 的 this.style.display='none'）
+ * 会在兜底之前把图藏掉或改掉，导致占位图失效；统一摘掉，交给上面的全局兜底处理。 */
+document.addEventListener('DOMContentLoaded',()=>{
+  $$('img[onerror]').forEach(el=>el.removeAttribute('onerror'));
+  new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      if(n.tagName==='IMG'&&n.hasAttribute('onerror'))n.removeAttribute('onerror');
+      n.querySelectorAll&&n.querySelectorAll('img[onerror]').forEach(el=>el.removeAttribute('onerror'));
+    }));
+  }).observe(document.body,{childList:true,subtree:true});
+});
+/* 数据为空：统一空状态插画 + 引导文案（搜索 / 列表 / 地图共用） */
+function emptyArt(title,desc){
+  return '<div class="empty-art">'
+    +'<svg viewBox="0 0 132 96" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    +'<rect x="10" y="16" width="112" height="64" rx="8" fill="#efe9db" stroke="#c9b79a" stroke-width="2"/>'
+    +'<path d="M10 66l30-24 22 17 18-13 32 25" fill="#dcd2be"/>'
+    +'<circle cx="92" cy="34" r="9" fill="#e8d9a8" stroke="#c9b79a" stroke-width="1.6"/>'
+    +'<circle cx="66" cy="48" r="18" fill="none" stroke="#b9a888" stroke-width="2.6" stroke-dasharray="6 5"/>'
+    +'<path d="M79 61l14 14" stroke="#b9a888" stroke-width="3.4" stroke-linecap="round"/>'
+    +'</svg>'
+    +'<b>'+(title||'这里还没有内容')+'</b>'
+    +'<span>'+(desc||'换个城市试试，或放宽筛选条件')+'</span></div>';
+}
+/* 挂监听前就已经加载失败的图（首屏直出、走了缓存）：补一次检查 */
+function sweepBrokenImgs(root){
+  (root||document).querySelectorAll('img').forEach(el=>{
+    if(el.complete&&el.naturalWidth===0&&el.getAttribute('src')&&!el.__watching){
+      imgPlaceholder(el);
     }
   });
 }
 /* ================= 公共初始化 ================= */
 document.addEventListener('DOMContentLoaded',()=>{
   initChrome();
-  initTheme();initTopnav();initUser();initSearch();initAIChat();
+  initTheme();initTopnav();initUser();initSearch();initAIChat();initGuide();
   $$('[data-img]').forEach(el=>{
     const size=el.dataset.size||'landscape_4_3';
     watchImg(el,el.dataset.img,size);
-    el.src=IMG(el.dataset.img,size);
+    /* 和历史写法 IMG(P[id]) 一样：id 不在 P 里时给出 undefined，提示词会退化成占位图。
+     * 这里直接放进队列限流，由 imgFallback 逐级换提示词，避免一屏几十张图同时打接口。 */
+    imgQueuePush(el,IMG(el.dataset.img,size));
   });
   /* 其余页面写的 <img src> 没有 data-img，也统一挂上失败兜底 */
   watchImgs();
+  /* 首屏直出的本地图如果已经加载失败，watchImgs 会把它们标成 __watching
+   * 从而绕开 error 兜底，所以这里在挂完监听后统一补扫一次 */
+  sweepBrokenImgs();
+});
+
+/* =========================================================
+ * 首页新手引导（P1-C）
+ * 首次访问自动弹出一次；关闭后写 localStorage 不再自动弹；
+ * 右下角常驻悬浮按钮可随时重新打开；?guide=1 强制演示且不写状态
+ * ========================================================= */
+const GUIDE_KEY='wgo_guide_done';
+let guideEl=null,guidePrevFocus=null;
+
+function guideCardHtml(){
+  return `
+    <button class="guide-x" type="button" aria-label="关闭引导">✕</button>
+    <div class="guide-kicker">✦ WANDERGO ✦</div>
+    <h2 class="guide-title" id="guideTitle">3 步生成<em>专属攻略</em></h2>
+    <p class="guide-sub">选好偏好，AI 帮你排景点、比交通、拆预算</p>
+    <div class="guide-steps">
+      <div class="guide-step"><b>1</b><span>填写<br>偏好</span></div>
+      <div class="guide-step"><b>2</b><span>AI 智能<br>匹配</span></div>
+      <div class="guide-step"><b>3</b><span>生成<br>攻略</span></div>
+    </div>
+    <div class="guide-feats">
+      <div class="guide-feat"><i>📝</i><span>三步偏好表单，出发地、预算、兴趣一次填完</span></div>
+      <div class="guide-feat"><i>🤖</i><span>AI 智能匹配兴趣，按口味挑景点排行程</span></div>
+      <div class="guide-feat"><i>🌐</i><span>多源攻略聚合，B站与站内真实攻略一起看</span></div>
+    </div>
+    <div class="guide-btns">
+      <button class="guide-btn primary" type="button" id="guideGo">开始规划</button>
+      <button class="guide-btn ghost" type="button" id="guideLater">稍后再说</button>
+    </div>`;
+}
+
+function closeGuide(remember){
+  if(!guideEl) return;
+  const el=guideEl; guideEl=null;
+  if(remember) localStorage.setItem(GUIDE_KEY,'1');
+  el.classList.remove('show');
+  setTimeout(()=>{ if(el.parentNode) el.remove(); },240);
+  document.body.style.overflow='';
+  if(guidePrevFocus&&guidePrevFocus.focus) guidePrevFocus.focus();
+  guidePrevFocus=null;
+}
+
+function openGuide(){
+  closeGuide(false);
+  guidePrevFocus=document.activeElement;
+  const el=document.createElement('div');
+  el.className='guide-ovl';
+  el.innerHTML=`<div class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle">${guideCardHtml()}</div>`;
+  document.body.appendChild(el);
+  document.body.style.overflow='hidden';
+  guideEl=el;
+  requestAnimationFrame(()=>el.classList.add('show'));
+
+  el.querySelector('.guide-x').onclick=()=>closeGuide(true);
+  el.querySelector('#guideLater').onclick=()=>closeGuide(true);
+  el.querySelector('#guideGo').onclick=()=>{
+    /* 先写标记再跳转，避免导航抢先导致标记丢失 */
+    sessionStorage.setItem('wgo_plan_flash','1');
+    closeGuide(true);
+    WGO.go('ai.html',{});
+  };
+  /* 点遮罩空白处关闭，点卡片内部不关 */
+  el.addEventListener('click',e=>{ if(e.target===el) closeGuide(true); });
+  /* 焦点锁在弹窗内 */
+  el.addEventListener('keydown',e=>{
+    if(e.key!=='Tab') return;
+    const f=[...el.querySelectorAll('button')].filter(b=>!b.disabled);
+    if(!f.length) return;
+    const first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  });
+  setTimeout(()=>{ const b=el.querySelector('#guideGo'); if(b) b.focus(); },60);
+}
+
+function initGuide(){
+  if(!document.getElementById('moduleGrid')) return;   /* 只在首页启用 */
+  const force=WGO.q('guide')==='1';
+
+  /* 常驻悬浮入口 */
+  const fab=document.createElement('button');
+  fab.type='button';
+  fab.className='guide-fab';
+  fab.title='新手引导';
+  fab.setAttribute('aria-label','打开新手引导');
+  fab.textContent='?';
+  fab.onclick=openGuide;
+  document.body.appendChild(fab);
+
+  if(force){ openGuide(); return; }
+  if(!localStorage.getItem(GUIDE_KEY)){
+    /* 延迟弹出，避开 3D 地球首屏渲染 */
+    setTimeout(()=>{ if(!guideEl) openGuide(); },800);
+  }
+}
+
+/* Esc 关闭引导：并入全局键盘监听 */
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&guideEl) closeGuide(true);
+});
+
+/* 从「开始规划」跳到 ai.html 后，给偏好表单加高亮 */
+document.addEventListener('DOMContentLoaded',()=>{
+  if(sessionStorage.getItem('wgo_plan_flash')!=='1') return;
+  sessionStorage.removeItem('wgo_plan_flash');
+  const form=document.getElementById('aiForm');
+  if(!form) return;
+  setTimeout(()=>{
+    form.scrollIntoView({behavior:'smooth',block:'center'});
+    form.classList.add('plan-flash');
+    setTimeout(()=>form.classList.remove('plan-flash'),1800);
+  },120);
 });

@@ -147,6 +147,11 @@ CREATE TABLE IF NOT EXISTS checkin(
   cost       DOUBLE PRECISION DEFAULT 0,
   cover      TEXT,
   source     TEXT DEFAULT 'web',
+  user_id    TEXT,
+  spot_id    TEXT,
+  city_name  TEXT,
+  rating     DOUBLE PRECISION DEFAULT 0,
+  imgs       TEXT,
   created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS entity(
@@ -182,7 +187,9 @@ CREATE TABLE IF NOT EXISTS scenic_spot(
   price     TEXT,
   tags      TEXT,
   cover     TEXT,
-  intro     TEXT
+  intro     TEXT,
+  poi_type  TEXT DEFAULT '景区',
+  source    TEXT
 );
 CREATE TABLE IF NOT EXISTS rating_record(
   id         SERIAL PRIMARY KEY,
@@ -214,6 +221,47 @@ CREATE TABLE IF NOT EXISTS user_behavior(
   weight     DOUBLE PRECISION DEFAULT 1,
   created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS post(
+  id            SERIAL PRIMARY KEY,
+  post_key      TEXT UNIQUE,
+  title         TEXT,
+  content       TEXT,
+  cover         TEXT,
+  images        TEXT,
+  location      TEXT,
+  topics        TEXT,
+  type          TEXT DEFAULT 'plog',
+  client        TEXT DEFAULT 'go',
+  bgm           TEXT,
+  nick          TEXT,
+  avatar        TEXT,
+  user_id       INTEGER,
+  source        TEXT,
+  source_url    TEXT,
+  video_url     TEXT,
+  video_src     TEXT,
+  spot_key      TEXT,
+  like_count    INTEGER DEFAULT 0,
+  comment_count INTEGER DEFAULT 0,
+  created_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS app_comment(
+  id         SERIAL PRIMARY KEY,
+  post_key   TEXT NOT NULL,
+  nick       TEXT,
+  content    TEXT NOT NULL,
+  created_at TEXT
+);
+/* 点赞记录表：靠唯一约束保证「同一用户对同一帖子只能点一次」 */
+CREATE TABLE IF NOT EXISTS post_like(
+  id         SERIAL PRIMARY KEY,
+  post_key   TEXT NOT NULL,
+  nick       TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(post_key, nick)
+);
+CREATE INDEX IF NOT EXISTS idx_post_created ON post(id);
+CREATE INDEX IF NOT EXISTS idx_cmt_post     ON app_comment(post_key);
 CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
 CREATE INDEX IF NOT EXISTS idx_check_city  ON checkin(city);
 CREATE INDEX IF NOT EXISTS idx_entity_name ON entity(name);
@@ -248,6 +296,11 @@ CREATE TABLE IF NOT EXISTS checkin(
   cost       REAL DEFAULT 0,
   cover      TEXT,
   source     TEXT DEFAULT 'web',
+  user_id    TEXT,
+  spot_id    TEXT,
+  city_name  TEXT,
+  rating     REAL DEFAULT 0,
+  imgs       TEXT,
   created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS entity(
@@ -283,7 +336,9 @@ CREATE TABLE IF NOT EXISTS scenic_spot(
   price     TEXT,
   tags      TEXT,
   cover     TEXT,
-  intro     TEXT
+  intro     TEXT,
+  poi_type  TEXT DEFAULT '景区',
+  source    TEXT
 );
 CREATE TABLE IF NOT EXISTS rating_record(
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +370,49 @@ CREATE TABLE IF NOT EXISTS user_behavior(
   weight     REAL DEFAULT 1,
   created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS post(
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_key      TEXT UNIQUE,
+  title         TEXT,
+  content       TEXT,
+  cover         TEXT,
+  images        TEXT,
+  location      TEXT,
+  topics        TEXT,
+  type          TEXT DEFAULT 'plog',
+  client        TEXT DEFAULT 'go',
+  bgm           TEXT,
+  nick          TEXT,
+  avatar        TEXT,
+  user_id       INTEGER,
+  source        TEXT,
+  source_url    TEXT,
+  video_url     TEXT,
+  video_src     TEXT,
+  spot_key      TEXT,
+  like_count    INTEGER DEFAULT 0,
+  view_count    INTEGER DEFAULT 0,
+  quality       DOUBLE PRECISION DEFAULT 0,
+  comment_count INTEGER DEFAULT 0,
+  created_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS app_comment(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_key   TEXT NOT NULL,
+  nick       TEXT,
+  content    TEXT NOT NULL,
+  created_at TEXT
+);
+/* 点赞记录表：靠唯一约束保证「同一用户对同一帖子只能点一次」 */
+CREATE TABLE IF NOT EXISTS post_like(
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_key   TEXT NOT NULL,
+  nick       TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(post_key, nick)
+);
+CREATE INDEX IF NOT EXISTS idx_post_created ON post(id);
+CREATE INDEX IF NOT EXISTS idx_cmt_post     ON app_comment(post_key);
 CREATE INDEX IF NOT EXISTS idx_guide_city  ON guide(city);
 CREATE INDEX IF NOT EXISTS idx_check_city  ON checkin(city);
 CREATE INDEX IF NOT EXISTS idx_entity_name ON entity(name);
@@ -479,10 +577,10 @@ async function seedSpots() {
   const cnt = await impl.get('SELECT COUNT(*) AS c FROM scenic_spot');
   if (Number(cnt.c) > 0) return Number(cnt.c);
   const sql = impl.dialect === 'postgres'
-    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
-    : `INSERT OR IGNORE INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
+    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`
+    : `INSERT OR IGNORE INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
   let n = 0;
   for (const s of ALL_SPOTS) {
     if (!s.name || !s.city) continue;
@@ -492,20 +590,226 @@ async function seedSpots() {
       Number.isFinite(Number(s.lat)) ? Number(s.lat) : null,
       Number(s.rating) || 0, Number(s.heat) || 0,
       String(s.price == null ? '' : s.price), String(s.tags || s.cat || ''),
-      s.img || s.cover || '', String(s.desc || '').slice(0, 500)
+      s.img || s.cover || '', String(s.desc || '').slice(0, 500),
+      classifyPoi(s.tags || s.cat, '景区'), 'seed'
     ]);
     n += r.changes;
   }
   return n;
 }
 
+/* ---------------- 地点分类（P0-2） ----------------
+ * poi_type：景区 / 美食 / 打卡点 / 购物 —— 冷门城市兜底时按类型均衡挑选
+ * source  ：数据来源（data.js 精编 / amap 高德 / 站内爬库），便于排查与去重
+ * --------------------------------------------------- */
+const POI_TYPES = ['景区', '美食', '打卡点', '购物'];
+
+/* 高德 POI 的 type 字符串 → 四分类。
+ * 顺序很重要：高德景区标签里常带「名胜」「旅游景点」，这里先认景区，
+ * 否则「柯岩风景区（风景名胜;风景名胜;国家级景点）」会被误判成打卡点 */
+function classifyPoi(amapType, fallback) {
+  const t = String(amapType || '');
+  if (/风景名胜|国家级景点|旅游景点|公园|景区|园林|寺|庙|教堂|古迹|遗址|古镇|博物馆|美术馆|展览|纪念馆/.test(t)) return '景区';
+  if (/餐饮|美食|小吃|夜市|茶艺|咖啡|甜品|酒吧|餐厅|快餐厅/.test(t)) return '美食';
+  if (/购物|商场|超市|商业街|步行街|专卖|市场|奥特莱斯|免税/.test(t)) return '购物';
+  if (/地标|观景|游乐|休闲|体育|摄影|文化|科教|艺术|广场|绿地/.test(t)) return '打卡点';
+  return POI_TYPES.includes(fallback) ? fallback : '打卡点';
+}
+
+/* 老库补列：Postgres 用 ADD COLUMN IF NOT EXISTS；SQLite 3.35+ 也支持，
+ * 旧版本会抛错，此时按 PRAGMA 结果判断后再加，保证本地环境同样能升级 */
+async function migrateSpotColumns() {
+  if (impl.dialect === 'postgres') {
+    await impl.exec("ALTER TABLE scenic_spot ADD COLUMN IF NOT EXISTS poi_type TEXT DEFAULT '景区'");
+    await impl.exec('ALTER TABLE scenic_spot ADD COLUMN IF NOT EXISTS source TEXT');
+    return;
+  }
+  const cols = await impl.all("PRAGMA table_info('scenic_spot')");
+  const has = n => cols.some(c => c.name === n);
+  if (!has('poi_type')) await impl.exec("ALTER TABLE scenic_spot ADD COLUMN poi_type TEXT DEFAULT '景区'");
+  if (!has('source')) await impl.exec('ALTER TABLE scenic_spot ADD COLUMN source TEXT');
+}
+
+/* 老数据回填：迁移前入库的景点 source 为空、poi_type 可能为空，
+ * 统一补成「站内精编」，否则前端按类型筛选时这些老景点会整批消失 */
+async function backfillSpotColumns() {
+  await impl.exec("UPDATE scenic_spot SET poi_type = '景区' WHERE poi_type IS NULL OR poi_type = ''");
+  await impl.exec("UPDATE scenic_spot SET source = 'seed' WHERE source IS NULL OR source = ''");
+}
+
+/* 批量写入高德 POI（scripts/fetch-pois.js 与 /api/admin/spot/save 共用）。
+ * 已有同名景点不覆盖人工数据，只补齐空着的分类 / 来源 */
+async function upsertPois(city, list, source) {
+  const sql = impl.dialect === 'postgres'
+    ? `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT (spot_key) DO UPDATE SET poi_type = EXCLUDED.poi_type, source = EXCLUDED.source`
+    : `INSERT INTO scenic_spot (spot_key,name,city,province,lng,lat,rating,heat,price,tags,cover,intro,poi_type,source)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(spot_key) DO UPDATE SET poi_type = excluded.poi_type, source = excluded.source`;
+  let n = 0;
+  for (const p of list || []) {
+    if (!p || !p.name) continue;
+    const key = String(p.spot_key || p.id || `${city}|${p.name}`);
+    await impl.run(sql, [
+      key, p.name, city, p.province || '', p.lng == null ? null : Number(p.lng),
+      p.lat == null ? null : Number(p.lat), Number(p.rating) || 0, Number(p.heat) || 0,
+      String(p.price == null ? '' : p.price), String(p.tags || ''),
+      p.cover || '', String(p.intro || p.desc || '').slice(0, 500),
+      classifyPoi(p.amap_type || p.type, p.poi_type), source || p.source || 'amap'
+    ]);
+    n++;
+  }
+  return n;
+}
+
+/* 爬虫帖 → post 表。
+ * 三个问题一并解决：
+ *   1) 以前只写 guide 表、丢掉 nick 和 topics，这里完整保留；
+ *   2) 以前 source/client 是错标的平台（B站链接标成 douyin/xhs/ins），这里按链接域名回填真实来源；
+ *   3) 以前 guide 表有行就整体跳过，新抓的数据进不来；这里按 source_url 去重，每次启动都增量同步。 */
+async function seedCrawlPosts() {
+  const posts = (CRAWL.posts || []);
+  if (!posts.length) return 0;
+  const pick = (p, ...keys) => {
+    for (const k of keys) if (p[k] != null && p[k] !== '') return p[k];
+    return '';
+  };
+  /* 按 source_url 域名判定真实平台，覆盖数据里手抄错的标注 */
+  const platOf = url => {
+    const u = String(url || '');
+    if (/bilibili\.com/i.test(u)) return 'bilibili';
+    if (/douyin\.com/i.test(u)) return 'douyin';
+    if (/xiaohongshu\.com|xhslink/i.test(u)) return 'xhs';
+    if (/youtube\.com|youtu\.be/i.test(u)) return 'yt';
+    if (/instagram\.com/i.test(u)) return 'ins';
+    if (/kuaishou\.com/i.test(u)) return 'kuaishou';
+    return '';
+  };
+  /* B站封面按 Referer 防盗链，从 GitHub Pages 打开会 403；爬虫数据和历史库里的
+     hdslb / bilivideo 外链统一落成站内 img/spots/<景点>.webp，前端按相对路径直接用 */
+  const localCover = (cover, spotKey) => {
+    const c = String(cover || '');
+    if (!/^https?:\/\//i.test(c)) return c;
+    if (!/(^|\.)(hdslb|bilivideo|douyinpic|byteimg|unsplash|pexels|picsum)\./i.test(c)) return c;
+    const k = String(spotKey || '').trim() || 'erhai';
+    return 'img/spots/' + k.replace(/[^a-z0-9_\-]/gi, '') + '.webp';
+  };
+  let n = 0;
+  for (const p of posts) {
+    const srcUrl = String(pick(p, 'sourceUrl', 'source_url') || '');
+    const key = 'c#' + (srcUrl || pick(p, 'id') || Math.random().toString(36).slice(2));
+    const title = String(pick(p, 'title') || '').trim();
+    if (!title) continue;
+    const plat = platOf(srcUrl) || platOf(pick(p, 'videoUrl', 'video_url'))
+      || (pick(p, 'source') === 'user' ? 'go' : String(pick(p, 'source') || 'bilibili'));
+    const spotKey = pick(p, 'spotId', 'spot_key');
+    const cover = localCover(pick(p, 'cover'), spotKey);
+    const vals = [
+      title, String(pick(p, 'content') || '') === '-' ? '' : String(pick(p, 'content') || ''),
+      cover, JSON.stringify(cover ? [cover] : []),
+      pick(p, 'location'), pick(p, 'topics'), pick(p, 'type') || 'plog',
+      plat, pick(p, 'bgm'), pick(p, 'nick') || '旅行者',
+      String(pick(p, 'nick') || 'B').slice(0, 1),
+      plat === 'go' ? 'user' : 'crawl', srcUrl,
+      pick(p, 'videoUrl', 'video_url'), '',
+      spotKey,
+      Number(pick(p, 'likeCount', 'likes')) || 0,
+      Number(pick(p, 'viewCount', 'views')) || 0,
+      Number(pick(p, 'quality')) || 0,
+      Number(pick(p, 'commentCount')) || 0,
+      String(pick(p, 'createdAt', 'created_at') || now())
+    ];
+    const exist = await impl.get('SELECT id FROM post WHERE post_key = ?', [key]);
+    if (exist) {
+      await impl.run(
+        `UPDATE post SET title=?,content=?,cover=?,images=?,location=?,topics=?,type=?,client=?,bgm=?,
+           nick=?,avatar=?,source=?,source_url=?,video_url=?,video_src=?,spot_key=?,
+           like_count=?,view_count=?,quality=?,comment_count=?,created_at=? WHERE post_key=?`,
+        [...vals, key]
+      );
+    } else {
+      await impl.run(
+        `INSERT INTO post (title,content,cover,images,location,topics,type,client,bgm,nick,avatar,
+                           source,source_url,video_url,video_src,spot_key,like_count,view_count,quality,
+                           comment_count,created_at,post_key)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [...vals, key]
+      );
+      n++;
+    }
+  }
+  return n;
+}
+
+/* 城市级分类统计：GET /api/spot/index 用它给前端「冷门城市仍有打卡点」做证明 */
+async function spotTypesByCity() {
+  const rows = await impl.all(
+    `SELECT city, poi_type, COUNT(*) AS c FROM scenic_spot
+     WHERE city IS NOT NULL AND city <> '' GROUP BY city, poi_type ORDER BY city`
+  );
+  const out = {};
+  rows.forEach(r => {
+    const t = r.poi_type || '景区';
+    out[r.city] = out[r.city] || { total: 0 };
+    out[r.city][t] = Number(r.c) || 0;
+    out[r.city].total += Number(r.c) || 0;
+  });
+  return out;
+}
+
 async function seed() {
   await impl.exec(DDL);
+  /* 老库补列：CREATE TABLE IF NOT EXISTS 不会给已存在的表加列，
+   * 线上 Postgres 的 scenic_spot 建表早于 poi_type / source，必须显式迁移 */
+  await migrateSpotColumns();
+  await backfillSpotColumns();
+  /* 老库升级：post 表可能在建表语句里还没有 view_count / quality，补列不报错即可 */
+  for (const [col, type] of [['view_count', 'INTEGER DEFAULT 0'], ['quality', 'DOUBLE PRECISION DEFAULT 0']]) {
+    try {
+      await impl.exec(`ALTER TABLE post ADD COLUMN ${col} ${type}`);
+    } catch (e) { /* 列已存在 */ }
+  }
+  /* 老库升级：checkin 建表早于 P2 地图打卡，补 user_id / spot_id / city_name / rating / imgs */
+  for (const [col, type] of [['user_id', 'TEXT'], ['spot_id', 'TEXT'], ['city_name', 'TEXT'],
+    ['rating', impl.dialect === 'postgres' ? 'DOUBLE PRECISION DEFAULT 0' : 'REAL DEFAULT 0'], ['imgs', 'TEXT']]) {
+    try {
+      await impl.exec(`ALTER TABLE checkin ADD COLUMN ${col} ${type}`);
+    } catch (e) { /* 列已存在 */ }
+  }
   await seedSpots();
+  /* 内置管理员账号：管理端接口需要 role='admin'，没有则补一个，已存在则不动 */
+  try {
+    const adm = await impl.get("SELECT id FROM app_user WHERE username = 'admin'");
+    if (!adm) {
+      await impl.run(
+        'INSERT INTO app_user (username,password,nick,city,role,created_at) VALUES (?,?,?,?,?,?)',
+        ['admin', hashPwd('admin123'), '管理员', '', 'admin', now()]
+      );
+    }
+  } catch (e) { /* 表结构异常时忽略，不影响主流程 */ }
+  /* 爬虫帖单独灌，且每次都跑：新抓的数据能立刻进来，不受 guide 表是否已初始化影响 */
+  const nCrawl = await seedCrawlPosts();
+  /* 历史库里存量的外链封面一并订正（上面只影响本次种子数据） */
+  try {
+    if (impl.dialect === 'postgres') {
+      await impl.run(
+        `UPDATE post SET cover = 'img/spots/' || COALESCE(NULLIF(spot_key, ''), 'erhai') || '.webp'
+         WHERE cover ~* '^https?://(i[0-9]\\.)?(hdslb|bilivideo|douyinpic|byteimg|unsplash|pexels|picsum)\\.'`
+      );
+    } else {
+      for (const d of ['hdslb.com', 'bilivideo.com', 'douyinpic.com', 'byteimg.com', 'unsplash.com', 'pexels.com', 'picsum.photos']) {
+        await impl.run(
+          `UPDATE post SET cover = 'img/spots/' || COALESCE(NULLIF(spot_key, ''), 'erhai') || '.webp'
+           WHERE cover LIKE ?`, ['%' + d + '%']
+        );
+      }
+    }
+  } catch (e) { /* 订正失败不影响主流程 */ }
 
   const g = await impl.get('SELECT COUNT(*) AS c FROM guide');
   const guideCount = Number(g ? g.c : 0);
-  if (guideCount > 0) return { seeded: false, guides: guideCount };
+  if (guideCount > 0) return { seeded: false, guides: guideCount, crawlPosts: nCrawl };
 
   const result = await impl.tx(async ctx => {
     /* 1) 爬虫攻略 → guide */
@@ -634,15 +938,37 @@ async function searchEntities(q, limit = 30) {
 
 async function addCheckin(d) {
   const u = impl.dialect === 'postgres' ? '"user",' : 'user,';
+  /* P2 地图打卡：imgs 存 JSON 字符串（图片以 dataURL 形式直接进库，不落本地磁盘） */
+  const imgs = Array.isArray(d.imgs) ? JSON.stringify(d.imgs.slice(0, 4)) : (d.imgs || '');
   const r = await impl.run(
-    `INSERT INTO checkin (${u}city,spot,text,mood,cost,cover,source,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO checkin (${u}city,spot,text,mood,cost,cover,source,user_id,spot_id,city_name,rating,imgs,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       d.user || '匿名旅行者', d.city || '', d.spot || '', d.text || '',
-      d.mood || '😌 治愈放松', Number(d.cost) || 0, d.cover || '', d.source || 'web', now()
+      d.mood || '😌 治愈放松', Number(d.cost) || 0, d.cover || '', d.source || 'web',
+      d.userId || '', d.spotId || '', d.cityName || d.city || '',
+      Number(d.rating) || 0, imgs, now()
     ]
   );
   return impl.get('SELECT * FROM checkin WHERE id = ?', [r.lastId]);
+}
+
+/* 某城市的全部打卡（地图页展示已打卡标记 + 打卡记录墙） */
+async function listCheckinsByCity(city) {
+  return impl.all(
+    `SELECT * FROM checkin WHERE (city_name = ? OR city = ?) AND spot_id IS NOT NULL AND spot_id <> ''
+     ORDER BY id DESC LIMIT 300`, [city, city]);
+}
+
+/* 某用户打卡过的 spot_id 列表（地图页给已打卡景点换色）
+ * 传两个键：登录 uid 与未登录时的 nick:昵称，合并查询 */
+async function listMyCheckinSpots(userId, nickKey) {
+  const keys = [userId, nickKey].filter(Boolean);
+  if (!keys.length) return [];
+  const where = keys.map(() => 'user_id = ?').join(' OR ');
+  return impl.all(
+    `SELECT DISTINCT spot_id FROM checkin WHERE (${where}) AND spot_id IS NOT NULL AND spot_id <> ''`,
+    keys);
 }
 
 /* 攻略入库（返回是否新增，用于采集去重统计） */
@@ -701,7 +1027,236 @@ function crawlCandidates(keyword, limit = 8) {
   }).slice(0, limit);
 }
 
-/* ---------------- 用户 / 评分 / 收藏 / 行为（推荐模块数据） ---------------- */
+/* ---------------- 社区帖子 / 评论（社区攻略流） ---------------- */
+
+/* 词条码 → 展示名 / 描述，与爬虫 community_crawler.py 的 build_topics 保持一致 */
+const TOPIC_NAMES = {
+  t1: '世界上幸福度最高的旅行地', t2: '樱花季限定 · 春日物语', t3: '海岛蜜月天花板',
+  t4: '带娃看世界 · 亲子游', t5: '一人背包 · 穷游日记', t6: '舌尖上的旅行',
+  citywalk: '城市漫步 Citywalk',
+  'd-food': '美食探店', 'd-drive': '自驾公路', 'd-hike': '徒步登山', 'd-guide': '攻略干货',
+  'd-film': '航拍影像', 'd-city': '城市漫游', 'd-vlog': '旅行 Vlog'
+};
+const TOPIC_DESC = {
+  t1: '慢节奏、高治愈感的目的地', t2: '3-4 月樱花前线追花攻略', t3: '一岛一酒店、果冻色泻湖',
+  t4: '遛娃友好度拉满的自然课堂', t5: '人均 3K 以内的深度路线', t6: '为一顿饭奔赴一座城',
+  citywalk: '压马路、逛街区，用脚步丈量一座城',
+  'd-food': '街头小吃、老字号与夜市吃播', 'd-drive': '公路片、环线与越野穿越',
+  'd-hike': '雪山、露营与野外穿越', 'd-guide': '花费、路线、行程与避坑清单',
+  'd-film': '航拍、延时与电影感短片', 'd-city': '压马路、逛街区、喝咖啡',
+  'd-vlog': '真实记录的旅行 Vlog 日常'
+};
+
+/* 统一成前端 renderDbPostModal 需要的字段结构 */
+function postRow(r) {
+  if (!r) return null;
+  let images = [];
+  try { images = JSON.parse(r.images || '[]') || []; } catch { images = []; }
+  return {
+    id: r.post_key || ('p' + r.id),
+    title: r.title || '', content: r.content || '',
+    cover: r.cover || images[0] || '', images,
+    location: r.location || '', topics: r.topics || '',
+    type: r.type || 'plog', client: r.client || 'go',
+    bgm: r.bgm || '', nick: r.nick || '旅行者', avatar: r.avatar || '',
+    source: r.source || 'go', sourceUrl: r.source_url || '',
+    videoUrl: r.video_url || '', videoSrc: r.video_src || '',
+    spotId: r.spot_key || '',
+    likeCount: Number(r.like_count) || 0, commentCount: Number(r.comment_count) || 0,
+    viewCount: Number(r.view_count) || 0, quality: Number(r.quality) || 0,
+    createdAt: r.created_at || ''
+  };
+}
+
+/* 帖子列表：sort = top（优质优先，默认）/ hot / new，可按词条码筛选 */
+async function listPosts(opts = {}) {
+  const offset = Math.max(Number(opts.offset) || 0, 0);
+  const limit = Math.min(Number(opts.limit) || 20, 300);
+  const type = opts.type || '';
+  const topic = opts.topic || '';
+  const sort = opts.sort || 'top';
+  /* 优质优先：爬虫质量分打底，再叠加本站真实互动，保证「次一些的往后放」 */
+  const order = sort === 'new'
+    ? 'id DESC'
+    : sort === 'hot'
+      ? '(like_count * 3 + comment_count * 5) DESC, id DESC'
+      : '(COALESCE(quality,0) + like_count * 0.5 + comment_count * 1.5) DESC, id DESC';
+  const conds = [];
+  const params = [];
+  if (type) { conds.push('type = ?'); params.push(type); }
+  /* topics 是逗号分隔串，前后补逗号后按 ,码, 精确匹配，避免 t1 命中 t1x */
+  if (topic) { conds.push("(',' || topics || ',') LIKE ?"); params.push(`%,${topic},%`); }
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+  const rows = await impl.all(
+    `SELECT * FROM post ${where} ORDER BY ${order} LIMIT ? OFFSET ?`, [...params, limit, offset]
+  );
+  const cnt = await impl.get(`SELECT COUNT(*) AS c FROM post ${where}`, params);
+  return { total: Number(cnt ? cnt.c : 0), list: rows.map(postRow) };
+}
+
+/* 词条列表：按 post 表实际分桶统计，postCount / heat 都是真实值 */
+async function listTopics() {
+  const rows = await impl.all('SELECT topics FROM post WHERE topics IS NOT NULL AND topics <> \'\'');
+  const tally = new Map();
+  for (const r of rows) {
+    for (const c of String(r.topics).split(',')) {
+      if (c) tally.set(c, (tally.get(c) || 0) + 1);
+    }
+  }
+  const list = [...tally.entries()].map(([code, count]) => ({
+    code, name: TOPIC_NAMES[code] || code,
+    description: TOPIC_DESC[code] || '',
+    postCount: count,
+    heat: Math.min(99, 60 + count * 2),
+    source: code.startsWith('d-') ? 'crawl' : 'system'
+  }));
+  /* 运营主题优先展示，内容类型排在后面 */
+  const rank = c => {
+    const i = ['t1', 't2', 't3', 't4', 't5', 't6', 'citywalk'].indexOf(c);
+    return i < 0 ? 100 : i;
+  };
+  return list.sort((a, b) => rank(a.code) - rank(b.code) || b.postCount - a.postCount);
+}
+
+/* 单帖详情（在线/离线一致）：id 依次匹配 post_key、数字主键、爬虫 ext_id
+ *
+ * 注意 id 的「前缀 + 自增主键」约定由 toItem() 生成：
+ *   g{guide.id}   → 攻略（guide 表，ext_id 是 crawl-{原始爬虫id}，与自增 id 不同源）
+ *   c{checkin.id} → 打卡（checkin 表）
+ * 所以 g12 必须按 guide.id=12 查，不能简单拼成 crawl-12，否则全部 404。 */
+async function getPost(id) {
+  const key = String(id || '').trim();
+  if (!key) return null;
+  let row = await impl.get('SELECT * FROM post WHERE post_key = ?', [key]);
+  if (!row && /^\d+$/.test(key)) row = await impl.get('SELECT * FROM post WHERE id = ?', [Number(key)]);
+  if (row) return postRow(row);
+
+  /* 前端卡片 id 形如 g1 / c63，拆出前缀与表内自增主键 */
+  const m = key.match(/^([gc])(\d+)$/);
+  if (m) {
+    const numId = Number(m[2]);
+    if (m[1] === 'g') {
+      const g = await impl.get('SELECT * FROM guide WHERE id = ?', [numId]);
+      if (g) return postRow(guideToPost(g, key));
+    } else {
+      const c = await impl.get('SELECT * FROM checkin WHERE id = ?', [numId]);
+      if (c) return postRow(checkinToPost(c, key));
+    }
+  }
+
+  /* 兼容旧链接：可能是纯数字主键或 crawl-xx 形式的 ext_id */
+  const g = await impl.get('SELECT * FROM guide WHERE ext_id = ? OR ext_id = ?', [key, 'crawl-' + key]);
+  if (!g) return null;
+  return postRow(guideToPost(g, key));
+}
+
+/* guide 行 → post 结构。用固定前缀保证同一篇攻略的详情 id 与列表 id 一致 */
+function guideToPost(g, id) {
+  return {
+    post_key: id || ('g' + g.id), title: g.title, content: g.content, cover: g.cover,
+    images: '[]', location: g.city, topics: g.city, type: g.type || 'note',
+    nick: g.source || '公开网络', source: g.source, source_url: g.source_url,
+    video_url: (g.type === 'video' ? g.source_url : ''), like_count: g.like_count,
+    comment_count: g.comment_count, created_at: g.created_at
+  };
+}
+
+/* checkin 行 → post 结构。checkin 表只有基础字段，缺失的用默认值补齐 */
+function checkinToPost(c, id) {
+  return {
+    post_key: id || ('c' + c.id),
+    title: `${c.city || ''} · ${c.spot || '打卡记录'}`,
+    content: c.text || '', cover: c.cover || '',
+    images: '[]',
+    location: c.city || '', topics: c.city || '', type: 'checkin',
+    nick: c.user || '旅行者', source: 'checkin', source_url: '',
+    video_url: '', like_count: 0,
+    comment_count: 0, created_at: c.created_at || ''
+  };
+}
+
+/* 发帖入库：post_key 若已存在则复用（前端重试不产生重复） */
+async function addPost(p = {}) {
+  const nick = p.nick || '旅行者';
+  const createdAt = p.createdAt || now();
+  const key = String(p.id || p.postKey || '').trim()
+    || ('u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+  const old = await impl.get('SELECT * FROM post WHERE post_key = ?', [key]);
+  if (old) return { created: false, post: postRow(old) };
+
+  const images = JSON.stringify(p.images || (p.cover ? [p.cover] : []));
+  const info = await impl.run(
+    `INSERT INTO post (post_key,title,content,cover,images,location,topics,type,client,bgm,nick,avatar,
+                       user_id,source,source_url,video_url,video_src,spot_key,like_count,comment_count,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      key, p.title || '', p.content || '', p.cover || (p.images && p.images[0]) || '', images,
+      p.location || '', p.topics || '', p.type || 'plog', p.client || 'go', p.bgm || '',
+      nick, p.avatar || '', p.userId || null, p.source || 'go', p.sourceUrl || '',
+      p.videoUrl || '', p.videoSrc || '', p.spotId || '', Number(p.likeCount) || 0, 0, createdAt
+    ]
+  );
+  return { created: true, post: postRow(await impl.get('SELECT * FROM post WHERE id = ?', [info.lastId])) };
+}
+
+async function listPostComments(postKey) {
+  const rows = await impl.all(
+    'SELECT * FROM app_comment WHERE post_key = ? ORDER BY id DESC LIMIT 200', [String(postKey)]
+  );
+  return rows.map(r => ({ nick: r.nick || '旅行者', content: r.content || '', createdAt: r.created_at || '' }));
+}
+
+async function addPostComment(postKey, nick, content) {
+  const key = String(postKey || '').trim();
+  const txt = String(content || '').trim();
+  if (!key || !txt) throw new Error('评论内容不能为空');
+  const r = await impl.run(
+    'INSERT INTO app_comment (post_key,nick,content,created_at) VALUES (?,?,?,?)',
+    [key, nick || '旅行者', txt.slice(0, 500), now()]
+  );
+  await impl.run('UPDATE post SET comment_count = comment_count + 1 WHERE post_key = ?', [key]);
+  return { id: r.lastId };
+}
+
+/* 点赞开关：按「帖子 + 用户」去重，同一用户重复点赞不会重复累加。
+ * 传了 nick（已登录用户）时做真正的 toggle：已点过则取消，没点过则累加；
+ * 没传时（老调用方 / 游客）保留原来的直接 +1 行为，避免破坏现有调用。 */
+async function addPostLike(postKey, nick) {
+  const key = String(postKey || '').trim();
+  const who = String(nick || '').trim();
+  const cur = async () => {
+    const row = await impl.get('SELECT like_count FROM post WHERE post_key = ?', [key]);
+    return Number(row ? row.like_count : 0);
+  };
+  if (!who) {
+    await impl.run('UPDATE post SET like_count = like_count + 1 WHERE post_key = ?', [key]);
+    return { liked: true, likeCount: await cur() };
+  }
+  /* 已点过 → 取消点赞，计数减一（不会减到负数） */
+  const hit = await impl.get('SELECT id FROM post_like WHERE post_key = ? AND nick = ?', [key, who]);
+  if (hit) {
+    await impl.run('DELETE FROM post_like WHERE post_key = ? AND nick = ?', [key, who]);
+    await impl.run('UPDATE post SET like_count = CASE WHEN like_count > 0 THEN like_count - 1 ELSE 0 END WHERE post_key = ?', [key]);
+    return { liked: false, likeCount: await cur() };
+  }
+  /* 没点过 → 记录这次点赞并累加；唯一约束兜住并发重复插入 */
+  try {
+    await impl.run('INSERT INTO post_like (post_key, nick, created_at) VALUES (?,?,?)', [key, who, now()]);
+  } catch { /* 已被并发请求插入，视为已点赞 */ }
+  await impl.run('UPDATE post SET like_count = like_count + 1 WHERE post_key = ?', [key]);
+  return { liked: true, likeCount: await cur() };
+}
+
+/* 查询某用户是否点过赞，用于详情页回显已赞状态 */
+async function hasPostLike(postKey, nick) {
+  const key = String(postKey || '').trim();
+  const who = String(nick || '').trim();
+  if (!key || !who) return false;
+  const row = await impl.get('SELECT id FROM post_like WHERE post_key = ? AND nick = ?', [key, who]);
+  return !!row;
+}
+
+
 
 /* 密码散列：等同论文 4.5 的 MD5(SHA1(pwd))，不引入新依赖 */
 function hashPwd(pwd) {
@@ -783,6 +1338,22 @@ async function getSpot(spotKey) {
   return impl.get('SELECT * FROM scenic_spot WHERE spot_key = ?', [spotKey]);
 }
 
+/* 同城 + 类型检索：冷门城市兜底时按 景区/美食/打卡点/购物 分池挑选，
+ * 避免整条行程全是风景名胜、没有吃饭逛街的地方 */
+async function listSpotsByType(city, poiType, limit = 30) {
+  const order = 'heat DESC, rating DESC';
+  if (city && poiType) {
+    return impl.all(
+      `SELECT * FROM scenic_spot WHERE city = ? AND poi_type = ? ORDER BY ${order} LIMIT ?`,
+      [city, poiType, limit]
+    );
+  }
+  if (city) {
+    return impl.all(`SELECT * FROM scenic_spot WHERE city = ? ORDER BY ${order} LIMIT ?`, [city, limit]);
+  }
+  return impl.all(`SELECT * FROM scenic_spot ORDER BY ${order} LIMIT ?`, [limit]);
+}
+
 /* 热门榜：按热度 / 评分排序，用于冷启动兜底与排行榜 */
 async function rankSpots(scope, city, limit = 20) {
   const order = scope === 'rating' ? 'rating DESC, heat DESC' : 'heat DESC, rating DESC';
@@ -797,10 +1368,13 @@ module.exports = {
   raw: impl.raw,
   all: impl.all, get: impl.get, run: impl.run,
   seed, stats, searchGuides, searchCheckins, searchEntities,
-  addCheckin, addGuide, addEntities, crawlCandidates,
+  addCheckin, listCheckinsByCity, listMyCheckinSpots, addGuide, addEntities, crawlCandidates,
   hashPwd, findUser, findUserById, createUser, verifyUser,
   addRating, toggleFavorite, logBehavior, allBehaviors,
-  listSpots, getSpot, rankSpots, seedSpots,
+  listPosts, getPost, addPost, listPostComments, addPostComment, addPostLike, hasPostLike,
+  listTopics, seedCrawlPosts, TOPIC_NAMES,
+  listSpots, getSpot, rankSpots, seedSpots, listSpotsByType,
+  upsertPois, spotTypesByCity, classifyPoi, POI_TYPES, migrateSpotColumns, backfillSpotColumns,
   SPOTS: ALL_SPOTS, DATA_SPOTS, CITY_NAMES, SPOT_NAMES, guessCity, now,
   cityOf: term => ALIAS.get(String(term || '').trim()) || null
 };

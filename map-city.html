@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>城市地图 · WANDERGO</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/pages.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="css/map-city.css">
+</head>
+<body>
+
+<section class="sec cm-hero"><div class="wrap">
+  <div class="kick">CITY MAP · LEAFLET × OSM</div>
+  <h2><span id="cmTitle">城市</span>景点地图</h2>
+  <p id="cmSub">点击标记查看详情并打卡</p>
+</div></section>
+
+<section class="sec cm-main"><div class="wrap">
+  <div class="cm-layout">
+
+    <aside class="cm-side">
+      <div class="cm-side-top">
+        <select id="cmCity" class="cm-city"></select>
+        <span class="cm-stat" id="cmStat">已打卡 0 / 0 处</span>
+      </div>
+      <div class="cm-tabs">
+        <button class="on" data-tab="spots">📍 景点</button>
+        <button data-tab="wall">📸 打卡记录</button>
+      </div>
+      <div class="cm-list" id="cmList"></div>
+      <div class="cm-wall" id="cmWall" style="display:none"></div>
+      <div class="cm-legend">
+        <span><i class="cm-lg gold"></i>未打卡</span>
+        <span><i class="cm-lg green"></i>已打卡</span>
+        <span>滚轮缩放 · 拖拽平移</span>
+      </div>
+    </aside>
+
+    <div class="cm-mapwrap">
+      <div id="cmMap"></div>
+      <div class="cm-hint">🖱 滚轮缩放：省 → 市 → 区逐级放大，底图为 OpenStreetMap</div>
+      <div class="cm-zoomtag" id="cmZoomTag">省域视图</div>
+      <div class="cm-layerbox">
+        <label><input type="checkbox" id="cmBorders" checked> 行政边界</label>
+        <label><input type="checkbox" id="cmSpots" checked> 景点标记</label>
+      </div>
+    </div>
+
+  </div>
+</div></section>
+
+<script src="js/data.js?v=1170"></script>
+<script src="img/spots/manifest.js"></script>
+<script src="geo/city-index.js?v=1170"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="js/api.js?v=1170"></script>
+<script src="js/core.js?v=1171"></script>
+<script src="js/map-city.js?v=1170"></script>
+</body>
+</html>

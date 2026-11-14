@@ -69,6 +69,21 @@ a{color:inherit;text-decoration:none}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,select,textarea{font-family:inherit}
 img{display:block}
+/* 出图接口彻底失败时（降级链走完）：不留裂图图标，改为渐变占位块 */
+img.img-fail{background:linear-gradient(135deg,var(--panel-2),var(--panel-3));min-height:60px}
+/* 最终兜底：内联 SVG 占位图，铺满容器、不拉伸变形 */
+img.img-ph{object-fit:cover;background:var(--panel-2)}
+/* 加载中：src 还没赋（出图队列限流）或静态图仍在下载，先铺 shimmer 骨架，
+   避免 <img> 塌成 0 高导致卡片跳动。load 事件一到就会被移除。 */
+img.img-skel{min-height:60px;background:linear-gradient(100deg,var(--panel-2) 20%,var(--panel-3) 40%,var(--panel-2) 60%);background-size:220% 100%;animation:imgShimmer 1.15s linear infinite}
+@keyframes imgShimmer{0%{background-position:130% 0}100%{background-position:-40% 0}}
+@media (prefers-reduced-motion:reduce){img.img-skel{animation:none;background:var(--panel-2)}}
+/* 数据为空：空状态插画 + 引导文案 */
+.empty-art{display:flex;flex-direction:column;align-items:center;gap:10px;padding:36px 16px;text-align:center;color:var(--muted)}
+.empty-art svg{width:132px;height:96px;opacity:.9}
+.empty-art b{font-size:15px;color:var(--ink-2);font-weight:600}
+.empty-art span{font-size:13px;line-height:1.7}
+.empty-art a{color:var(--gold);text-decoration:underline}
 .wrap{width:min(1180px,93%);margin:0 auto}
 .sec{padding:64px 0}
 .sec-alt{background:var(--bg-soft)}
@@ -337,6 +352,30 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .g-hint{position:absolute;bottom:0;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,.62);background:rgba(9,16,29,.55);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:4px 12px;backdrop-filter:blur(4px);pointer-events:none;white-space:nowrap;z-index:3}
 .globe-fallback{display:none;position:relative;place-items:center;width:100%;height:100%}
 .globe-fallback.on{display:grid}
+/* 3D 地球加载骨架：three.js 从 CDN 拉取期间先显示一个呼吸圆环 + 文案，
+ * 避免用户对着空画布以为页面挂了；地球初始化完成或失败回退时由 globe.js 移除 */
+.globe-skel{position:absolute;inset:0;display:grid;place-items:center;gap:12px;z-index:2;pointer-events:none}
+.globe-skel .gs-ring{width:96px;height:96px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,rgba(231,199,109,.32),rgba(90,130,190,.12) 60%,transparent 72%);
+  border:1px solid rgba(231,199,109,.35);
+  box-shadow:0 0 34px rgba(231,199,109,.22),inset 0 0 26px rgba(120,170,230,.18);
+  animation:gsPulse 1.8s ease-in-out infinite}
+.globe-skel .gs-txt{font-size:11.5px;color:var(--muted);letter-spacing:.06em;text-align:center}
+.globe-skel .gs-txt b{display:block;font-size:13px;color:var(--gold);font-weight:800;margin-bottom:2px}
+.globe-skel.off{opacity:0;transition:opacity .35s}
+@keyframes gsPulse{0%,100%{transform:scale(.94);opacity:.7}50%{transform:scale(1.04);opacity:1}}
+/* 冷启动唤醒提示条（ai.js / search.js 共用）：固定在右下角，不遮挡内容 */
+.wake-tip{position:fixed;right:20px;bottom:24px;z-index:900;max-width:340px;
+  display:none;align-items:flex-start;gap:9px;padding:12px 15px;
+  background:rgba(11,18,32,.95);border:1px solid var(--line-gold);border-radius:13px;
+  box-shadow:0 16px 40px rgba(0,0,0,.5);font-size:12.5px;color:var(--ink-2);line-height:1.55}
+.wake-tip.on{display:flex}
+.wake-tip b{display:block;color:var(--gold);font-size:13px;margin-bottom:1px}
+.wake-tip .wt-sub{color:var(--muted);font-size:11.5px}
+.wake-tip .wt-dot{flex:none;width:10px;height:10px;margin-top:5px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 0 0 rgba(231,199,109,.55);animation:wtDot 1.5s ease-out infinite}
+@keyframes wtDot{0%{box-shadow:0 0 0 0 rgba(231,199,109,.55)}70%{box-shadow:0 0 0 9px rgba(231,199,109,0)}100%{box-shadow:0 0 0 0 rgba(231,199,109,0)}}
+@media(max-width:640px){.wake-tip{left:12px;right:12px;bottom:12px;max-width:none}}
 /* 地球标记点击弹窗 */
 .g-pop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.93);width:236px;background:rgba(11,18,32,.95);border:1px solid var(--line-gold);border-radius:14px;padding:14px 16px 13px;opacity:0;visibility:hidden;transition:.2s;z-index:4;box-shadow:0 18px 44px rgba(0,0,0,.55)}
 .g-pop.on{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1)}
@@ -553,6 +592,10 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 #itin3col .journey-number{display:inline-flex;align-items:center;justify-content:center;background:#2196F3;color:#fff;width:25px;height:25px;border-radius:50%;margin-right:8px;font-size:12px}
 #itin3col .journey-card p{font-size:14px;font-weight:400;color:#64748B;margin:5px 0;overflow-wrap:anywhere}
 #itin3col .journey-detail{background:none;border:0;padding:4px 0;color:#2196F3;font-size:12px}
+/* 行程卡 pin：跳城市地图页并自动定位到该景点 */
+#itin3col .tl-acts{display:flex;gap:10px;align-items:center}
+#itin3col .journey-pin{background:none;border:0;padding:4px 0;color:#C98A2E;font-size:12px}
+#itin3col .journey-pin:hover{text-decoration:underline}
 #itin3col .journey-map-panel{display:flex;flex-direction:column;min-width:0;height:600px;border:1px solid #E2E8F0;border-radius:16px;overflow:hidden;background:#fff}
 #itin3col .journey-map-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px;flex:none;border-bottom:1px solid #E2E8F0}
 #itin3col .journey-map-head h3{font-size:15px;color:#1E293B}
@@ -573,6 +616,12 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 #itin3col .book-banner .bk-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#475569}
 #itin3col .tl-badge{display:inline-block;background:#FEF3C7;color:#B45309;border:1px solid #FDE68A;border-radius:999px;font-size:10.5px;padding:1px 8px;margin-left:6px;white-space:nowrap}
 #itin3col .book-banner .tl-badge{margin-left:0}
+/* 地点类型标签：景区 / 美食 / 打卡点 / 购物，四色与地图 marker 保持一致 */
+#itin3col .tl-type{display:inline-block;border-radius:999px;font-size:10px;padding:1px 7px;margin-left:6px;white-space:nowrap;border:1px solid transparent;font-weight:600}
+#itin3col .tl-type.t-spot{background:#FDF6E3;color:#8A6D1B;border-color:#EAD792}
+#itin3col .tl-type.t-food{background:#FDECE5;color:#A83A1B;border-color:#F6C5B2}
+#itin3col .tl-type.t-photo{background:#E4F5F2;color:#1B6F64;border-color:#A9DED6}
+#itin3col .tl-type.t-shop{background:#EFEAFB;color:#523A8C;border-color:#CDBFF0}
 #itin3col .tl-eat-chip{background:#ECFDF5;color:#047857;border:1px solid #A7F3D0;border-radius:999px;font-size:10.5px;padding:1px 8px}
 #itin3col .timeline{list-style:none;margin:0;padding:0 0 0 18px;border-left:2px solid #DBEAFE}
 #itin3col .tl-item{position:relative;display:flex;gap:12px;padding:10px 0 10px 6px;border-radius:12px;cursor:pointer;transition:.2s;min-width:0}
@@ -649,6 +698,27 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .vcard .vfoot{padding:8px 10px;background:var(--panel-2)}
 .vcard .vfoot h6{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vcard .vfoot p{font-size:10.5px;color:var(--muted)}
+/* ---- 攻略 Vlog 视频卡片网格（真实 B 站链接，不内嵌播放） ---- */
+.vlog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+@media(max-width:560px){.vlog-grid{grid-template-columns:1fr 1fr}}
+.vlog-card{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--panel-2);transition:transform .25s,box-shadow .25s,border-color .25s}
+.vlog-card:hover{transform:translateY(-3px);border-color:var(--line-gold);box-shadow:0 14px 30px -16px rgba(0,0,0,.6)}
+.vl-thumb{position:relative;aspect-ratio:16/9;overflow:hidden;background:var(--panel-3)}
+.vl-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .45s}
+.vlog-card:hover .vl-thumb img{transform:scale(1.07)}
+.vl-play{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,rgba(8,12,22,.05),rgba(8,12,22,.42))}
+.vl-play i{width:42px;height:42px;border-radius:50%;background:rgba(231,199,109,.94);color:#1d2434;display:grid;place-items:center;font-size:15px;font-style:normal;box-shadow:0 6px 18px -6px rgba(0,0,0,.7);transition:transform .25s}
+.vlog-card:hover .vl-play i{transform:scale(1.15)}
+.vl-bili{position:absolute;right:7px;bottom:7px;font-size:10px;font-weight:800;letter-spacing:.04em;background:rgba(251,114,153,.92);color:#fff;padding:2px 7px;border-radius:6px}
+.vl-body{padding:9px 11px 11px;display:flex;flex-direction:column;gap:6px}
+.vl-body h6{font-size:12.5px;font-weight:800;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vl-up{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-2);font-weight:700}
+.vl-up em{font-style:normal;font-size:9.5px;font-weight:700;color:var(--gold);border:1px solid var(--line-gold);padding:1px 6px;border-radius:99px}
+.vl-up-name{color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vlog-card:hover .vl-up-name{color:var(--gold)}
+.vl-ava{width:18px;height:18px;border-radius:50%;background:var(--gold-grad);color:var(--accent-ink);display:grid;place-items:center;font-size:10px;font-weight:900;flex:none}
+.vl-meta{font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.vl-go{color:var(--gold);font-weight:700;white-space:nowrap}
 /* ================= 社区 ================= */
 .filter-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
 .filter-tabs button{font-size:12.5px;font-weight:700;color:var(--muted);border:1px solid var(--line);background:var(--glass);padding:6.5px 17px;border-radius:999px;transition:.22s}
@@ -669,7 +739,27 @@ body.sb-min .side-foot .btn::before{content:'👤';font-size:15px}
 .post .pu .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:900;color:#fff;flex:none}
 .post .pu h5{font-size:13px;font-weight:800}
 .post .pu p{font-size:10.5px;color:var(--muted)}
-.post .ptxt{font-size:12.5px;color:var(--ink-2);margin:9px 0 11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.post .ptxt{font-size:12.5px;color:var(--ink-2);margin:9px 0 11px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
+.post .ptxt.full{-webkit-line-clamp:unset;display:block;max-height:none}
+/* 展开/收起正文：只用文字小按钮，不抢占「查看全文 →」的位置 */
+.ptxt-toggle{display:inline-block;font-size:11.5px;font-weight:800;color:var(--gold-d,#b9892f);cursor:pointer;margin:-4px 0 10px;user-select:none}
+.ptxt-toggle:hover{text-decoration:underline}
+/* 卡片上的评论预览：最新 2 条 + 查看全部 */
+.cpv{background:var(--bg-2,#f7f6f2);border:1px solid var(--line);border-radius:11px;padding:8px 10px;margin:0 0 10px;cursor:pointer;transition:.2s}
+/* 卡片上的预览条也必须带内联样式：详情页评论区样式作用域在 #twCmtList 内，管不到卡片 */
+.cpv .cpv-i{display:flex;align-items:baseline;gap:6px;font-size:11.5px;line-height:1.6;color:#6b6b6b;padding:1px 0;overflow:hidden}
+.cpv .cpv-i b{font-weight:800;color:#2b2b2b;flex:none;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpv .cpv-i span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpv .cpv-more{font-size:10.5px;font-weight:800;color:#b9892f;margin-top:4px}
+.cpv:hover{border-color:#d8b25e;background:#fff}
+/* B 站官方播放器：固定 16:9，移动端不溢出 */
+.bv-wrap{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden;margin-bottom:2px}
+.bv-wrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.bv-close{position:absolute;right:8px;bottom:8px;z-index:3;background:rgba(0,0,0,.62);color:#fff;font-size:10.5px;font-weight:800;padding:4px 9px;border-radius:99px;cursor:pointer}
+.bv-close:hover{background:rgba(0,0,0,.82)}
+.post .pimg .vbadge.play-btn{cursor:pointer;transition:transform .2s,background .2s}
+.post .pimg .vbadge.play-btn:hover{transform:scale(1.12)}
+.post .pimg .vbadge.play-btn.nobv{opacity:.75}
 .post .pfoot{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--muted)}
 .post .pfoot .act{display:flex;align-items:center;gap:5px;cursor:pointer;transition:.2s}
 .post .pfoot .act:hover,.post .pfoot .act.liked{color:var(--err)}
@@ -858,6 +948,18 @@ footer{border-top:1px solid var(--line);padding:30px 0 34px;background:var(--bg-
 footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 footer .fb{display:flex;align-items:center;gap:10px;font-weight:900;font-size:15px}
 footer .fnote{font-size:11.5px;color:var(--muted)}
+/* 页脚统一导航入口（P2：由 core.js 注入，全站一次生效） */
+footer .ffnav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:16px}
+footer .ffnav a{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);text-decoration:none;
+  padding:5px 11px;border-radius:99px;border:1px solid var(--line);transition:.18s;white-space:nowrap}
+footer .ffnav a:hover{color:var(--ink);border-color:var(--acc);background:rgba(243,218,150,.1)}
+footer .ffnav .ffn-ico{font-style:normal;font-size:12px}
+footer .ffnav .ffn-map{color:var(--acc);border-color:rgba(243,218,150,.5);font-weight:800}
+/* 页脚统一声明区（深色底，各页共用） */
+footer .fdecl{margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.08)}
+footer .fdecl p{font-size:11.5px;line-height:1.9;color:rgba(255,255,255,.46);max-width:1040px}
+footer .fdecl p+p{margin-top:6px}
+footer .fdecl b{color:rgba(255,255,255,.72);font-weight:800;margin-right:8px}
 /* ================= 社区 2.0：平台徽章 / 话题 / 4K 精选 / 图表 ================= */
 .plat-tabs{margin-top:8px}
 .plat{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:99px;color:#fff;white-space:nowrap}
@@ -1206,3 +1308,63 @@ select optgroup{background:var(--panel);color:var(--muted);font-style:normal;fon
 .mod-rail.collapsed .rail-list{max-height:0;padding:0;border:none;opacity:0;overflow:hidden}
 .mod.flash{box-shadow:0 0 0 2px var(--gold),0 22px 48px -26px rgba(0,0,0,.6)!important}
 @media(max-width:1180px){.mod-rail{display:none!important}}
+
+/* ================= 首页新手引导 ================= */
+/* 常驻悬浮入口：放在「回到顶部(bottom:96)」与「AI 悬浮球(bottom:24)」之上，三者不重叠 */
+.guide-fab{position:fixed;right:26px;bottom:164px;z-index:245;width:48px;height:48px;border-radius:50%;
+  border:1px solid var(--line-gold);background:var(--panel);color:var(--gold);font-size:20px;font-weight:800;
+  line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:0 10px 26px rgba(0,0,0,.42);transition:.25s}
+.guide-fab:hover{background:var(--gold-grad);color:var(--accent-ink);border-color:transparent;transform:scale(1.06)}
+.guide-fab:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+
+/* 遮罩 + 弹窗 */
+.guide-ovl{position:fixed;inset:0;z-index:400;background:rgba(6,10,20,.72);backdrop-filter:blur(4px);
+  display:grid;place-items:center;padding:20px;opacity:0;visibility:hidden;transition:.22s}
+.guide-ovl.show{opacity:1;visibility:visible}
+.guide-card{position:relative;width:min(460px,100%);max-height:calc(100vh - 40px);overflow-y:auto;
+  padding:30px 26px 24px;border-radius:22px;background:var(--panel);border:1px solid var(--line-gold);
+  color:var(--ink);box-shadow:0 30px 70px -24px rgba(0,0,0,.7);transform:translateY(14px) scale(.97);transition:.26s}
+.guide-ovl.show .guide-card{transform:none}
+.guide-x{position:absolute;top:12px;right:14px;width:30px;height:30px;border-radius:50%;border:none;
+  background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;transition:.18s}
+.guide-x:hover{background:var(--panel-2);color:var(--ink)}
+
+.guide-kicker{text-align:center;font-size:11px;font-weight:800;letter-spacing:.18em;color:var(--gold);opacity:.9}
+.guide-title{text-align:center;margin:8px 0 4px;font-size:23px;font-weight:800;letter-spacing:.01em}
+.guide-title em{font-style:normal;background:var(--gold-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.guide-sub{text-align:center;margin:0 0 20px;font-size:12.5px;color:var(--muted);line-height:1.6}
+
+/* 三步流程 */
+.guide-steps{display:flex;align-items:stretch;gap:8px;margin-bottom:18px}
+.guide-step{flex:1;text-align:center;padding:12px 6px;border-radius:14px;background:var(--panel-2);border:1px solid var(--line)}
+.guide-step b{display:block;width:24px;height:24px;margin:0 auto 7px;border-radius:50%;
+  background:var(--gold-grad);color:var(--accent-ink);font-size:12px;line-height:24px}
+.guide-step span{font-size:11.5px;font-weight:700;color:var(--ink-2);line-height:1.4;display:block}
+
+/* 三个亮点 */
+.guide-feats{display:flex;flex-direction:column;gap:9px;margin-bottom:22px}
+.guide-feat{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+  background:var(--glass);border:1px solid var(--line);font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.guide-feat i{flex:none;width:26px;height:26px;border-radius:9px;background:var(--panel-3);
+  display:grid;place-items:center;font-size:14px;font-style:normal}
+
+/* 按钮组 */
+.guide-btns{display:flex;gap:10px}
+.guide-btn{flex:1;height:44px;border-radius:12px;font-size:13px;font-weight:800;cursor:pointer;transition:.2s;border:1px solid transparent}
+.guide-btn.primary{background:var(--gold-grad);color:var(--accent-ink);box-shadow:0 10px 24px -10px rgba(231,199,109,.6)}
+.guide-btn.primary:hover{transform:translateY(-1px);box-shadow:0 14px 28px -10px rgba(231,199,109,.75)}
+.guide-btn.ghost{background:none;border-color:var(--line-gold);color:var(--ink-2)}
+.guide-btn.ghost:hover{background:var(--panel-2);color:var(--gold)}
+.guide-btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* 落地高亮：从引导跳到 AI 偏好表单后闪一下，让用户知道往哪填 */
+@keyframes planFlash{0%,100%{box-shadow:none}25%,75%{box-shadow:0 0 0 3px var(--gold),0 0 40px rgba(231,199,109,.35)}}
+.plan-flash{animation:planFlash 1.6s ease-out;border-radius:20px}
+
+@media(max-width:768px){
+  .guide-fab{right:18px;bottom:156px;width:44px;height:44px;font-size:18px}
+  .guide-card{padding:26px 18px 20px;border-radius:18px}
+  .guide-title{font-size:20px}
+  .guide-step{padding:10px 4px}
+  .guide-step span{font-size:10.5px}
+}

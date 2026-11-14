@@ -16,7 +16,7 @@ const dbx = require('./db');
 const WEIGHT = { rating: 0, favorite: 3, checkin: 4, comment: 2 };
 /* 冷启动阈值：有效行为数少于该值直接走热门兜底 */
 const COLD_START_MIN = 3;
-/* 相似邻居数量 */
+/* 相似邻居数量（默认值；userCF 可通过 opts.K 覆盖，用于论文中的 K 值对比实验） */
 const K_NEIGHBOR = 20;
 /* 最小共同评分项，低于该值视为相似度不可信 */
 const MIN_CO_RATE = 2;
@@ -74,7 +74,9 @@ function commonCount(a, b) {
 
 /* ---------- 4.4.2 UserCF ---------- */
 /* 返回 { spotKey: { score, sim, by, base } } */
-function userCF(byUser, userId, candidates) {
+function userCF(byUser, userId, candidates, opts = {}) {
+  const K = Number(opts.K) || K_NEIGHBOR;
+  const MIN_CO = opts.MIN_CO_RATE != null ? Number(opts.MIN_CO_RATE) : MIN_CO_RATE;
   const mine = byUser.get(Number(userId));
   const out = {};
   if (!mine || mine.size === 0) return out;
@@ -83,12 +85,12 @@ function userCF(byUser, userId, candidates) {
   const sims = [];
   for (const [uid, vec] of byUser) {
     if (uid === Number(userId)) continue;
-    if (commonCount(mine, vec) < MIN_CO_RATE) continue;
+    if (commonCount(mine, vec) < MIN_CO) continue;
     const sim = cosine(mine, vec);
     if (sim > 0.01) sims.push({ uid, vec, sim });
   }
   sims.sort((a, b) => b.sim - a.sim);
-  const neighbors = sims.slice(0, K_NEIGHBOR);
+  const neighbors = sims.slice(0, K);
   if (!neighbors.length) return out;
 
   for (const key of candidates) {
@@ -265,11 +267,11 @@ function explain(v, spotMap) {
 
 /* ---------- 实验评估用：给定矩阵直接计算 Top-N ---------- */
 /* 不查库，便于离线交叉验证 */
-function recommendFromMatrix(matrix, userId, candidates, topN = 10) {
+function recommendFromMatrix(matrix, userId, candidates, topN = 10, opts = {}) {
   const { byUser, byItem } = matrix;
   const mine = byUser.get(Number(userId));
   if (!mine) return [];
-  const uc = userCF(byUser, userId, candidates);
+  const uc = userCF(byUser, userId, candidates, opts);
   const ic = itemCF(byUser, byItem, userId, candidates);
   const merged = new Map();
   for (const key of candidates) {

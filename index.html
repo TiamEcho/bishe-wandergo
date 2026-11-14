@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WANDERGO · 设计理念与功能总览</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/style.css?v=1130">
+<link rel="stylesheet" href="css/style.css?v=1170">
 <link rel="stylesheet" href="css/pages.css?v=1126">
 </head>
 <body>
@@ -28,6 +28,11 @@
     <!-- 左 60%：Three.js 3D 地球（自动旋转 + 金色标记 + 蓝色飞线 + 点击弹窗） -->
     <div class="globe-stage" id="globeSec">
       <canvas id="globeCv" aria-label="3D 地球 · 拖拽旋转，点击金色标记查看景点"></canvas>
+      <!-- 首屏加载提示：three.js 就绪或回退为静态地球后由 globe.js 隐藏 -->
+      <div class="globe-skel" id="globeSkel">
+        <div class="gs-ring"></div>
+        <div class="gs-txt"><b>正在加载 3D 地球…</b>首次加载需下载渲染引擎</div>
+      </div>
       <div class="globe-fallback" id="globeFallback">
         <div class="globe">
           <span class="dotmark" style="top:34%;left:58%"></span>
@@ -100,7 +105,7 @@
     </div>
     <figure class="shot-card" data-shot="ai" tabindex="0" role="button" aria-label="放大查看 AI 规划界面">
       <div class="shot-frame">
-        <img src="img/shots/ai-1.webp" alt="AI 规划界面" loading="lazy">
+        <img src="img/shots/ai-1-s.webp" alt="AI 规划界面" loading="lazy" data-full="img/shots/ai-1.webp">
         <span class="shot-anim"><i></i><i></i><i></i></span>
         <span class="shot-zoom">🔍 点击放大</span>
       </div>
@@ -119,7 +124,7 @@
     </div>
     <figure class="shot-card" data-shot="map" tabindex="0" role="button" aria-label="放大查看地图打卡界面">
       <div class="shot-frame">
-        <img src="img/shots/map-1.webp" alt="手帐风地图界面" loading="lazy">
+        <img src="img/shots/map-1-s.webp" alt="手帐风地图界面" loading="lazy" data-full="img/shots/map-1.webp">
         <span class="shot-anim fly"><i></i><i></i><i></i><i></i></span>
         <span class="shot-zoom">🔍 点击放大</span>
       </div>
@@ -138,7 +143,7 @@
     </div>
     <figure class="shot-card" data-shot="community" tabindex="0" role="button" aria-label="放大查看社区攻略界面">
       <div class="shot-frame">
-        <img src="img/shots/community-1.webp" alt="旅行社区界面" loading="lazy">
+        <img src="img/shots/community-1-s.webp" alt="旅行社区界面" loading="lazy" data-full="img/shots/community-1.webp">
         <span class="shot-anim"><i></i><i></i><i></i></span>
         <span class="shot-zoom">🔍 点击放大</span>
       </div>
@@ -160,9 +165,9 @@
 <script src="js/spot_photos.js?v=1114"></script>
 <script src="js/data.js?v=1126"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-<script src="js/api.js?v=1119"></script>
-<script src="js/core.js?v=1126"></script>
-<script src="js/globe.js?v=1121"></script>
+<script src="js/api.js?v=1162"></script>
+<script src="js/core.js?v=1171"></script>
+<script src="js/globe.js?v=1160"></script>
 <script>
 /* ================ 功能模块数据：每个方块含 5 个具体小功能 ================ */
 const MODULES=[
@@ -178,7 +183,7 @@ const MODULES=[
     ['预算拆解','按日均与总计双栏展示，附隐藏花费与省钱提醒。'],
     ['雨天备案','备案卡给出室内替代点与休息位，老人小孩单独标注。'],
     ['视频与 Plog','每个景点挂社区真实 Vlog 与图文，边看边定行程。']]},
-  {id:'recommend',ico:'🎯',url:'recommend.html',title:'猜你喜欢 · 协同过滤',sub:'UserCF + ItemCF + 热门兜底冷启动',isNew:1,feats:[
+  {id:'recommend',ico:'🎯',url:'recommend.html',title:'为你推荐 · 协同过滤',sub:'UserCF + ItemCF + 热门兜底冷启动',isNew:1,feats:[
     ['UserCF','找与你评分口味相近的用户，把他喜欢的景点推给你。'],
     ['ItemCF','按"看过这个的人也看过"计算物品相似度做推荐。'],
     ['热门兜底','新用户零评分时用热门榜 + 标签匹配补位，避免空结果。'],
@@ -258,11 +263,13 @@ function closeLightbox(){
 }
 function openLightbox(src,cap){
   closeLightbox();
+  /* 列表里用的是 -s 缩略图，看大图时换成原图 */
+  const full=String(src).replace(/-s\.webp$/,'.webp');
   const el=document.createElement('div');
   el.className='lightbox';
   el.innerHTML=`
     <button class="lb-x" aria-label="关闭">✕</button>
-    <div class="lb-stage"><img src="${src}" alt="${cap||''}"></div>
+    <div class="lb-stage"><img src="${full}" alt="${cap||''}"></div>
     <div class="lb-bar">
       <span class="lb-cap">${cap||'界面预览'}</span>
       <button type="button" class="on" data-v="half">半屏</button>
@@ -365,9 +372,12 @@ function renderModal(m,fi){
   /* 右：该功能对应的真实页面截图（点击可半屏 / 全屏查看） */
   const right=curModal.querySelector('#fdRight');
   const shotSrc=`img/shots/${m.id}-${fi+1}.webp`;
+  /* 弹窗里只显示 480px 宽的缩略图（原图 1200px / ~160KB，缩略图 ~11KB）；
+   * 点击看大图时再加载原图，openLightbox 会把 -s 去掉 */
+  const shotThumb=shotSrc.replace(/\.webp$/,'-s.webp');
   right.innerHTML=`
     <figure class="feat-shot" role="button" tabindex="0" aria-label="放大查看 ${m.title} · ${f[0]} 界面">
-      <img src="${shotSrc}" alt="${m.title} · ${f[0]}" loading="lazy">
+      <img src="${shotThumb}" alt="${m.title} · ${f[0]}" loading="lazy">
       <span class="fs-zoom">🔍 点击查看大图</span>
     </figure>
     <div class="fsc-legend">真实页面截图：${m.title} · ${f[0]}（点击图片可半屏 / 全屏查看）</div>`;

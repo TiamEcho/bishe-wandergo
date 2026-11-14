@@ -88,7 +88,11 @@ a{color:var(--gold)}
 .adm-be .be-t{color:var(--gold);font-weight:600}
 .adm-be b{color:var(--gold);font-size:14px;margin-left:3px}
 .adm-be .be-ai{margin-left:auto}
-.adm-tabs{padding:6px 14px 14px;border-radius:16px;border:1px solid var(--line);background:rgba(17,28,48,.8)}
+.adm-tabs{padding:6px 14px 14px;border-radius:16px;border:1px solid var(--line);background:rgba(17,28,48,.8);min-width:0}
+/* el-table 在容器宽度不足或初始为 0 时，colgroup 会塌成 2 列、表头竖排。
+   这里给表格一个最小宽度并允许内部横向滚动，保证列结构不被压垮。 */
+.adm-table{width:100%;min-width:760px}
+.el-tabs__content{overflow:visible}
 .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px}
 .bar-tip{font-size:11.5px;color:var(--muted)}
 .adm-table{background:transparent;--el-table-bg-color:transparent;--el-table-tr-bg-color:transparent;--el-table-header-bg-color:rgba(255,255,255,.04)}

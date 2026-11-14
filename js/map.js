@@ -47,40 +47,93 @@ function hexShade(hex,amt){
   return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
 }
 /* 单层平面着色：每个省一个纯色块（不用逐省渐变，重绘成本从 34 个 gradient 降到 34 个颜色） */
-function regionColors(map){
+function regionColors(map,st){
   try{
     const feats=echarts.getMap(map).geoJson.features;
+    /* 省级下钻时，按「该市有没有景点」给两种底色：
+     * 有景点的市用暖黄（能下钻的暗示），没景点的市保持原莫兰迪色，
+     * 这样用户一眼看出哪块能点进去，而不是在整张省图上盲目试。 */
+    const prov=st&&st.lvl==='prov'?st:null;
+    let hotNames=null;
+    if(prov){
+      const meta=(window.WGO_PROV||{})[prov.code]||{};
+      const cityOfProv=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn'&&provAdcodeOf(s.city)===prov.code);
+      hotNames=new Set();
+      (meta.cities||[]).forEach(c=>{
+        const cn=(typeof cityCanon==='function')?cityCanon(c.name):c.name;
+        if(cityOfProv.some(s=>{
+          const sc=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+          return sc===cn||cn.indexOf(sc)===0||sc.indexOf(cn)===0||c.name.indexOf(sc+'市')===0;
+        }))hotNames.add(c.name);
+      });
+      /* 直辖市：区县边界下没有单独景点数据，整块都算「有景点」 */
+      if(isMunicipality(prov.code))feats.forEach(f=>hotNames.add(f.properties.name));
+    }
+    /* 区县层：桌面只有这一个市，用「景点坐标落在哪个区县」来点亮对应区县 */
+    if(st&&st.lvl==='dist'){
+      const spots=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn'&&provAdcodeOf(s.city)===st.prov);
+      hotNames=new Set(feats.filter(f=>spots.some(s=>featHasPoint(f,[s.lng,s.lat]))).map(f=>f.properties.name));
+    }
     return feats.map(f=>{
       const n=f.properties.name||'';let h=0;for(let i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0;
       const base=GEO_PAL[h%GEO_PAL.length];
-      return {name:n,itemStyle:{areaColor:base}};
+      const hot=hotNames&&hotNames.has(n);
+      return {name:n,itemStyle:{areaColor:hot?'#f3e3b4':base}};
     });
   }catch(e){return []}
+}
+/* 判断一个经纬点是否落在某个 geo 要素内（射线法）。
+ * 只用于「这件要素有没有景点」的着色提示，不需要高精度，
+ * MultiPolygon 逐环求和即可；落在洞里也照样算「内有景点」，对提示来说够用。 */
+function featHasPoint(f,pt){
+  const g=f&&f.geometry;if(!g)return false;
+  const polys=g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[];
+  return polys.some(poly=>(poly[0]||[]).length>2&&ringHas(poly[0],pt));
+}
+function ringHas(ring,pt){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    if(((yi>pt[1])!==(yj>pt[1]))&&(pt[0]<(xj-xi)*(pt[1]-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
 }
 /* ---- 图标（普通 / 点亮金圈发光版） ---- */
 /* 标点图标见下方 spotPin：按景点类型给专属 emoji + 配色，做成手帐风贴纸 */
 function spotSeries(list,litIds){
-  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,rippleEffect:{brushType:'stroke',scale:3.4},
+  return {id:'wgo-spots',type:'effectScatter',coordinateSystem:'geo',geoIndex:0,rippleEffect:{brushType:'stroke',scale:3.4},
     symbolSize:9,itemStyle:{color:'#ff6b57',shadowBlur:12,shadowColor:'rgba(255,107,87,.7)'},
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id})),zlevel:2};
 }
 function iconSeries(list,litIds){
   litIds=litIds||new Set();
-  return {type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:34,cursor:'pointer',
+  /* id 固定：core.js 拉到后端打卡记录后按 id 局部重刷 symbol，不用重建整张图 */
+  return {id:'wgo-icons',type:'scatter',coordinateSystem:'geo',geoIndex:0,zlevel:3,symbolSize:34,cursor:'pointer',
     emphasis:{scale:1.3},
-    symbol:(v,p)=>spotPin(p.data.id,litIds.has(p.data.id)),
+    label:{show:true,position:'right',distance:7,color:PAPER.ink,fontSize:10,fontWeight:700,
+      textBorderColor:'rgba(255,252,244,.95)',textBorderWidth:2.5,
+      formatter:p=>shortName(p.data&&p.data.name)},
+    symbol:(v,p)=>spotPin(p.data.id,litIds.has(p.data.id),p.data.id===SPOT_SEL),
     data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))};
+}
+/* 当前选中的景点（弹窗打开时那一枚）：图标描边转为高亮色，关掉弹窗即清除 */
+let SPOT_SEL='';
+/* 标点名字标签：景点名普遍 5~8 个字，市级下钻后密集时只保留前 6 个字，避免糊成一片 */
+function shortName(n){
+  n=String(n||'');
+  return n.length>7?n.slice(0,6)+'…':n;
 }
 /* 点亮金环涟漪层 */
 function litSeries(list,litIds){
   litIds=litIds||new Set();
   const data=list.filter(s=>litIds.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}));
-  return {type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:2.5,rippleEffect:{brushType:'stroke',scale:5.2,period:3.2},
+  return {id:'wgo-lit',type:'effectScatter',coordinateSystem:'geo',geoIndex:0,zlevel:2.5,rippleEffect:{brushType:'stroke',scale:5.2,period:3.2},
     symbolSize:16,itemStyle:{color:'#ffd76a',shadowBlur:22,shadowColor:'rgba(255,205,88,.9)'},
     data,z:5};
 }
 function lineSeries(list){
-  return {type:'lines',coordinateSystem:'geo',geoIndex:0,zlevel:1,
+  /* id 固定：下钻到省/市层时按 id 清空航线，避免航线横穿全省糊住标点 */
+  return {id:'wgo-flights',type:'lines',coordinateSystem:'geo',geoIndex:0,zlevel:1,
     effect:{show:true,period:4.2,trailLength:.55,symbol:'arrow',symbolSize:5,color:'#f0d488'},
     lineStyle:{color:'#e7c76d',width:1.1,opacity:.32,curveness:.28},
     data:list.map(s=>({coords:[[116.40,39.90],[s.lng,s.lat]],id:s.id}))};
@@ -105,19 +158,44 @@ function spotStyle(id){
   for(const [re,emo,a,b] of SPOT_STYLE){if(re.test(txt))return {emo,a,b}}
   return {emo:'📍',a:'#f2d8b8',b:'#a97c4c'};
 }
-function spotPin(id,lit){
+function spotPin(id,lit,sel){
   const st=spotStyle(id);
+  const ring=sel?'#3f86ff':(lit?'#ffd76a':'#fffdf8');
   return 'image://data:image/svg+xml;charset=utf-8,'+encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="80">'
     +'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
     +'<stop offset="0" stop-color="'+st.a+'"/><stop offset="1" stop-color="'+st.b+'"/></linearGradient></defs>'
-    +'<path d="M32 76 L26 48 L38 48 Z" fill="'+(lit?'#ffd76a':'#c9553f')+'"/>'
-    +'<circle cx="32" cy="27" r="21" fill="url(#g)" stroke="'+(lit?'#ffd76a':'#fffdf8')+'" stroke-width="3'+(lit?'5':'')+'"/>'
+    +'<path d="M32 76 L26 48 L38 48 Z" fill="'+(sel?'#3f86ff':(lit?'#ffd76a':'#c9553f'))+'"/>'
+    +'<circle cx="32" cy="27" r="21" fill="url(#g)" stroke="'+ring+'" stroke-width="'+(sel?6:(lit?5:3))+'"/>'
     +'<text x="32" y="35" font-size="20" text-anchor="middle">'+st.emo+'</text>'
     +'</svg>');
 }
-/* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS） */
-function spotThumbURL(id){try{return IMG(P[id]||id,'square')}catch(e){return ''}}
+/* 选中态联动：地图页弹窗打开/关闭时调用，只重刷图标层，不重建整图 */
+function selectMapSpot(id){
+  SPOT_SEL=id||'';
+  Object.keys(CHARTS).forEach(k=>{
+    const c=CHARTS[k];if(!c||c.isDisposed&&c.isDisposed())return;
+    const has=(c.getOption().series||[]).some(s=>s.id==='wgo-icons');
+    if(has)c.setOption({series:[{id:'wgo-icons',symbol:(v,p)=>spotPin(p.data.id,litSet().has(p.data.id),p.data.id===SPOT_SEL)}]});
+  });
+}
+/* 缩略图仅用于 tooltip（<img> 直连，不需要 CORS）
+ * 只认本地图库：tooltip 里的 <img> 拿不到 core 的降级链（不在 document 树里），
+ * 若回落到 IMG() 的文生图外链，一旦接口抽风就会在贴纸旁留一块空白。
+ * 本地没有该景点图时函数返回空串，formatter 改显示 SVG 占位图标。 */
+function spotThumbURL(id){
+  try{return (typeof localImg==='function'&&localImg(id))||''}catch(e){return ''}
+}
+/* 缩略图占位：tooltip 里的 <img> 不在 document 树里，拿不到 core 的全局兜底，
+ * 所以这里直接按时段类型（景点/餐饮/酒店/城市）取分级占位图，而不是统一一张。 */
+function spotThumbPH(id){
+  if(typeof imgPlaceholderSvg!=='function')return '';
+  const s=(typeof spotById==='function'&&spotById(id))||{};
+  const kind=(typeof imgKindOf==='function')
+    ?imgKindOf({dataset:{key:id},alt:s.n||s.city||''})
+    :'spot';
+  return imgPlaceholderSvg(kind);
+}
 /* 标点图标是纯本地 SVG，无需异步预取与刷新 */
 function prefetchThumbs(){}
 function refreshSpotPins(){}
@@ -126,7 +204,7 @@ function refreshSpotPins(){}
  * 且每次 georoam 要对 10 个 geo 同步 setOption，缩放必然卡。
  * 现在只保留 1 层：纸面底色 + 莫兰迪色块 + 虚线省界 + 手写体地名。 */
 function baseGeo(map){
-  return {map:map,roam:'scale',scaleLimit:{min:.8,max:8},
+  return {map:map,roam:'scale',scaleLimit:geoZoomLimit(map),
     zoom:map==='china'?1.18:1.06,center:map==='china'?[104.5,36.5]:[8,26],
     layoutCenter:['50%','50%'],layoutSize:'88%'};
 }
@@ -224,6 +302,87 @@ function decorSeries(mode){
     symbol:()=>decorIcon('cloud'),itemStyle:{opacity:.5},
     data:[{value:[-30,45]},{value:[10,52]},{value:[105,10]},{value:[-45,-20]}]}];
 }
+/* ================= 城市边界圈选（P0-3） =================
+ * GeoJSON 由 scripts/fetch-geo.js 从阿里云 DataV GeoAtlas 预下载到 geo/{adcode}.json，
+ * 城市名 → adcode 的映射在 geo/manifest.js（window.WGO_GEO）。运行时零外部请求。
+ * 命中城市：画半透明色块 + 只显示圈内景点与路线；没下到边界的城市保持原样。 */
+const CITY_GEO_CACHE={};
+function cityGeoCode(city){
+  if(!city)return '';
+  const m=(typeof window!=='undefined'&&window.WGO_GEO)||{};
+  if(m[city])return m[city];
+  /* 兼容「大理白族自治州」「杭州市」这类全称：按前缀匹配 */
+  const k=Object.keys(m).find(n=>city.indexOf(n)===0||n.indexOf(city)===0);
+  return k?m[k]:'';
+}
+/* 同步取已加载过的边界（首次调用返回 null，需要走 loadCityGeo） */
+function cityGeoLoaded(city){
+  const code=cityGeoCode(city);
+  return code?CITY_GEO_CACHE[code]||null:null;
+}
+function loadCityGeo(city,cb){
+  const code=cityGeoCode(city);
+  if(!code)return cb(null);
+  if(CITY_GEO_CACHE[code])return cb(CITY_GEO_CACHE[code]);
+  /* 走 fetch 而不是注入 <script type="application/json" src>：
+   * 后者在部分浏览器内核下既不触发 onload 也不触发 onerror，请求根本不会发出，
+   * 回调永不执行 → 地图区域永久空白且控制台无任何报错，极难排查。
+   * fetch 同时能拿到 HTTP 状态，失败可以明确降级。 */
+  let settled=false;
+  const done=geo=>{if(settled)return;settled=true;cb(geo)};
+  /* 兜底超时：即使 fetch 卡住也不能让地图一直空白，4 秒后按「无边界」正常画点位 */
+  const timer=setTimeout(()=>done(null),4000);
+  if(typeof fetch!=='function'){clearTimeout(timer);return done(null)}
+  fetch('geo/'+code+'.json',{cache:'force-cache'})
+    .then(r=>r.ok?r.json():null)
+    .then(geo=>{clearTimeout(timer);if(geo)CITY_GEO_CACHE[code]=geo;done(geo||null)})
+    .catch(()=>{clearTimeout(timer);done(null)});
+}
+/* 有城市边界时注册成独立地图：ECharts 4 的 geo 只能指定一张 map，
+ * 之前直接把 china 地图放大到 city 的经纬度范围，放大 25~60 倍后原始
+ * 中国地图的简化精度（省级 1000 级坐标点）已经撑不住，画面上只剩几根海岸线、
+ * 城市轮廓完全无法辨认，点位也被挤成一线。
+ * 这里把城市 GeoJSON 注册为按 adcode 命名的独立地图，geo 直接用它，zoom 保持 1 即可满屏。 */
+function registerCityMap(geo,code){
+  /* 名字必须按城市区分：echarts.registerMap 是全局注册表，
+   * 所有城市共用一个 'wgo-city' 的话，第二座城市会沿用第一座已注册的那份 GeoJSON
+   * （render 里 getMap 已存在就跳过注册），于是规划成都却画出潮州的轮廓。 */
+  const name='wgo-city-'+(code||'x');
+  if(!geo||!geo.features||!geo.features.length)return null;
+  try{
+    if(!(echarts.getMap&&echarts.getMap(name)))echarts.registerMap(name,geo);
+    return name;
+  }catch(e){return null}
+}
+/* 边界外接矩形：用于 fitBounds 聚焦（比按点位拟合更稳，点位不会贴着画布边） */
+function geoBBox(geo){
+  let x0=180,x1=-180,y0=90,y1=-90;
+  const walk=c=>{
+    if(typeof c[0]==='number'){if(c[0]<x0)x0=c[0];if(c[0]>x1)x1=c[0];if(c[1]<y0)y0=c[1];if(c[1]>y1)y1=c[1];return}
+    c.forEach(walk);
+  };
+  (geo.features||[]).forEach(f=>walk(f.geometry.coordinates));
+  return x0>x1?null:{min:[x0,y0],max:[x1,y1],center:[(x0+x1)/2,(y0+y1)/2]};
+}
+/* 射线法判点是否在城市轮廓内（跨环累加奇偶，MultiPolygon 直接平铺所有环） */
+function inCityGeo(geo,lng,lat){
+  if(!geo)return true;
+  let inside=false;
+  const rings=[];
+  (geo.features||[]).forEach(f=>{
+    const t=f.geometry.type,co=f.geometry.coordinates;
+    if(t==='Polygon')co.forEach(r=>rings.push(r));
+    else if(t==='MultiPolygon')co.forEach(poly=>poly.forEach(r=>rings.push(r)));
+  });
+  rings.forEach(r=>{
+    for(let i=0,j=r.length-1;i<r.length;j=i++){
+      const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];
+      if(((yi>lat)!==(yj>lat))&&(lng<(xj-xi)*(lat-yi)/(yj-yi)+xi))inside=!inside;
+    }
+  });
+  return inside;
+}
+
 /* ================= 镜头飞行（单层 geo 补间） ================= */
 function flyTo(chart,target,targetZoom,dur){
   dur=dur||950;
@@ -263,28 +422,96 @@ function createWanderMap(elId,mode,opts){
   c.setOption({backgroundColor:PAPER.bg,
     tooltip:{trigger:'item',backgroundColor:'rgba(250,245,233,.97)',borderColor:'rgba(201,183,154,.9)',textStyle:{color:'#6b5c47',fontSize:12},
       extraCssText:'box-shadow:0 8px 24px rgba(120,98,70,.24);border-radius:10px;',
-      formatter:p=>p.data&&p.data.id?('<div style="display:flex;gap:8px;align-items:center">'
-        +'<img src="'+spotThumbURL(p.data.id)+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none" onerror="this.style.display=\'none\'">'
-        +'<div><b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情</div></div>'):(p.name||'')},
+      formatter:p=>{
+        if(!(p.data&&p.data.id))return p.name||'';
+        /* 缩略图只走本地图库；缺图时按类型显示分级占位图标，不留白 */
+        const th=spotThumbURL(p.data.id);
+        const ph=spotThumbPH(p.data.id);
+        return '<div style="display:flex;gap:8px;align-items:center">'
+          +'<img src="'+(th||ph)+'" alt="'+(p.data.name||'')+'" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none"'
+          +(th&&ph?' onerror="this.onerror=null;this.src=\''+ph+'\'"':'')+'>'
+          +'<div><b>'+p.data.name+'</b><br>'+(opts.litIds&&opts.litIds.has(p.data.id)?'✨ 已点亮 · ':'')+'点击标点查看详情</div></div>';
+      }},
     geo:geoLayers(mode,opts),series});
   /* 缩略图仅用于 tooltip，图标本身是本地 SVG，无需预取 */
   c.on('click',p=>{
-    if(p.data&&p.data.id){ /* 标点：详情 + 镜头飞过去 */
-      flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
-      if(opts.onSpot)opts.onSpot(p.data.id);
-    }else if(p.componentType==='geo'&&p.name){ /* 空白省份：飞到省中心 */
-      try{
-        const f=echarts.getMap(mode==='cn'?'china':mode).geoJson.features.find(f=>(f.properties.name||'')===p.name);
-        const cp=f&&f.properties&&f.properties.cp;
-        if(cp)flyTo(c,[cp[0],cp[1]],2.4);
-      }catch(e){}
+    /* 标点 / 省份 / 城市 三种点击都由顶层统一分发，保证下钻与弹窗顺序一致 */
+    if(p.data&&p.data.id){
+      /* 顺序：先下钻定位到该景点所在城市，落位后再回调弹窗（避免弹窗挡住下钻动画） */
+      const moved=opts.onSpotCity?opts.onSpotCity(c,p.data.id):false;
+      if(!moved){
+        flyTo(c,[p.data.value[0],p.data.value[1]],Math.max((c.getOption().geo[0]||{}).zoom||1,2.6));
+        if(opts.onSpot)opts.onSpot(p.data.id);
+      }
+      return;
     }
+    if(p.componentType!=='geo'||!p.name||!isChinaMap(c))return;
+    const geoNow=c.getOption().geo[0]||{};
+    const cp=mapFeatureCP(geoNow.map,p.name);
+    /* 省级视图里点「有景点的市」直接下钻；没有景点的市只飞过去看，不换底图 */
+    if(handleGeoClick(c,p.name,cp))return;
+    if(cp)flyTo(c,cp,DRILL.lvl==='cn'?2.2:3.2);
   });
   /* 单层 geo 下 ECharts 自己维护 zoom / center，无需在 georoam 里再 setOption。
      旧代码每次滚轮都同步重绘全部 geo 层，是缩放卡顿的主因。 */
-  c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06}};
+  bindSmoothWheel(c);
+  c.__wgo={mode,opts,default:{center:(mode==='cn'||mode==='china')?[104.5,36.5]:[8,26],zoom:(mode==='cn'||mode==='china')?1.18:1.06},
+    flights:opts.flights?{data:opts.flights===true?(opts.spots||[]).map(s=>({coords:[[104.5,36.5],[s.lng,s.lat]]})):[]}:null};
+  if(mode==='cn'||mode==='china'){DRILL={root:c,lvl:'cn',code:'100000',name:'中国',stack:[]}}
   CHARTS[elId]=c;
   return c;
+}
+/* ================= 滚轮缩放（P2：逐级 + 惯性补间） =================
+ * 原生 roam:'scale' 的滚轮是一次性跳变（跟鼠标滚轮的 delta 一步到位），滚起来一顿一顿。
+ * 这里只接管滚轮：按滚轮方向换算成「一级」缩放目标（每级 ×1.18），
+ * 再用 rAF 以指数逼近的方式补间过去，连续滚动会不断刷新目标值，视觉上是平滑的连续放大。
+ * 手势缩放（触屏 pinch）仍交给 ECharts 自己的 roam 处理，逻辑不重复。 */
+const WHEEL_STEP=1.18, WHEEL_MIN=.8, WHEEL_MAX=8;
+/* 缩放上限跟随层级：全国层省界精度有限，放到 8 倍只剩几根简画的海岸线，
+ * 所以全国层最多 4 倍（够看清省份名与省会），省/市层边界精度更高，允许 8 倍看清街道级布局。 */
+function geoZoomLimit(map){
+  if(map==='china'||map==='cn'||map==='wgo-cn-provinces')return {min:.8,max:4};
+  /* 区县底图本身就比整市大一圈，允许放到更大，保证「越钻越近」的手感 */
+  if(String(map).indexOf('wgo-lvl-d')===0)return {min:.8,max:14};
+  if(String(map).indexOf('wgo-lvl-')===0)return {min:.8,max:8};
+  return {min:.8,max:8};
+}
+function bindSmoothWheel(chart){
+  const el=chart.getDom&&chart.getDom();
+  if(!el&&!chart.getZr)return;
+  const host=el||chart.getZr().painter.getViewportRoot();
+  if(!host||host.__wgoWheel)return;
+  host.__wgoWheel=true;
+  let target=null,rafId=0,lastT=0;
+  const jump=z=>{try{chart.setOption({geo:{zoom:Math.min(zMax(),Math.max(WHEEL_MIN,z))}},{lazyUpdate:true,silent:true})}catch(e){}};
+  /* 当前底图的缩放上限：滚轮 / 按钮都按 geoZoomLimit 夹紧，避免全国层被放大成一片空白 */
+  const zMax=()=>{
+    const g=(chart.getOption().geo||[])[0]||{};
+    return (geoZoomLimit(g.map).max)||WHEEL_MAX;
+  };
+  const tick=now=>{
+    const t=(chart.getOption().geo||[])[0]||{};
+    const curZ=+t.zoom||1;
+    const dt=Math.min(64,now-(lastT||now));lastT=now;
+    /* 每 16ms 走掉剩余距离的 22%，整体约 150~200ms 到位，既不拖沓也不生硬 */
+    const k=1-Math.pow(.78,dt/16);
+    const next=curZ+(target-curZ)*k;
+    jump(next);
+    if(Math.abs(target-next)<.004){jump(target);rafId=0;target=null;lastT=0;return}
+    rafId=requestAnimationFrame(tick);
+  };
+  const onWheel=e=>{
+    /* 触控板横向滑动不缩放 */
+    if(Math.abs(e.deltaY)<Math.abs(e.deltaX))return;
+    e.preventDefault();
+    const t=(chart.getOption().geo||[])[0]||{};
+    const curZ=target!=null?target:(+t.zoom||1);
+    /* 滚动幅度换算级数：鼠标滚轮常见 deltaY=100，一次即一级；触控板小 delta 也能平滑累积 */
+    const steps=Math.max(-3,Math.min(3,-e.deltaY/100));
+    target=Math.min(zMax(),Math.max(WHEEL_MIN,curZ*Math.pow(WHEEL_STEP,steps)));
+    if(!rafId){lastT=0;rafId=requestAnimationFrame(tick)}
+  };
+  host.addEventListener('wheel',onWheel,{passive:false});
 }
 /* ================= AI 路线层：按 Day 分色连线 + 起点旗标 + 顺序标号 ================= */
 const DAY_COLORS=['#e7c76d','#7ea6d9','#6cc47a','#e58fb1','#9a86d9'];
@@ -319,11 +546,305 @@ function routeSeries(route){
 }
 function zoomBy(chart,factor){
   if(!chart)return;const o=chart.getOption(),t=o.geo&&o.geo[0];if(!t)return;
-  const z=Math.min(8,Math.max(.8,(t.zoom||1)*factor));
+  const lim=geoZoomLimit(t.map);
+  const z=Math.min(lim.max,Math.max(lim.min,(t.zoom||1)*factor));
   const c=chart.__wgo&&chart.__wgo.default?chart.__wgo.default.center:[104.5,36.5];
   flyTo(chart,t.center&&t.center[0]!=null?t.center:c,z,450);
 }
 function resetView(chart){if(!chart)return;const d=chart.__wgo.default;flyTo(chart,d.center,d.zoom,700)}
+
+/* 判断实例是否为中国地图（含下钻后的省/市级，地图名都独立注册） */
+function isChinaMap(c){
+  try{
+    const g=(c.getOption().geo||[])[0];if(!g)return false;
+    return g.map==='cn'||g.map==='china'||String(g.map).indexOf('wgo-lvl-')===0;
+  }catch(e){return false}
+}
+/* ================= 层级下钻（P2）：全国 → 省 → 市 =================
+ * 底图来源：scripts/fetch-prov.js 从阿里云 DataV GeoAtlas 预下载
+ *   geo/prov/100000.json    全国省级轮廓（含 cp 中心点）
+ *   geo/prov/{省adcode}.json 该省下辖市/区县轮廓
+ *   geo/prov/{市adcode}.json 单个城市轮廓（市级下钻底图）
+ *   geo/prov/manifest.js    window.WGO_PROV 清单
+ * 每层把对应 GeoJSON 注册成独立地图名（wgo-prov-xxx），切换时 setOption 换 geo.map，
+ * 标点按「本层范围内的景点」重算，已打卡的用金色实心钉区分（spotPin(lit=true)）。
+ * 全部资源本地化，运行时零外部请求：离线 / 答辩现场也能完整下钻。 */
+const LVL_MAPS={};           /* adcode → 注册后的地图名（一次性注册，重复进层直接复用） */
+const LVL_GEO={};            /* adcode → GeoJSON（内存缓存，避免来回切换重复 fetch） */
+const LVL_LOADING={};
+let DRILL={root:null,lvl:'cn',code:'100000',name:'中国',stack:[]};
+/* 城市名 → 省级 adcode（地名归一走 core 的 cityCanon / CITY_PROV / PROV_NAME） */
+const PROV_ADCODE={'北京':'110000','上海':'310000','天津':'120000','重庆':'500000','河北':'130000','山西':'140000',
+  '内蒙古':'150000','辽宁':'210000','吉林':'220000','黑龙江':'230000','江苏':'320000','浙江':'330000','安徽':'340000',
+  '福建':'350000','江西':'360000','山东':'370000','河南':'410000','湖北':'420000','湖南':'430000','广东':'440000',
+  '广西':'450000','海南':'460000','四川':'510000','贵州':'520000','云南':'530000','西藏':'540000','陕西':'610000',
+  '甘肃':'620000','青海':'630000','宁夏':'640000','新疆':'650000','台湾':'710000','香港':'810000','澳门':'820000'};
+/* cityCanon 后的城市名 → 省简称
+ * 这里必须覆盖 map 上全部标点所在的城市，否则 provAdcodeOf 返回空串，
+ * 景点会在全国层之后的所有层级里「消失」（筛选不到任何一层）。
+ * 前半段是 SPOTS 老数据补丁，后半段是「全国省份覆盖补全」新增景点的城市。 */
+const CITY2PROV_EXTRA={
+  '九寨沟':'四川','敦煌':'甘肃','喀什':'新疆','凤凰':'湖南','张家界':'湖南','香格里拉':'云南',
+  /* 全国覆盖补全 */
+  '承德':'河北','大同':'山西','五台山':'山西','平遥':'山西','呼伦贝尔':'内蒙古','大连':'辽宁',
+  '安图':'吉林','扬州':'江苏','宁波':'浙江','舟山':'浙江','绍兴':'浙江','合肥':'安徽','黄山':'安徽',
+  '南昌':'江西','景德镇':'江西','婺源':'江西','威海':'山东','开封':'河南','恩施':'湖北','南宁':'广西',
+  '北海':'广西','荔波':'贵州','林芝':'西藏','延安':'陕西','张掖':'甘肃','西宁':'青海','共和':'青海',
+  '银川':'宁夏','阿勒泰':'新疆','伊犁':'新疆','台北':'台湾','高雄':'台湾','香港':'香港','澳门':'澳门',
+  '中卫':'宁夏','嘉峪关':'甘肃','天水':'甘肃','酒泉':'甘肃','格尔木':'青海',
+  /* 自治州 / 县级市补丁（数据里存的是州名或县名） */
+  '阿坝':'四川','海北':'青海','延边':'吉林','安图':'吉林','湘西':'湖南','共和':'青海',
+  '黔东南':'贵州','黔南':'贵州','大理':'云南','西双版纳':'云南','甘孜':'四川','甘南':'甘肃',
+  '广州':'广东','佛山':'广东','珠海':'广东','潮汕':'广东','深圳':'广东'
+};
+function provShort(city){
+  if(!city)return '';
+  const c=(typeof cityCanon==='function')?cityCanon(city):city;
+  const p=(typeof CITY_PROV!=='undefined'&&CITY_PROV[c])||CITY2PROV_EXTRA[c]||'';
+  return p;
+}
+function provAdcodeOf(city){
+  const p=provShort(city);
+  return PROV_ADCODE[p]||'';
+}
+/* 省级 GeoJSON 里某个城市对应的要素名（「杭州市」→「杭州市」/「杭州」；直辖市→「渝中区」这种区级不从城市名推） */
+function cityInProv(adcode,city){
+  const meta=(window.WGO_PROV||{})[adcode];
+  if(!meta)return '';
+  const c=(typeof cityCanon==='function')?cityCanon(city):city;
+  const hit=(meta.cities||[]).find(x=>x.name===c||x.name===c+'市'||x.name.indexOf(c)===0);
+  return hit?hit.name:'';
+}
+/* 取一份边界，注册成 ECharts 地图名。cb(mapName|null) */
+function loadLevelGeo(code,cb){
+  if(code==='100000')return cb(LVL_GEO['100000']?'wgo-cn-provinces':null);
+  if(LVL_MAPS[code])return cb(LVL_MAPS[code]);
+  if(LVL_LOADING[code]){LVL_LOADING[code].push(cb);return}
+  LVL_LOADING[code]=[cb];
+  const done=geo=>{
+    let name=null;
+    if(geo&&geo.features&&geo.features.length){
+      name='wgo-lvl-'+code;
+      LVL_GEO[code]=geo;
+      try{
+        if(!(echarts.getMap&&echarts.getMap(name)))echarts.registerMap(name,geo);
+        LVL_MAPS[code]=name;
+      }catch(e){name=null}
+    }
+    (LVL_LOADING[code]||[]).forEach(f=>f(name));
+    delete LVL_LOADING[code];
+  };
+  if(typeof fetch!=='function')return done(null);
+  /* 区县层读 {市adcode}.districts.json；省/市层读 {adcode}.json */
+  const file=String(code).indexOf('d')===0?String(code).slice(1)+'.districts.json':code+'.json';
+  fetch('geo/prov/'+file,{cache:'force-cache'})
+    .then(r=>r.ok?r.json():null).then(done).catch(()=>done(null));
+}
+/* 区县层的地图键：'d'+市adcode，与省/市层的 adcode 区分开，避免同一市两种底图撞名 */
+function districtKey(cityCode){return 'd'+cityCode}
+/* 当前层级可见的景点 */
+function spotsInLevel(st){
+  st=st||DRILL;
+  const all=(typeof SPOTS!=='undefined'?SPOTS:[]).filter(s=>s.rg==='cn');
+  if(st.lvl==='cn')return all;
+  if(st.lvl==='prov'){
+    return all.filter(s=>provAdcodeOf(s.city)===st.code);
+  }
+  /* 区县层：同省 + 同市。区县名只用于底部提示，景点数据本身没有区县字段，
+   * 所以这一层按「整个市」渲染，保证放大的同时不丢标点 */
+  if(st.lvl==='dist'){
+    return all.filter(s=>{
+      if(provAdcodeOf(s.city)!==st.prov)return false;
+      if(isMunicipality(st.prov))return true;
+      const c=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+      return !st.city||c===st.city;
+    });
+  }
+  /* 市级：同省 + 城市名匹配（避免「朝阳区」这类同名跨省误判）。
+   * 直辖市（北京/上海/天津/重庆）的「市」就是省级本身，此时全市景点都算这一层 */
+  return all.filter(s=>{
+    if(provAdcodeOf(s.city)!==st.prov)return false;
+    const c=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+    return isMunicipality(st.prov)||c===st.city;
+  });
+}
+/* 当前层级是「市级」时，取该市下辖区县底图需要的市 adcode；取不到返回空串 */
+function cityAdcodeOf(st){
+  st=st||DRILL;
+  if(st.lvl==='city'){
+    const meta=(window.WGO_PROV||{})[st.prov];
+    if(!meta)return '';
+    /* 直辖市：市 = 省本身；其余按全省城市清单里名字匹配 */
+    if(isMunicipality(st.prov))return st.prov;
+    const hit=(meta.cities||[]).find(c=>c.name===st.name||c.name.indexOf(st.city||'')===0||c.name.indexOf(st.name)===0);
+    return hit?hit.adcode:'';
+  }
+  if(st.lvl==='dist'){
+    /* 区县层：底图键本身已经带了市 adcode */
+    return String(st.code||'').replace(/^d/,'');
+  }
+  return '';
+}
+/* 直辖市：省级 adcode 末两位为 01（北京/天津/上海/重庆 主城区） */
+function isMunicipality(code){
+  return ['110000','120000','310000','500000'].indexOf(String(code))>=0;
+}
+/* 取当前底图里某个要素的中心点（DataV 边界自带 properties.cp，没有就退回 bbox 中心） */
+function mapFeatureCP(mapName,name){
+  try{
+    const g=echarts.getMap(mapName);
+    const fs=(g&&g.geoJson&&g.geoJson.features)||[];
+    const f=fs.find(f=>{
+      const n=(f.properties&&f.properties.name)||'';
+      return n===name||n.indexOf(name)>=0||name.indexOf(n)>=0;
+    });
+    if(!f)return null;
+    if(f.properties&&f.properties.cp)return f.properties.cp;
+    const bb=geoBBox(f);
+    return bb?bb.center:null;
+  }catch(e){return null}
+}
+/* 下钻规则统一入口（全国层 → 省级，省级 → 市级）。
+ * 返回 true 表示已经处理（换层），false 表示交给调用方做飞行定位。
+ * 独立成函数是为了让「点击」与「搜索定位」共用同一套规则，避免两处逻辑漂移。 */
+function handleGeoClick(chart,name,cp){
+  if(!chart||!name)return false;
+  const g=(chart.getOption().geo||[])[0]||{};
+  const mapName=g.map||'china';
+  if(DRILL.lvl==='cn'||mapName==='china'||mapName==='wgo-cn-provinces'){
+    const short=(typeof cityCanon==='function')?cityCanon(name):name;
+    const code=PROV_ADCODE[short]||PROV_ADCODE[short.replace(/(省|市|自治区|壮族自治区|回族自治区|维吾尔自治区|特别行政区)/g,'')];
+    if(!code)return false;                 /* 台湾等未收录边界：让调用方飞过去就好 */
+    DRILL.stack=[];
+    drillTo(chart,{lvl:'prov',code,name:name,prov:code,city:''});
+    return true;
+  }
+  if(DRILL.lvl==='prov'){
+    if(isMunicipality(DRILL.code)){
+      /* 直辖市：省级底图本身就是区县轮廓，点区县再放大一级（区县底图用同省的 districts） */
+      drillTo(chart,{lvl:'dist',code:districtKey(DRILL.code),name:name,prov:DRILL.code,city:DRILL.code});
+      return true;
+    }
+    const city=(typeof cityCanon==='function')?cityCanon(name):name;
+    drillTo(chart,{lvl:'city',code:DRILL.code,name:name,prov:DRILL.code,city});
+    return true;
+  }
+  if(DRILL.lvl==='city'){
+    /* 市级再下一层：区县底图（{市adcode}.districts.json）。
+     * 数据没下载到就不换层，只把镜头对准点击的区县，保证「点哪儿看哪儿」不落空 */
+    const cad=cityAdcodeOf(DRILL);
+    if(!cad)return false;
+    drillTo(chart,{lvl:'dist',code:districtKey(cad),name:name,prov:DRILL.prov,city:DRILL.city,dist:name});
+    return true;
+  }
+  return false;
+}
+/* 点景区标点 → 先把底图下钻到该景点所在城市，再弹简要信息弹窗。
+ * 顺序不能反：弹窗先出来会挡住下钻动画，用户看到的是「点了一下什么都没动」。
+ * 省级 / 市级底图都是异步加载的，所以每一步用 setTimeout 串行，落位后再居中到景点。 */
+function focusSpotCity(chart,id){
+  const s=(typeof spotById==='function')?spotById(id):null;
+  if(!chart||!s||s.rg!=='cn')return false;
+  const prov=provAdcodeOf(s.city);
+  if(!prov)return false;
+  const target=[s.lng,s.lat];
+  const city=(typeof cityCanon==='function')?cityCanon(s.city):s.city;
+  const centerOnSpot=()=>{
+    const z=Math.max(2.4,Math.min(4.2,((chart.getOption().geo||[])[0]||{}).zoom||2.4));
+    flyTo(chart,target,z,620);
+  };
+  const pname=provinceName(prov);
+  const inCity=cityInProv(prov,city);
+  const goCity=()=>{
+    if(!inCity||inCity===pname){centerOnSpot();return}
+    drillTo(chart,{lvl:'city',code:prov,name:inCity,prov,city});
+    setTimeout(centerOnSpot,760);
+  };
+  if(DRILL.lvl==='cn'||DRILL.prov!==prov){
+    DRILL.stack=[];
+    drillTo(chart,{lvl:'prov',code:prov,name:pname,prov,city:''});
+    setTimeout(goCity,780);
+    return true;
+  }
+  if(DRILL.lvl==='prov'){goCity();return true}
+  /* 已在市级但市不对（比如从大理点到了丽江的景点）：先换市再居中 */
+  if(DRILL.lvl==='city'&&cityCanon(DRILL.city||DRILL.name||'')!==city){goCity();return true}
+  centerOnSpot();
+  return true;
+}
+/* 省 adcode → 中文省名（用 WGO_PROV 清单，没加载到就退回 adcode） */
+function provinceName(code){
+  const m=(window.WGO_PROV||{})[code];
+  return (m&&m.name)||String(code);
+}
+function applyLevel(chart,st,fit){
+  if(!chart)return;
+  const paint=mapName=>{
+    const lit=(typeof litSet==='function')?litSet():new Set();
+    const list=spotsInLevel(st);
+    const isCn=st.lvl==='cn';   /* 全国层：回到默认镜头；省/市级按边界 fit */
+    /* 换底图：只改 geo.map / regions / label 字号，配色、虚线边界、字体全部沿用原视觉 */
+    chart.setOption({geo:{map:mapName,regions:regionColors(mapName,st),
+      zoom:isCn?1.18:1,center:isCn?[104.5,36.5]:null,
+      label:{fontSize:st.lvl==='cn'?10.5:(st.lvl==='prov'?9:10)}}},false);
+    chart.setOption({series:[
+      {id:'wgo-spots',data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))},
+      {id:'wgo-icons',data:list.map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))},
+      {id:'wgo-lit',data:list.filter(s=>lit.has(s.id)).map(s=>({name:s.n,value:[s.lng,s.lat],id:s.id}))}
+    ]},false);
+    /* 航线只在国家级展示：进省后航线会横穿全省、糊住标点 */
+    const fl=chart.__wgo&&chart.__wgo.flights;
+    if(fl&&!isCn)chart.setOption({series:[{id:'wgo-flights',data:[]}]},{lazyUpdate:true});
+    else if(fl&&isCn)chart.setOption({series:[{id:'wgo-flights',data:fl.data||[]}]},{lazyUpdate:true});
+    if(fit){if(isCn)fitLevel(chart,LVL_GEO['100000']||null);else fitLevel(chart,LVL_GEO[st.code]||null,st.lvl)}
+    if(typeof updateDrillUI==='function')updateDrillUI(st,list.length);
+    if(typeof refreshLitMarkers==='function')refreshLitMarkers();
+  };
+  if(st.lvl==='cn'){
+    if(!chart.__wgo||chart.__wgo.mode!=='cn')return;  /* 世界图不参与下钻 */
+    paint(LVL_GEO['100000']?'wgo-cn-provinces':'cn');   /* 省级边界加载完成前先退回内置 china */
+    return;
+  }
+  loadLevelGeo(st.code,name=>{
+    /* 换层时旧层的异步回调可能晚到：层级已经变了就不再绘制，否则会把新底图刷回旧层 */
+    if(DRILL!==st)return;
+    if(!name){toast('「'+st.name+'」边界数据缺失，请稍后重试','err');return}
+    paint(name);
+  });
+}
+/* 按边界外接矩形把视野对准本层范围（复用上方 geoBBox） */
+function fitLevel(chart,geo,lvl){
+  if(!chart)return;
+  const bb=geo?geoBBox(geo):null;
+  if(!bb)return;
+  /* 经验拟合：省级边界约占画布宽度的 1/1.9，市级占 1/2.6；
+   * 用外接框宽度换算，再夹在 1~4 之间，避免重庆这种窄长省份被拉得过近。
+   * 区县层范围更小，上限放到 8，保证「每钻一级镜头都更近」 */
+  const w=Math.max(.5,bb.max[0]-bb.min[0]);
+  const hi=lvl==='dist'?8:3.4;
+  const z=Math.max(1.05,Math.min(hi,90/Math.max(6,w)));
+  flyTo(chart,bb.center,z,760);
+}
+/* 进入某一层（st: {lvl:'prov'|'city', code, name, prov?, city?}） */
+function drillTo(chart,st){
+  DRILL.stack.push({lvl:DRILL.lvl,code:DRILL.code,name:DRILL.name,prov:DRILL.prov,city:DRILL.city});
+  Object.assign(DRILL,st);
+  applyLevel(chart,DRILL,true);
+}
+/* 返回上一级；已在国家级则返回 false */
+function drillBack(chart){
+  if(!DRILL.stack.length)return false;
+  const prev=DRILL.stack.pop();
+  Object.assign(DRILL,{lvl:'cn',code:'100000',name:'中国',prov:'',city:''},prev);
+  applyLevel(chart,DRILL,true);
+  return true;
+}
+function resetDrill(chart){
+  DRILL={root:chart,lvl:'cn',code:'100000',name:'中国',stack:[]};
+  /* 回到全国层时清掉标点选中态：层级之间不保留高亮描边 */
+  SPOT_SEL='';
+  applyLevel(chart,DRILL,true);
+}
 
 /* ================= 浅色「百度风」路线图 liteRouteMap =================
  * 白底 + 蓝色路线 + 行程区域自动聚焦（把那一块地区单独框出来）
@@ -358,15 +879,23 @@ function rtFitView(pts,chart){
   const center=[(Math.min(...lngs)+Math.max(...lngs))/2,(Math.min(...lats)+Math.max(...lats))/2];
   const width=chart.getWidth(),height=chart.getHeight();
   const padding=Math.min(48,width*.18,height*.18);
+  /* 迭代重算，而不是「量一次再按比例乘」：
+   * zoom 与像素位移不成正比（geo 以 layoutCenter 为原点缩放，且受投影纵横比影响），
+   * 一次乘比例会过冲——实测算出 zoom=21，整条路线反而被压进画布中心一小块。
+   * 这里每轮用实测半径反推目标倍率逐步逼近，再用点位内边距校验兜底。 */
   let zoom=1;
   chart.setOption({geo:{center,zoom}});
-  const probes=pts.concat([{lng:center[0]-.015,lat:center[1]-.015},{lng:center[0]+.015,lat:center[1]+.015}]);
-  const pixels=probes.map(p=>chart.convertToPixel({geoIndex:0},[p.lng,p.lat]));
-  const dx=Math.max(...pixels.map(p=>Math.abs(p[0]-width/2))),dy=Math.max(...pixels.map(p=>Math.abs(p[1]-height/2)));
-  zoom=Math.min((width/2-padding)/Math.max(dx,.001),(height/2-padding)/Math.max(dy,.001))*.96;
+  for(let i=0;i<10;i++){
+    const px=pts.map(p=>chart.convertToPixel({geoIndex:0},[p.lng,p.lat])).filter(a=>a&&Number.isFinite(a[0]));
+    if(!px.length)break;
+    const dx=Math.max(...px.map(a=>Math.abs(a[0]-width/2))),dy=Math.max(...px.map(a=>Math.abs(a[1]-height/2)));
+    const next=zoom*Math.min((width/2-padding)/Math.max(dx,1),(height/2-padding)/Math.max(dy,1));
+    if(Math.abs(next-zoom)<.02){zoom=next;break}
+    zoom=next;
+    chart.setOption({geo:{center,zoom}});
+  }
   chart.setOption({geo:{center,zoom}});
-  // 用实际路线点再次校验，确保数字标记留在内边距之内。
-  for(let i=0;i<12;i++){
+  for(let i=0;i<10;i++){
     const inside=pts.every(p=>{const xy=chart.convertToPixel({geoIndex:0},[p.lng,p.lat]);return xy&&Number.isFinite(xy[0])&&Number.isFinite(xy[1])&&xy[0]>=padding&&xy[0]<=width-padding&&xy[1]>=padding&&xy[1]<=height-padding});
     if(inside)break;
     zoom*=.8;chart.setOption({geo:{center,zoom}});
@@ -374,8 +903,11 @@ function rtFitView(pts,chart){
   return {center,zoom};
 }
 function liteGeo(map){
+  /* layoutCenter/layoutSize 不能少：去掉后 geo 铺满容器，zoom 又是在「铺满态」下
+   * 反复量算出来的，rtFitView 里 zoom 连乘后飙到 21，路线被压进画布中心一小块。
+   * 保留 layout 约束，zoom 的基准才是稳定的，量出来的比例可直接用。 */
   return {map:map,roam:true,zoom:1,center:map==='china'?[104.5,36.5]:[0,20],
-    layoutCenter:['50%','50%'],layoutSize:'88%',
+    layoutCenter:['50%','50%'],layoutSize:'100%',
     label:{show:true,color:'#9aa7ba',fontSize:9},
     itemStyle:{areaColor:'#eff3f9',borderColor:'#ffffff',borderWidth:1.2},
     emphasis:{label:{show:false},itemStyle:{areaColor:'#e2ebff'}}};
@@ -391,9 +923,20 @@ function createLiteRouteMap(elId,mode,opts){
   const el=document.getElementById(elId);if(!el||!window.echarts)return null;
   const c=echarts.init(el);
   const segs=(opts.segs||[]).slice().sort((a,b)=>a.day-b.day);
+  /* POI_COLOR / poiTypeOf 定义在 ai.js，地图脚本可能先于它加载，取不到就用内置默认色 */
+  const POI_MAP_COLOR=(typeof POI_COLOR!=='undefined'&&POI_COLOR)||
+    {'景区':'#c9a227','美食':'#e0653f','打卡点':'#2f9e8f','购物':'#7a5cc4'};
+  const poiTypeOf=(typeof window.poiTypeOf==='function')?window.poiTypeOf:()=>'景区';
+  /* 点位类型由地图页在构造 segs 时写进 points[].poiType（后端 is 空则按名称猜） */
+  const typeOf=p=>p.poiType||poiTypeOf({n:p.n});
   const stays=opts.stays||[],eats=opts.eats||[];
   let curMode=opts.mode||'drive',eatFilter='',selectedIndex=-1;
-  function orderedPts(){const arr=[];segs.forEach(sg=>sg.points.forEach(p=>arr.push({...p,day:sg.day})));return arr}
+  /* 城市边界（P0-3）：opts.city 命中有预下载 GeoJSON 时，
+   * 只保留圈内景点，并把视野按边界外接矩形聚焦 */
+  let cityGeo=opts.cityGeo||null;
+  const cityGeoCodeStr=cityGeo?(cityGeoCode(opts.city||'')||''):'';
+  const inCity=p=>!cityGeo||inCityGeo(cityGeo,p.lng,p.lat);
+  function orderedPts(){const arr=[];segs.forEach(sg=>sg.points.forEach(p=>{if(inCity(p))arr.push({...p,day:sg.day})}));return arr}
   function seriesOf(){
     const series=[];
     const all=orderedPts();
@@ -407,11 +950,14 @@ function createLiteRouteMap(elId,mode,opts){
       series.push({id:'route-stops',type:'scatter',coordinateSystem:'geo',zlevel:6,cursor:'pointer',
         symbol:'circle',
         symbolSize:(value,params)=>params.dataIndex===selectedIndex?36:30,
-        itemStyle:{color:RT_BLUE,borderColor:'#fff',borderWidth:2},
-        emphasis:{itemStyle:{color:'#1D4ED8',borderWidth:3}},
+        /* 按地点四分类上色：景区金 / 美食橙红 / 打卡点青 / 购物紫。
+         * 冷门城市补进来的非景区点如果和景点同色，地图上就看不出哪站能吃饭逛街 */
+        itemStyle:{color:p=>POI_MAP_COLOR[typeOf(p.data||{})]||RT_BLUE,borderColor:'#fff',borderWidth:2},
+        emphasis:{itemStyle:{borderWidth:3}},
         label:{show:true,position:'inside',color:'#fff',fontSize:12,fontWeight:800,
           formatter:p=>String(p.dataIndex+1)},
-        data:all.map((p,i)=>({name:p.n,value:[p.lng,p.lat],id:p.id,__rt:{kind:'spot',day:p.day,index:i}}))});
+        data:all.map((p,i)=>({name:p.n,value:[p.lng,p.lat],id:p.id,
+          poiType:p.poiType||'',__rt:{kind:'spot',day:p.day,index:i}}))});
       series.push({type:'scatter',coordinateSystem:'geo',zlevel:5,symbolSize:1,silent:true,
         label:{show:true,position:'right',distance:6,color:'#33415c',fontSize:11,fontWeight:600,
           formatter:p=>p.name,backgroundColor:'rgba(255,255,255,.85)',padding:[2,5],borderRadius:4},
@@ -441,8 +987,20 @@ function createLiteRouteMap(elId,mode,opts){
     return series;
   }
   function render(){
+    /* 视野按「全部站点」拟合，不要只按景点拟合：
+     * 总览模式下住宿 🏨 可能落在城市远郊（成都的西岭雪山、青城山一带），
+     * 只要按景点包围盒取景，这些点就被推到画布外，看起来像「地图没画出来」。 */
     const all=orderedPts().concat(stays).concat(eats);
-    const gOpt=liteGeo(mode);
+    /* 圈内视角：把城市边界注册成独立地图，geo 直接用 city 的 GeoJSON，
+     * 而不是把 china 放大几十倍（省级精度不足，放大后只剩海岸线）。 */
+    const cityMap=cityGeo?registerCityMap(cityGeo,cityGeoCodeStr):null;
+    const gOpt=liteGeo(cityMap||mode);
+    /* 城市边界只当底色，视野还是要按点位拟合：
+     * 手机竖屏下面板约 370×340，成都的行政边界接近方形，等比缩进后
+     * 三环内的行程只占中间一小块，点位叠在一起根本看不清路线。
+     * zoom 保持 1（城市 GeoJSON 已注册成独立地图，放大后精度足够），
+     * 由 rtFitView 平移/缩放到「行程点位刚好铺满面板」。 */
+    if(all.length&&cityMap){const v=rtFitView(all,c);gOpt.center=v.center;gOpt.zoom=v.zoom}
     c.setOption({backgroundColor:'#ffffff',
       tooltip:{trigger:'item',backgroundColor:'rgba(255,255,255,.97)',borderColor:'#d5deea',
         textStyle:{color:'#33415c',fontSize:12},extraCssText:'box-shadow:0 6px 20px rgba(30,50,90,.18);border-radius:8px;',
@@ -454,7 +1012,9 @@ function createLiteRouteMap(elId,mode,opts){
           return p.name||'';
         }},
       geo:gOpt,series:seriesOf()},true);
-    if(all.length)rtFitView(all,c);
+    /* cityMap 的 center/zoom 已算好写进 gOpt，这里不能再 setOption 一次，
+     * 否则同一帧内的第二次设置会把视野打回城市默认值（点位重新散开）。 */
+    if(all.length&&!cityMap)rtFitView(all,c);
   }
   function select(index){
     selectedIndex=index;
@@ -472,7 +1032,11 @@ function createLiteRouteMap(elId,mode,opts){
   });
   render();
   function resize(){if(c.isDisposed())return;c.resize();focusRoute()}
-  function focusRoute(){const all=orderedPts().concat(stays).concat(eats);if(all.length&&!c.isDisposed())rtFitView(all,c)}
+  function focusRoute(){
+    const all=orderedPts().concat(stays).concat(eats);
+    if(!all.length||c.isDisposed())return;
+    rtFitView(all,c);
+  }
   const observer=window.ResizeObserver?new ResizeObserver(resize):null;
   if(observer)observer.observe(el);else window.addEventListener('resize',resize);
   return {chart:c,segs:segs,select,

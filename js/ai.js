@@ -391,6 +391,54 @@ function splitDays(ids,reqDays,tripType){
   }));
   return days;
 }
+/* ================= 打卡视频推荐：B 站旅行 UP 主 demo 素材 =================
+ * 现阶段用 B 站旅行 Vlog 做演示，卡片封面用景点本地图，点击新窗口去 B 站。
+ * 每条素材只给「UP 主 + 个人空间 + 搜索关键词」：不用写死的 bvid，
+ * 避免视频下架/失效后卡片点进去是死链。
+ * 后续接入链接解析后，这里换成后端返回的真实视频（标题 / UP 主 / bvid / 封面）。 */
+const VLOG_UPS={
+  lai:{up:'赖导AboutLai',tag:'人文纪实',space:'https://space.bilibili.com/1019112796'},
+  links:{up:'Linksphotograph',tag:'摄影徒步',space:'https://space.bilibili.com/1867038'},
+  vivi:{up:'万能小维',tag:'深度旅行',space:'https://space.bilibili.com/352495385'}
+};
+/* 每条素材带一个固定的 B 站搜索主题词，点进去一定是真实、相关的结果页 */
+const VLOG_TPL={
+  lai:[{s:'在{s}走了一天，人文感拉满',kw:'{s} 人文'},{s:'{c}不那么热门的一天｜{s}',kw:'{c} 人文纪实'}],
+  links:[{s:'{s}的清晨与黄昏｜拍到手软',kw:'{s} 摄影'},{s:'背着相机去{s}，值得吗',kw:'旅行 vlog 摄影'}],
+  vivi:[{s:'{c}深度游｜{s}这一站别错过',kw:'{c} 深度游'},{s:'{s}到底怎么玩｜本地节奏',kw:'{s} 攻略'}]
+};
+function biliSearch(kw){
+  return 'https://search.bilibili.com/all?keyword='+encodeURIComponent(kw||'旅行 vlog');
+}
+/* 按规划的景点顺序挑 2-3 条视频，UP 主轮换，保证同一个行程里不重复 */
+function pickVlogCards(spotIds,destName,cityName){
+  const ids=(spotIds||[]).filter(Boolean).slice(0,3);
+  if(!ids.length)return [];
+  const keys=Object.keys(VLOG_UPS);
+  return ids.map((sid,i)=>{
+    const key=keys[i%keys.length],up=VLOG_UPS[key];
+    const s=typeof spotById==='function'?spotById(sid):null;
+    const sName=(s&&s.n)||destName;
+    const tpl=VLOG_TPL[key][i%VLOG_TPL[key].length];
+    const title=tpl.s.replace(/\{s\}/g,sName).replace(/\{c\}/g,cityName||destName);
+    return {
+      t:title,loc:sName,imgs:[sid,sid],
+      up:up.up,upTag:up.tag,upUrl:up.space,
+      /* 主按钮：直接打开该 UP 主在 B 站的相关搜索，链接永远有效 */
+      url:biliSearch(tpl.kw.replace(/\{s\}/g,sName).replace(/\{c\}/g,cityName||destName))
+    };
+  });
+}
+/* 视频卡片模板：整张卡只有一层 <a>（HTML 不允许 a 嵌套 a，嵌套会把一张卡拆成多段） */
+function vlogCardHtml(v,i,delay){
+  return `<a class="vlog-card" href="${v.url}" target="_blank" rel="noopener noreferrer" style="animation-delay:${delay+i*.08}s" onclick="event.stopPropagation()">
+      <div class="vl-thumb"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy" alt="${escHtml(v.t)}">
+        <span class="vl-play"><i>▶</i></span><span class="vl-bili">B站</span></div>
+      <div class="vl-body"><h6>${escHtml(v.t)}</h6>
+        <p class="vl-up"><span class="vl-ava">${escHtml((v.up||'UP').charAt(0))}</span><span class="vl-up-name">${escHtml(v.up)}</span><em>${escHtml(v.upTag||'')}</em></p>
+        <p class="vl-meta">📍 ${escHtml(v.loc)} · <span class="vl-go">去 B 站看 →</span></p></div>
+    </a>`;
+}
 /* 用「候选池 + 打分」为任意目的地生成完整规划（无硬编码行程） */
 function genPlan(e,reqDays){
   const [name,prov,lng,lat,spotNames,rg,days]=e;
@@ -436,7 +484,7 @@ function genPlan(e,reqDays){
     transport:transport,dist:rg==='ab'?0:far?2600:900,
     planB:{rain:'如遇降雨，改走'+name+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而通透出片。',rest:'逛累了找一家当地咖啡馆 / 茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就砍掉最远的一个点位，核心景区慢游半天也是完整的一天。'},
     crowd:{kid:'带娃优先选缆车 / 观光车接驳的点位，少走台阶；备齐防晒与常用药。',elder:'行程节奏放缓，每天核心点位不超过 2 个；'+(far?'高原 / 长途注意身体状况，行前做基础检查。':'注意景区接驳车末班时间。'),couple:name+'的日出 / 日落时段人少光好，适合拍照；可安排一顿当地特色晚餐。'},
-    videos:[{t:name+'旅行记录 · 打卡合集',loc:name,imgs:[spots[0],spots[1]||spots[0]]},{t:name+'慢节奏 vlog',loc:name,imgs:[spots[1]||spots[0],spots[2]||spots[0]]}],
+    videos:pickVlogCards(spots,name,city),
     plogs:[{t:'在'+name+'的慢时光',img:spots[0],txt:name+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。更多真实打卡可去社区搜索「'+name+'」看看大家怎么玩。'}],
     tips:'该目的地由 AI 模板库即时生成规划：点位为代表性推荐，订票前请用上方平台比价核价；社区里有大量「'+name+'」相关真实打卡与评论可参考。'
   };
@@ -696,9 +744,49 @@ function assertUniqueDays(plan){
 async function fetchRemotePlan(city,days,want){
   if(typeof WGOAPI==='undefined'||!WGOAPI.planRoute)return null;
   try{
+    /* 冷启动场景先探活：实例未醒就直接走本地兜底，别让用户干等 55 秒 */
+    if(WGOAPI.warm&&WGOAPI.status()!==true&&backendCold===false){
+      warmBackend();   /* 后台继续唤醒，醒了下一轮规划就能用上后端数据 */
+      return null;
+    }
     const r=await WGOAPI.planRoute(city,days,want);
     return (r&&r.ok&&Array.isArray(r.plan)&&r.plan.length)?r:null;
   }catch(_){return null}
+}
+/* 冷门城市兜底：静态库 / GEO_DB 都没收录时，从后端 scenic_spot 取该城景点。
+ * fetch-pois.js 拉的高德 POI 只进数据库，前端不动这一步就会报「没有识别到目的地」。
+ * 拿到数据后写回 SPOTS 再跑一次本地算法，后续排序 / 三餐 / 时刻表全部复用原有逻辑。 */
+function matchPlanRemote(q,reqDays,opt){
+  if(typeof WGOAPI==='undefined'||!WGOAPI.spotCity)return Promise.resolve(null);
+  /* 只取「市 / 县 / 区」前面的主体，避免把「想去潮州玩两天」整句当城市名 */
+  const m=String(q||'').match(/([\u4e00-\u9fa5]{2,6}?)(?:市|县|区)?(?:$|\s|\d)/);
+  const city=m?m[1]:'';
+  if(!city)return Promise.resolve(null);
+  return WGOAPI.spotCity(city).then(r=>{
+    const list=(r&&r.ok&&r.spots)||[];
+    if(!list.length)return null;
+    const has=new Set(SPOTS.map(s=>s.city+'|'+s.n));
+    let added=0;
+    list.forEach(it=>{
+      if(!it||!it.name||it.lng==null||it.lat==null)return;
+      const k=(it.city||city)+'|'+it.name;
+      if(has.has(k))return;
+      has.add(k);added++;
+      SPOTS.push({
+        id:'rm_'+encodeURIComponent(it.spot_key||it.name),
+        n:it.name,city:it.city||city,rg:'cn',
+        addr:(it.city||city)+' · '+it.name,
+        lng:+it.lng,lat:+it.lat,
+        hrs:'2-3 小时',traf:'当地交通可达',price:it.price||'以景区公示为准',
+        rating:+(it.rating||0)||4.3,openHrs:'以景区公告为准',
+        bestTime:'day',needBook:false,dur:180,
+        tag:it.tags||it.poi_type||'景点',desc:it.desc||'',
+        __poiType:it.poi_type||''
+      });
+    });
+    if(!added)return null;
+    return matchPlan(q,reqDays,opt);
+  }).catch(()=>null);
 }
 /* 行程生成：城市定位 → 同城候选池打分 → 按天数取点位 → 三餐/预约 → 每天时刻表 */
 function matchPlan(q,reqDays,opt){
@@ -725,7 +813,10 @@ function matchPlan(q,reqDays,opt){
   }
   if(!city){
     const g=geoMatch(q);
-    return g?genPlan(g,reqDays):null;
+    if(g)return genPlan(g,reqDays);
+    /* 静态库与 GEO_DB 都没收录的冷门城市（如潮州、景德镇），
+     * 改问后端 scenic_spot 表：那里有 fetch-pois.js 新拉的高德 POI */
+    return matchPlanRemote(q,reqDays,opt);
   }
   /* ② 候选池：同城全部景点；单城不足 3 个时，补同区近邻（80km 内，绝不跨地域） */
   const used=new Set();
@@ -805,7 +896,7 @@ function matchPlan(q,reqDays,opt){
     dist:meta.dist||0,
     planB:meta.planB||{rain:'如遇降雨，改走'+city+'市区内的博物馆 / 老街 / 茶馆等室内场景，雨后光线反而更通透。',rest:'逛累了就近找一家咖啡馆或茶馆歇脚，或回酒店午休 1 小时再出发。',lazy:'不想赶路就把最远的点位砍掉，核心景区慢游半天也算完整的一天。'},
     crowd:meta.crowd||{kid:'带娃优先选有观光车接驳的点位，少走台阶，备齐防晒与常用药。',elder:'每天核心点位不超过 2 个，注意景区接驳车末班时间。',couple:city+'的日出 / 日落时段人少光好，适合拍照。'},
-    videos:[{t:dest+'旅行记录 · 打卡合集',loc:city,imgs:[spots[0],spots[1]||spots[0]]},{t:city+'慢节奏 vlog',loc:city,imgs:[spots[1]||spots[0],spots[2]||spots[0]]}],
+    videos:pickVlogCards(spots,dest,city),
     plogs:[{t:'在'+city+'的慢时光',img:spots[0],txt:city+'的旅行不必赶路：挑一个好天气，把节奏放慢，随手一拍都是明信片。'}],
     tips:(meta.tips?meta.tips+' ':'')+(interestNote?interestNote+' ':'')+'行程由「景点库候选池 + 兴趣打分」实时生成：共 '+spots.length+' 个打卡点，分 '+reqD+' 天排布，每天 = 打卡点 + 三餐 + 住宿建议；开放时间与预约政策请以景区当日公告为准。'
   };
@@ -959,6 +1050,35 @@ function planMainLeg(km,traffic,pref){
   segs.push({m:'🏨 目的地接驳',t:'按次 20-40min',p:'¥30-80',s:.65,note:'高铁站 / 机场到酒店，打车或景区直通车'});
   return segs;
 }
+/* 后端冷启动探活状态：null=探活中 / false=仍在唤醒 / true=已就绪。
+ * 必须在模块作用域——runAI 里赋值，finishPlan 里读取；
+ * 写在 runAI 内部就变成局部变量，finishPlan 会直接 ReferenceError */
+let backendCold=null,waken=0;
+/* 后端连不上时的统一提示条：一直显示到探活成功（或本次规划结束） */
+function wakeTip(show,sec){
+  let el=document.getElementById('wakeTip');
+  if(!show){if(el)el.classList.remove('on');return}
+  if(!el){
+    el=document.createElement('div');
+    el.id='wakeTip';el.className='wake-tip';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<span class="wt-dot"></span><b>正在唤醒服务中…</b>'
+    +'<span class="wt-sub">后端实例休眠时首次访问需 30–50 秒'+(sec?'，已等待 '+sec+' 秒':'')
+    +'；可先用本地数据浏览，数据稍后自动同步</span>';
+  el.classList.add('on');
+}
+/* 探活 + 轮询：后端已热时第一次 ping 秒回，不打扰用户；未醒则显示唤醒提示并每 3 秒重试 */
+function warmBackend(){
+  if(typeof WGOAPI==='undefined'||!WGOAPI.warm)return Promise.resolve(null);
+  if(WGOAPI.status()===true)return Promise.resolve(true);
+  return WGOAPI.warm({max:120000,onWait:sec=>{backendCold=false;waken=sec;wakeTip(true,sec)}})
+    .then(r=>{
+      backendCold=!!r;
+      if(r){wakeTip(false);toast('✅ 后端服务已唤醒，正在同步线上数据…')}
+      return r;
+    });
+}
 function runAI(){
   const f=readForm();
   if(!f.from)return toast('请先填写出发地（起点）📍');
@@ -978,9 +1098,15 @@ function runAI(){
   let left=Math.round(total/1000);
   const TIPS=['正在解析你的出行需求…','正在聚合全网真实攻略…','正在清洗数据、剔除广告…','正在模块化生成方案…'];
   if(tip)tip.textContent='AI 正在思考：'+TIPS[0]+' · 约 '+left+' 秒';
+  /* 探活：Render 免费实例冷启动要 30–50 秒，未就绪时页面右下角显示
+   * 「正在唤醒服务中…」并每 3 秒轮询重试；后端已热时一次 ping 秒回，提示不闪 */
+  backendCold=null;waken=0;
+  warmBackend().then(ok=>{
+    if(!ok&&tip)tip.textContent='后端暂未唤醒，先用本地算法生成行程…';
+  });
   const t2=setInterval(()=>{
     left--;const idx=Math.min(3,Math.floor((total-left*1000)/seg));
-    if(tip){if(left>0)tip.textContent='AI 正在思考：'+TIPS[idx]+' · 约 '+left+' 秒';else tip.textContent='马上完成，正在排版模块…'}
+    if(tip&&backendCold!==false){if(left>0)tip.textContent='AI 正在思考：'+TIPS[idx]+' · 约 '+left+' 秒';else tip.textContent='马上完成，正在排版模块…'}
     if(left<=0)clearInterval(t2);
   },1000);
   const t1=setInterval(()=>{
@@ -998,11 +1124,22 @@ function runAI(){
 async function finishPlan(f,pipe,tip){
   /* 站内景点库必须先就位再匹配：否则「上海」只能匹配到 data.js 里的外滩 1 个点 */
   await loadSpotLib();
-  let plan=matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref,tripType:f.tripType});
+  /* 可能是本地同步结果，也可能是冷门城市走后端兜底的 Promise，统一 await */
+  let plan=await matchPlan(f.query,f.days,{interests:f.interests,pref:f.pref,tripType:f.tripType});
   const reqD=Math.max(1,f.days||2);
   if(plan){
-    if(tip)tip.textContent='正在按方位角分区 · 串联周边餐饮与住宿…';
-    const remote=plan.__pool?await fetchRemotePlan(plan.prov||plan.dest,reqD,0):null;
+    const cold=backendCold===false;
+    if(tip)tip.textContent=cold?'后端正在冷启动，已用本地算法排好行程（数据稍后自动同步）…':'正在按方位角分区 · 串联周边餐饮与住宿…';
+    const remote=plan.__pool?(cold?null:await fetchRemotePlan(plan.prov||plan.dest,reqD,0)):null;
+    if(!remote&&cold){
+      /* 冷启动不等了：先出本地结果解冻界面，后端唤醒后再静默刷新一次 */
+      fanApply(plan);assertUniqueDays(plan);
+      pipe.classList.remove('show');showPlan(plan,f);
+      fetchRemotePlan(plan.prov||plan.dest,reqD,0).then(r=>{
+        if(r){applyRemotePlan(plan,r);assertUniqueDays(plan);showPlan(plan,f)}
+      });
+      return;
+    }
     if(remote){
       applyRemotePlan(plan,remote);
     }else{
@@ -1035,7 +1172,8 @@ $$('#fTraffic button').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
 function planRoute(plan){
   /* 由 routeDays 生成路线数据（每日不同颜色，首点打旗标） */
   const segs=(plan.routeDays||[plan.spots.slice(0,1)]).map((ids,di)=>({
-    day:di+1,points:ids.map(id=>spotById(id)).filter(Boolean).map(s=>({id:s.id,lng:s.lng,lat:s.lat,n:s.n}))
+    day:di+1,points:ids.map(id=>spotById(id)).filter(Boolean)
+      .map(s=>({id:s.id,lng:s.lng,lat:s.lat,n:s.n,poiType:poiTypeOf(s)}))
   })).filter(sg=>sg.points.length);
   return segs;
 }
@@ -1074,12 +1212,33 @@ let __itinCurDay=-1,__itinMap=null,__itinVersion=0;
  *   spot  → key 是景点 id
  *   eat   → key 是 eatRank 里的下标（一条餐饮 = 一个对象）
  *   hotel → key 是 hotelRank 里的下标 */
+/* ===== 地点四分类：景区 / 美食 / 打卡点 / 购物 =====
+ * 行程卡片标签、地图 marker 配色共用这一套映射，避免两处各写一份对不上。
+ * 后端已给 poiType 时直接用；本地兜底生成的景点没有该字段，按名称与标签猜。
+ * 挂成 var + window 属性：ai.js / map.js 加载顺序不固定，避免重复声明报错 */
+var POI_CLS={'景区':'spot','美食':'food','打卡点':'photo','购物':'shop'};
+var POI_COLOR={'景区':'#c9a227','美食':'#e0653f','打卡点':'#2f9e8f','购物':'#7a5cc4'};
+window.POI_CLS=POI_CLS;window.POI_COLOR=POI_COLOR;
+function poiTypeOf(p){
+  if(!p)return '景区';
+  if(p.__poiType&&POI_CLS[p.__poiType])return p.__poiType;
+  const hay=[p.n,p.tag,p.__amapType].filter(Boolean).join(' ');
+  if(/美食|小吃|餐饮|餐厅|夜市|菜馆|火锅|茶/.test(hay))return '美食';
+  if(/购物|商场|商圈|步行街|市集|百货/.test(hay))return '购物';
+  if(/打卡|地标|观景|文创|艺术|街区/.test(hay))return '打卡点';
+  return '景区';
+}
+window.poiTypeOf=poiTypeOf;
 function tlRowHtml(c,di,order){
   if(c.t==='spot'){
     const p=c.p,it=p.__itl||{};
     const rests=(it.restaurants||[]).slice(0,2);
+    /* 地点类型标签（景区/美食/打卡点/购物）：冷门城市会补进餐饮与商圈，
+     * 卡片上必须一眼看出这一站是什么性质，否则用户以为全是景点 */
+    const pt=poiTypeOf(p);
+    const ptTag=pt?`<span class="tl-type t-${POI_CLS[pt]||'spot'}">${pt}</span>`:'';
     const restHtml=rests.length?`<div class="tl-near"><span class="tl-near-l">🍽 附近餐饮</span>${rests.map(r=>`<span class="tl-near-i">${escHtml(r.name)}${r.rating?' ⭐'+r.rating:''}${r.price?' · '+escHtml(String(r.price)):''}</span>`).join('')}</div>`:'';
-    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(p.id)}" data-key="${escHtml(p.id)}" alt="${escHtml(p.n)}" loading="lazy"><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></li>`;
+    return `<li class="tl-item" draggable="true" data-kind="spot" data-day="${di}" data-key="${escHtml(p.id)}" data-index="${p.index}"><span class="tl-time" data-slot="spot:${escHtml(p.id)}">—</span><div class="tl-body"><h5><span class="journey-number">${p.index+1}</span>${escHtml(p.n)}${ptTag}${it.needBook?'<span class="tl-badge">需预约</span>':''}</h5><p>🕘 开放 ${escHtml(it.openHrs||p.openHrs||'以景区公告为准')} · 游玩约 ${Math.round((it.dur||180)/60*10)/10} 小时${it.distanceFromCenter!=null?' · 距市中心约 '+it.distanceFromCenter+' km':''}</p>${it.needBook&&it.bookNote?`<p class="tl-book">📌 ${escHtml(it.bookNote)}</p>`:''}${restHtml}<div class="tl-media"><img src="${IMG(p.id)}" data-key="${escHtml(p.id)}" alt="${escHtml(p.n)}" loading="lazy" referrerpolicy="no-referrer"><div class="tl-acts"><button type="button" class="journey-pin" data-map="${escHtml(p.id)}" data-city="${escHtml(p.city||'')}" title="在城市地图中定位">📍 地图定位</button><button type="button" class="journey-detail" data-open="${p.id}">查看景点详情</button></div></div></div></li>`;
   }
   if(c.t==='eat'){
     const it=c.it;
@@ -1321,6 +1480,15 @@ function renderItinerary3col(plan){
       item.onclick=()=>select(index,false);
     });
     cards.querySelectorAll('[data-open]').forEach(b=>b.onclick=e=>{e.stopPropagation();openSpot(b.dataset.open)});
+    /* pin（P2）：跳到 ECharts 环球地图页并自动定位到该景点、放大展示。
+     * map.html 已支持 ?spot= 深链（飞到坐标 + 打开详情弹窗），
+     * 这里额外带 zoom 参数控制放大级别，city 仍走 cityCanon 映射表统一写法 */
+    cards.querySelectorAll('[data-map]').forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      const sid=b.dataset.map;
+      const c=(typeof cityCanon==='function'?cityCanon(b.dataset.city||''):b.dataset.city)||'';
+      location.href='map.html?spot='+encodeURIComponent(sid)+'&zoom=3.6'+(c?'&city='+encodeURIComponent(c):'');
+    });
     /* 时刻回填：重排后的时间写在 data-slot 对应的时间列 */
     fillTimes(plan,cards);
     bindDrag(plan,cards,()=>paintDay(__itinCurDay));
@@ -1335,7 +1503,12 @@ function renderItinerary3col(plan){
       if(!ok){fresh.textContent='地图引擎加载失败，请刷新重试';return}
       fresh.textContent='';
       const isCN=all.every(p=>p.rg==='cn');
-      __itinMap=createLiteRouteMap('journeyMap',isCN?'china':'world',{segs:indexed,mode:rtMode,onSelect:index=>select(index,true)});
+      const draw=cityGeo=>{
+        __itinMap=createLiteRouteMap('journeyMap',isCN?'china':'world',
+          {segs:indexed,cityGeo:cityGeo,city:plan.dest||plan.prov||'',mode:rtMode,onSelect:index=>select(index,true)});
+      };
+      /* 只对国内单城行程加载边界；城市已下到 geo/ 就圈选，没下到就按原方式按点位拟合 */
+      if(isCN)loadCityGeo(plan.dest||plan.prov||'',draw);else draw(null);
     });
   }
   box.querySelectorAll('[role="tab"]').forEach(b=>b.onclick=()=>paintDay(+b.dataset.day));
@@ -1414,7 +1587,7 @@ function showPlan(plan,f){
   </div>
   <div class="mod col-6 clickable" style="animation-delay:.45s" onclick="openMod('video','${plan.dest}')">
     <h4><span class="mi">🎬</span>打卡视频推荐 · 攻略 vlog<span class="go">查看详情 →</span></h4>
-    <div class="vcards">${plan.videos.map((v,i)=>`<div class="vcard" onclick="event.stopPropagation();openVideo({t:'${v.t}',loc:'${v.loc}',imgs:['${v.imgs.join("','")}']})"><img src="${IMG(v.imgs[0])}" data-key="${escHtml(v.imgs[0])}" loading="lazy"><span class="play"><i>▶</i></span><div class="vfoot"><h6>${v.t}</h6><p>📍 ${v.loc}</p></div></div>`).join('')}</div>
+    <div class="vlog-grid">${plan.videos.map((v,i)=>vlogCardHtml(v,i,.5)).join('')}</div>
   </div>
   ${foodModHtml(plan)}
   ${crowdModHtml(plan)}
@@ -1583,8 +1756,9 @@ function fuelHtml(plan){
    · 过路费按 ¥0.45/km → 过路费 <b>¥${toll}</b><br>
    · 合计约 <b>¥${total}</b>（实际以车型 / 路线为准）· <a href="https://ditu.amap.com/" target="_blank" style="color:var(--gold)">高德地图输入起终点算精确油费 →</a></div>`;
 }
-function openMod(kind,dest){
-  const plan=matchPlan(dest);
+async function openMod(kind,dest){
+  /* matchPlan 对冷门城市返回 Promise，这里 await 后两种情况都能拿到 plan */
+  const plan=await matchPlan(dest);
   if(!plan)return toast('没有识别到该目的地，换个地名试试');
   if(kind==='spots'){
     openModal(`<button class="mx" onclick="closeModal()">✕</button><div style="padding:24px"><h3 style="font-size:18px;font-weight:900;margin-bottom:4px">🏞 ${plan.dest} · 景点清单</h3><p style="font-size:12px;color:var(--muted);margin-bottom:14px">含名称、地址、坐标、建议时长与交通衔接，可直接用于地图标点</p>
@@ -1618,7 +1792,10 @@ function openMod(kind,dest){
     <div class="crowd-row"><span class="cw">💑 情侣</span><span>${plan.crowd.couple}</span></div>
     <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 按人群生成的安全与健康提示，出发前记得再核对天气与景区公告。</p></div>`);
   }else if(kind==='video'){
-    openVideo(plan.videos[0]);
+    /* 详情弹窗同样列真实视频卡片，点击直接去 B 站 */
+    openModal(`<button class="mx" onclick="closeModal()">✕</button><div style="padding:24px"><h3 style="font-size:18px;font-weight:900;margin-bottom:12px">🎬 ${plan.dest} · 攻略 Vlog</h3>
+    <div class="vlog-grid">${plan.videos.map((v,i)=>vlogCardHtml(v,i,0)).join('')}</div>
+    <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 当前为演示素材，均为 B 站公开的旅行 Vlog 视频，点击卡片在新窗口打开。接入视频链接解析后将自动匹配真实相关视频。</p></div>`);
   }else if(kind==='plog'){
     const v=plan.plogs[0];openPlog(v.t,plan.dest,v.img,encodeURIComponent(v.txt));
   }

@@ -28,7 +28,7 @@ function jnRender(mode){
     <div class="jn-stamp">WANDERGO TRAVEL JOURNAL · ${new Date().toLocaleDateString('zh-CN')}</div></div>`;
   const dayCards=jnDays(spot).map((d,i)=>`<div class="jn-card" contenteditable="true" style="${sty}">
     <span class="jn-day">DAY ${i+1}</span><h4>${d.t}</h4>
-    <img src="${IMG(P[spot.id],'landscape_16_9')}" alt="${spot.n}"><p>${d.d}</p>
+    <img src="${IMG(spot.id,'landscape_16_9')}" alt="${spot.n}"><p>${d.d}</p>
     <div class="jn-foot">✍️ 点击文字即可修改 · ${st.n}风</div></div>`).join('');
   $('#jnCards').innerHTML=head+dayCards+`<div class="jn-actions"><button class="btn gold" onclick="jnExport()">🖼 导出手账图片</button><button class="btn line" onclick="toggleBgm('calm');toast('♪ 手账 BGM · 宁静夜航')">♪ 手账 BGM</button></div>`;
 }
@@ -51,7 +51,7 @@ function jnExport(){
     g.fillStyle='#fff';g.font='32px "Microsoft YaHei",sans-serif';
     jnDays(spot).forEach((d,i)=>g.fillText('DAY '+(i+1)+' · '+d.t,80,920+i*88));
     g.font='24px sans-serif';g.fillText('WANDERGO TRAVEL JOURNAL · '+new Date().toLocaleDateString('zh-CN'),80,1340);finish()};
-  img.onerror=finish;img.src=IMG(P[spot.id],'landscape_16_9');
+  img.onerror=finish;img.src=IMG(spot.id,'landscape_16_9');
 }
 /* ---- 协同计划 ---- */
 let CT=JSON.parse(localStorage.getItem('fmw_ct')||'[]'),

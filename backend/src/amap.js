@@ -110,10 +110,42 @@ async function searchAround(lng, lat, types, keyword, radius = 500, limit = 8) {
   }).filter(x => x.name);
 }
 
+/* 城市级 POI 检索（P0-2）：关键词检索 /v3/place/text，用于批量补冷门城市的
+ * 餐饮 / 购物 / 打卡点。extensions=all 才会返回 rating 与 type
+ * 注意必须带 /v3 版本段：高德对无版本号的 /place/text 一律返回
+ * 10002 SERVICE_NOT_AVAILABLE，看起来像 Key 被禁用，其实是路径不对。 */
+async function searchCity(city, keywords, limit = 25, page = 1) {
+  const j = await call('/v3/place/text', {
+    keywords,
+    city,
+    citylimit: 'true',
+    offset: String(Math.min(limit, 25)),
+    page: String(page),
+    extensions: 'all'
+  });
+  const pois = (j && j.pois) || [];
+  return pois.map(p => {
+    const loc = parseLocation(p.location);
+    const biz = p.biz_ext || {};
+    const rating = Number(Array.isArray(biz.rating) ? 0 : biz.rating) || 0;
+    const cost = Number(Array.isArray(biz.cost) ? 0 : biz.cost) || 0;
+    return {
+      name: Array.isArray(p.name) ? '' : String(p.name || ''),
+      address: Array.isArray(p.address) ? '' : String(p.address || ''),
+      lng: loc ? loc.lng : null,
+      lat: loc ? loc.lat : null,
+      rating,
+      price: cost ? `¥${cost}` : '',
+      amap_type: Array.isArray(p.type) ? '' : String(p.type || ''),
+      tags: String((Array.isArray(p.type) ? '' : p.type) || '').split(';').filter(Boolean).pop() || ''
+    };
+  }).filter(x => x.name && x.lng != null && x.lat != null);
+}
+
 /* 餐厅：餐饮服务；住宿：住宿服务 */
 const restaurantAround = (lng, lat, radius = 500, limit = 8) =>
   searchAround(lng, lat, '050000', '', radius, limit);
 const hotelAround = (lng, lat, radius = 1500, limit = 5) =>
   searchAround(lng, lat, '100000', '', radius, limit);
 
-module.exports = { isOn, call, geocodeCity, searchAround, restaurantAround, hotelAround, parseLocation, getLastError, clearLastError, ERR_HINT, KEY };
+module.exports = { isOn, call, geocodeCity, searchAround, searchCity, restaurantAround, hotelAround, parseLocation, getLastError, clearLastError, ERR_HINT, KEY };

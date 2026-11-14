@@ -96,8 +96,7 @@ function realPhoto(city,name){
   return (city&&m[city+'|'+name])||m['*|'+name]||'';
 }
 /* 中文景点名 → 英文地标名：生僻拼音名接口出不了图，常用地标英文名最稳 */
-const EN_PLACE={
-  '798':'798 Art Zone',天安门:'Tiananmen Square',故宫:'Forbidden City',天坛:'Temple of Heaven',
+const EN_PLACE={'798':'798 Art Zone',天安门:'Tiananmen Square',故宫:'Forbidden City',天坛:'Temple of Heaven',
   颐和园:'Summer Palace',圆明园:'Old Summer Palace',景山:'Jingshan Park',北海:'Beihai Park',
   南锣鼓巷:'Beijing hutong street',什刹海:'Shichahai lake',三里屯:'Sanlitun street',
   王府井:'Wangfujing street',前门:'Qianmen street',雍和:'Yonghe Temple',恭王府:'Prince Gong Mansion',
@@ -107,7 +106,21 @@ const EN_PLACE={
   杜甫:'Du Fu Cottage Chengdu',熊猫:'Giant panda base Chengdu',春熙:'Chunxi road Chengdu',
   西湖:'West Lake Hangzhou',兵马俑:'Terracotta Army Xian',布达拉:'Potala Palace Lhasa',
   鼓浪屿:'Gulangyu island Xiamen',张家界:'Zhangjiajie mountains',黄山:'Yellow Mountain',
-  洱海:'Erhai lake Dali',青海湖:'Qinghai lake',九寨:'Jiuzhaigou valley',长白山:'Changbai mountain lake'
+  洱海:'Erhai lake Dali',青海湖:'Qinghai lake',九寨:'Jiuzhaigou valley',长白山:'Changbai mountain lake',
+  /* 站内补充景点：拼音地名接口基本出不了图，这里给常用英文名，避免落到通用场景图 */
+  苍山:'Cangshan mountain Dali Yunnan',双廊:'Shuanglang lakeside village Dali Yunnan',
+  喜洲:'Xizhou old town Bai village Dali Yunnan',黄龙:'Huanglong travertine pools Sichuan',
+  天门山:'Tianmen mountain glass walkway Zhangjiajie',宝峰湖:'Baofeng lake Zhangjiajie',
+  芙蓉镇:'Furong ancient town waterfall Xiangxi',素贴:'Doi Suthep golden temple Chiang Mai',
+  宁曼:'Nimmanhaemin road cafes Chiang Mai',美旺:'elephant sanctuary Chiang Mai jungle',
+  塔佩:'Tha Phae gate Chiang Mai old city',鱼市:'Male fish market Maldives',香蕉礁:'Banana Reef Maldives coral',
+  沙洲:'Maldives sandbank turquoise lagoon',晴空塔:'Tokyo Skytree tower skyline',
+  涩谷:'Shibuya crossing Tokyo neon night',无界:'teamLab digital art museum Tokyo',
+  金阁:'Kinkaku-ji golden pavilion Kyoto',岚山:'Arashiyama bamboo forest Kyoto',
+  卢浮:'Louvre museum Paris glass pyramid',奥赛:'Orsay museum Paris clock window',
+  蒙马特:'Montmartre Sacre Coeur Paris',辛格维利尔:'Thingvellir national park Iceland rift valley',
+  黄金瀑布:'Gullfoss waterfall Iceland rainbow',黑沙滩:'Reynisfjara black sand beach Iceland',
+  蜈支洲:'Wuzhizhou island Sanya snorkeling',呀诺达:'Yanoda tropical rainforest Sanya',后海:'Houhai surf village Sanya beach'
 };
 /* 通用构图词：地名出不了图时，用它保证至少是同类型场景，而不是一张无关的山 */
 const SCENE_OF={
@@ -117,70 +130,96 @@ const SCENE_OF={
   mountain:'mountain ridge under blue sky',theme:'theme park with colorful rides',landmark:'city landmark'
 };
 /* 没有映射的地名就音译（拼音）：接口对拼音地名成功率低，但会由 imgChain 逐级降级兜住，
- * 总比把中文直接塞进提示词（100% 返回占位图）强 */
+ * 总比把中文直接塞进提示词（100% 返回占位图）强。
+ * 每个音节必须空格分隔：连写成 Cangshan 接口当成生僻词返回占位图，
+ * 拆成 Cang Shan 才更像英文地名。 */
 function pinyin(name){
   const out=[];
   String(name||'').split('').forEach(ch=>{
-    if(/[a-zA-Z0-9]/.test(ch)){out.push(ch);return}
+    if(/[a-zA-Z0-9]/.test(ch)){
+      /* 英文字母原样保留，但和前后的拼音音节之间要断开，避免 ATheBund 这种串词 */
+      if(out.length&&/[a-z0-9]$/i.test(out[out.length-1]))out[out.length-1]+=ch;
+      else out.push(ch);
+      return
+    }
     const py=__PYT[ch];
     if(py)out.push(py.charAt(0).toUpperCase()+py.slice(1));
   });
-  return out.join('');
+  return out.join(' ');
 }
 function imgPrompt(key){
-  /* 允许直接传提示词（含空格的长句），也允许传 P 的 key */
-  if(!key)return IMGFALLBACK;
+  /* 允许直接传提示词（含空格的长句），也允许传 P 的 key。
+   * 兜住历史写法 IMG(P[id])：id 不在 P 里时 P[id] 是 undefined，
+   * 整站没有手写提示词的景点会全部退化到同一张通用图，表现为推荐页图片重复。 */
+  if(key==null)return IMGFALLBACK;
+  /* 调用方显式传了英文提示词键（imgChain 补第三级时用），必须在转字符串前判断 */
+  if(typeof key==='object'&&key.__raw)return String(key.__raw);
+  key=String(key).trim();
+  if(!key||key==='undefined'||key==='null')return IMGFALLBACK;
   if(P[key])return P[key];
-  /* 调用方显式传了英文提示词键，直接透传（imgChain 补第三级时用） */
-  if(key.__raw)return String(key.__raw);
-  /* 含空格且全是英文（P 里的自定义提示词）直接当提示词用；含中文的仍按景点名走映射 */
-  if(/^[A-Za-z0-9 ,.'&-]+$/.test(String(key)))return String(key);
+  /* 先判断是不是景点 id：站内库 63 个景点里只有少数有手写英文提示词，
+   * 其余 id 是纯英文（如 cangshan）。若先把纯英文当提示词透传，
+   * 这些景点会拿「自己的 id」去出图，接口全部返回占位图 →
+   * 推荐页出现大量重复图片。所以景点必须优先走下面的名字映射。 */
   const s = typeof spotById==='function' ? spotById(key) : null;
+  if(!s && /^[A-Za-z0-9 ,.'&-]+$/.test(String(key)))return String(key);
   const name = s ? s.n : String(key).split('|').pop();
   /* 名称必须换成英文：纯中文提示词接口基本都返回占位图。
    * 优先手写英文地标名 → 其次拼音（站内库 1000+ 条无法全手写） → 再其次英文 id */
   const enOnly=/^[a-z]{3,}$/.test(String(key))?String(key):'';
   const enKey=Object.keys(EN_PLACE).find(k=>name.includes(k));
   const enName=enKey?EN_PLACE[enKey]:(pinyin(name)||enOnly);
-  if(!s && !enName)return IMGFALLBACK;
-  const city = s && s.city ? pinyin(s.city) : '';
-  const tag = String((s && s.tag) || '');
-  const scene = /长城/.test(name) ? 'ancient'
+  /* 已经是手写英文地标名时原样返回：城市再用拼音补会拼出 Dali Da 这种碎词 */
+  if(enKey)return EN_PLACE[enKey]+' travel photography';
+  const ascii=v=>String(v||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim();
+  const safeEn=ascii(enName);
+  if(!s && !safeEn)return IMGFALLBACK;
+  const city = s && s.city ? ascii(pinyin(s.city)) : '';
+  const scene = sceneKindOf(name);
+  const parts=[safeEn || 'China', city, SCENE_OF[scene], 'travel photography'];
+  return parts.filter(Boolean).join(' ');
+}
+/* 景点名 → 场景类型。imgPrompt 与 imgChain 共用，避免两处规则不一致。
+ * 分类顺序有讲究：先具体后宽泛，「故宫博物院」含「院」，不能让 park 抢走。 */
+function sceneKindOf(name){
+  name=String(name||'');
+  return /长城/.test(name) ? 'ancient'
     : /天安门/.test(name) ? 'gate'
-    : /宫|坛|祠|寺|庙|教堂|大社|神社|塔|楼|阁/.test(name) ? 'heritage'
+    : /宫|殿|坛|祠|寺|庙|教堂|大社|神社|塔|楼|阁|陵|博物院|博物馆|遗址/.test(name) ? 'heritage'
     : /乐园|度假区|海洋|动物园/.test(name) ? 'theme'
+    : /街|巷|胡同|广场|商圈|古镇/.test(name) ? 'street'
+    : /海|湖|岛|湾|滩|河|瀑|池|泉/.test(name) ? 'water'
+    : /山|岭|峰|峡|崖|谷|林/.test(name) ? 'mountain'
     : /公园|园林|植物园|花园/.test(name) ? 'park'
-    : /街|巷|胡同|路|里|广场|商圈/.test(name) ? 'street'
-    : /海|湖|岛|湾|滩|河|瀑/.test(name) ? 'water'
-    : /山|岭|峰|峡/.test(name) ? 'mountain'
     : 'landmark';
-  return [enName || name, city, SCENE_OF[scene], tag ? tag.split('·')[0].trim() : ''].filter(Boolean).join(' ');
 }
 /* 降级链：真实地名 → 只有地名 → 同类型场景。
  * 前端 <img> 按这个顺序自动换源：接口出不了图只会返回占位图（正方形），
  * 检测到就换下一级，所以最终绝不会停在占位图或一张完全无关的图上。 */
 function imgChain(key){
-  /* 中文地名（用户打卡 / 后端帖子只有中文 location）：直接拼一条英文短句当主提示词，
-   * 不要让 imgPrompt 把整句当成景点名。例如「张家界 · 袁家界」→ Zhangjiajie Yuanjiajie China travel photography */
+  /* 中文地名（用户打卡 / 后端帖子只有中文 location）：先拆成「城市 + 地名」两段拼音，
+   * 再以北京 / 上海 / 中国这类已收录地名兜底，
+   * 例如「大理喜洲古镇」→ 主词 Dali Xizhou Gu Zhen，而不是整串生僻拼音。 */
   const cnLoc=typeof key==='string'&&/[\u4e00-\u9fa5]/.test(key)&&!/^[\u4e00-\u9fa5]{2,6}( · |$)/.test(key);
   if(cnLoc){
-    const py=pinyin(String(key).replace(/[^\u4e00-\u9fa5]/g,' '));
-    const first=py?py+' China travel photography':IMGFALLBACK;
-    return [...new Set([first,py?py+' city scenery':IMGFALLBACK,IMGFALLBACK])];
+    const raw=String(key).split(/[|·,，\s]+/).filter(s=>/[\u4e00-\u9fa5]/.test(s));
+    const name=raw.pop()||'';
+    const city=raw.pop()||'';
+    const py=[pinyin(city),pinyin(name)].filter(Boolean).join(' ');
+    const scene=SCENE_OF[sceneKindOf(name||city)];
+    if(py)return [...new Set([py+' travel photography',py+' city scenery',scene,IMGFALLBACK])];
+    return [scene||IMGFALLBACK,IMGFALLBACK];
   }
   const first=imgPrompt(key);
+  if(/[\u4e00-\u9fa5]/.test(first))return [SCENE_OF[sceneKindOf(String(key))]||IMGFALLBACK,IMGFALLBACK];
+  /* 第二级只留「地名 + 城市」，去掉长场景描述，接口对短句更宽容 */
   const head=first.split(' ').slice(0,3).join(' ');
   const s = typeof spotById==='function' ? spotById(key) : null;
   const name = s ? s.n : String(key);
-  const like = /长城|宫|坛|祠|寺|庙|塔|楼|阁/.test(name) ? SCENE_OF.heritage
-    : /公园|园林/.test(name) ? SCENE_OF.park
-    : /街|巷|胡同|广场/.test(name) ? SCENE_OF.street
-    : /海|湖|岛|湾/.test(name) ? SCENE_OF.water
-    : /乐园|度假区/.test(name) ? SCENE_OF.theme
-    : /山|岭|峰/.test(name) ? SCENE_OF.mountain
-    : IMGFALLBACK;
-  /* 第二级只用英文地名（更短的提示词更容易出图），再用同类型场景兜底 */
-  return [...new Set([first, head, like, IMGFALLBACK])];
+  const kind = sceneKindOf(name);
+  /* 最后一级以前固定用 IMGFALLBACK，导致所有出不了图的景点显示同一张图。
+   * 改成按类型兜底：至少同类型景点共用一个场景，而不是全站一张。 */
+  return [...new Set([first, head, SCENE_OF[kind], IMGFALLBACK])];
 }
 const IMG=(p,s)=>{
   /* 实拍图优先：p 可以是景点对象 / 景点 id / 「城市|景点名」 */
@@ -242,15 +281,20 @@ const P={
  dubai:'Burj Khalifa Dubai skyline at dusk with fountain show lights below, travel photography',
  queenstown:'Queenstown New Zealand lake Wakatipu with Remarkables mountains and autumn trees, travel photography',
  rovaniemi:'Santa Claus village Rovaniemi Finland snow cabins reindeer and northern lights sky, travel photography',
- cangshan:'Cangshan mountain Dali Yunnan China cloud sea over green ridges and cable car at sunrise, travel photography',
- xizhou:'Xizhou ancient town Dali Yunnan Bai ethnic architecture with yellow walls and rice fields, morning light, travel photography',
- shuanglang:'Shuanglang town Dali Erhai lake shoreline with white buildings and jade water at sunset, travel photography',
- santasi:'Three pagodas Chongsheng temple Dali Yunnan China with Cangshan mountain backdrop, blue sky, travel photography',
- jizhaoan:'Jizhao nunnery Dali Yunnan China peaceful temple courtyard with succulents and hydrangea flowers, soft sunlight, travel photography',
- butterfly:'Butterfly spring Dali Yunnan China limpid pool and ancient camellia trees, travel photography',
- haishe:'Xizhou Haishe park Dali Yunnan China swing overlooking Erhai lake under blue sky, travel photography',
- shaxi:'Shaxi ancient town Dali Yunnan China cobblestone market square with old theatre stage, travel photography',
- weishan:'Weishan ancient city Dali Yunnan China Ming and Qing dynasty gate tower with red lanterns, travel photography'
+ /* 下面 9 条是大理周边小众点位。出图接口的地名识别很不稳定：实测连
+  * Dali、Yunnan、Chinese garden、temple China 这类普通词都会返回 1832x1832
+  * 近白占位图（不报错），而 Dali old town / Erhai lake / ancient town /
+  * mountain peak / bamboo forest / waterfall 这类「城市+类型」的短句稳定出图。
+  * 所以这里只写实测能出图的短句，不写长句场景描述。 */
+ cangshan:'mountain peak',
+ xizhou:'ancient town',
+ shuanglang:'Erhai lake',
+ santasi:'Dali old town',
+ jizhaoan:'bamboo forest',
+ butterfly:'waterfall',
+ haishe:'Erhai lake',
+ shaxi:'ancient town',
+ weishan:'Dali old town'
 };
 
 const ICO={gugong:'🏯',bund:'🌃',bmy:'⚔️',erhai:'🚲',jzg:'🏞️',xihu:'🛶',ys:'🎋',ylw:'🏖️',qhh:'🌼',pala:'🙏',greatwall:'🧱',zjj:'⛰️',huangshan:'🌄',gulangyu:'🎹',luguhu:'🛶',cbs:'🏔️',senso:'🏮',inari:'⛩️',paris:'🗼',oia:'🌅',ubud:'🌾',gp:'👑',mbs:'🌳',ice:'❄️',cp:'🍂',opera:'🎭',chiangmai:'🛕',maldives:'🏝️',sagrada:'⛪',dubai:'🏙️',queenstown:'🪂',rovaniemi:'🎅',cangshan:'⛰️',xizhou:'🏘️',shuanglang:'🌅',santasi:'🕍',jizhaoan:'🌸',butterfly:'🦋',haishe:'🌊',shaxi:'🏮',weishan:'🏯'};
@@ -338,7 +382,64 @@ const SPOT_EXTRA=[
  /* ---- 三亚 ---- */
  {id:'wuzhizhou',n:'蜈支洲岛',city:'三亚',rg:'cn',addr:'三亚市海棠湾镇蜈支洲岛',lng:109.766,lat:18.311,hrs:'1 天',traf:'后海码头乘船上岛',price:'¥136（含船票）',rating:4.8,tag:'海岛 · 浮潜',desc:'三亚最好的浮潜点，能见度十米起，环岛电瓶车一路都是观景台。'},
  {id:'yalong',n:'呀诺达雨林',city:'三亚',rg:'cn',addr:'三亚市保亭县三道镇',lng:109.640,lat:18.450,hrs:'1 天',traf:'景区直通车约 1h',price:'¥128',rating:4.6,tag:'雨林 · 溯溪',desc:'热带雨林里的空中栈道与踏瀑戏水，太阳再毒里面也是凉的。'},
- {id:'houhai',n:'后海村',city:'三亚',rg:'cn',addr:'三亚市海棠湾后海村',lng:109.760,lat:18.330,hrs:'半天',traf:'海棠湾打车 20 分钟',price:'免费（冲浪课 ¥300 起）',rating:4.6,tag:'冲浪 · 渔村',desc:'国内最容易入门的冲浪湾，浪温柔、教练多，傍晚的村口全是晒伤的人。'}
+ {id:'houhai',n:'后海村',city:'三亚',rg:'cn',addr:'三亚市海棠湾后海村',lng:109.760,lat:18.330,hrs:'半天',traf:'海棠湾打车 20 分钟',price:'免费（冲浪课 ¥300 起）',rating:4.6,tag:'冲浪 · 渔村',desc:'国内最容易入门的冲浪湾，浪温柔、教练多，傍晚的村口全是晒伤的人。'},
+
+ /* ---- 全国省份补全：让地图每个省级行政区都有可点亮的标点（按数据全量渲染，不做推荐排序） ---- */
+ {id:'jinmen',n:'天津之眼·古文化街',city:'天津',rg:'cn',addr:'天津市河北区三岔河口永乐桥',lng:117.180,lat:39.153,hrs:'半天',traf:'地铁1号线西北角站',price:'摩天轮 ¥105',rating:4.6,tag:'摩天轮 · 津味',desc:'跨河而建的摩天轮转过一圈正好 28 分钟，下来拐进古文化街吃一套煎饼果子。'},
+ {id:'cbsz',n:'避暑山庄',city:'承德',rg:'cn',addr:'承德市双桥区丽正门大街20号',lng:117.940,lat:40.995,hrs:'1 天',traf:'承德站打车 10 分钟',price:'¥130',rating:4.7,tag:'皇家园林 · 世界遗产',desc:'康乾盛世的夏宫，湖区仿江南、山峦借塞北，一座园子装下半个中国。'},
+ {id:'yungang',n:'云冈石窟',city:'大同',rg:'cn',addr:'大同市云冈区云冈镇1号',lng:113.122,lat:40.110,hrs:'半天',traf:'市区公交 3 路直达',price:'¥120',rating:4.8,tag:'石窟 · 北魏',desc:'五万一千尊造像凿在砂岩上，第二十窟的露天大佛看了 1500 年大同的风。'},
+ {id:'wutai',n:'五台山·台怀镇',city:'五台县',rg:'cn',addr:'忻州市五台县台怀镇',lng:113.596,lat:39.020,hrs:'1-2 天',traf:'忻州/太原长途车至台怀镇',price:'¥135',rating:4.7,tag:'佛教名山 · 清凉',desc:'文殊道场的钟声从显通寺一路铺到黛螺顶，夏天最热时山里也只有二十度。'},
+ {id:'hulunbuir',n:'呼伦贝尔大草原',city:'呼伦贝尔',rg:'cn',addr:'呼伦贝尔市陈巴尔虎旗草原腹地',lng:119.760,lat:49.220,hrs:'2-3 天',traf:'海拉尔机场+包车',price:'草原免费（项目另计）',rating:4.9,tag:'草原 · 自驾',desc:'天比电影里的还低，七八月草浪一路推到天边，夜里能看见银河落进蒙古包。'},
+ {id:'laohutan',n:'老虎滩·滨海路',city:'大连',rg:'cn',addr:'大连市中山区滨海东路',lng:121.660,lat:38.870,hrs:'半天-1天',traf:'公交 2 路/旅游环线',price:'海洋公园 ¥220',rating:4.6,tag:'海岸 · 礁石',desc:'滨海路一路贴着海走，傍晚在燕窝岭看落日把礁石染成橘色。'},
+ {id:'cbs_tianchi',n:'长白山北坡',city:'安图县',rg:'cn',addr:'延边州安图县二道白河镇长白山北景区',lng:128.060,lat:42.050,hrs:'1 天',traf:'高铁白河站+景区巴士',price:'¥105（环保车另计）',rating:4.8,tag:'火山 · 天池',desc:'北坡看天池最稳，地下森林和聚龙泉温泉鸡蛋是顺路的彩蛋。'},
+ {id:'zhongyang',n:'中央大街·索菲亚教堂',city:'哈尔滨',rg:'cn',addr:'哈尔滨市道里区中央大街',lng:126.617,lat:45.771,hrs:'半天',traf:'地铁2号线中央大街站',price:'免费',rating:4.7,tag:'欧陆建筑 · 冰雪',desc:'面包石铺成的一公里，冬天零下二十度也要来一支马迭尔冰棍。'},
+ {id:'zhongshan',n:'中山陵',city:'南京',rg:'cn',addr:'南京市玄武区石象路7号',lng:118.848,lat:32.061,hrs:'半天',traf:'地铁2号线苜蓿园站',price:'免费（需预约）',rating:4.8,tag:'近代史 · 梧桐',desc:'392 级台阶通向蓝瓦白墙，两侧梧桐把整座紫金山都铺成了隧道。'},
+ {id:'zhuozheng',n:'拙政园',city:'苏州',rg:'cn',addr:'苏州市姑苏区东北街178号',lng:120.629,lat:31.324,hrs:'2-3 小时',traf:'地铁4号线北寺塔站',price:'¥80',rating:4.7,tag:'园林 · 江南',desc:'中国四大名园之首，一池荷花、一扇漏窗，把江南的讲究压缩进三亩地。'},
+ {id:'shouxihu',n:'瘦西湖',city:'扬州',rg:'cn',addr:'扬州市邗江区大虹桥路28号',lng:119.424,lat:32.413,hrs:'半天',traf:'公交 5 路/旅游专线',price:'¥100',rating:4.6,tag:'湖景 · 园林',desc:'两岸花柳全依水，一路楼台直到山，三月琼花开时最好看。'},
+ {id:'tianyi',n:'天一阁·月湖',city:'宁波',rg:'cn',addr:'宁波市海曙区天一街10号',lng:121.545,lat:29.873,hrs:'半天',traf:'地铁1号线西门口站',price:'¥30',rating:4.6,tag:'藏书楼 · 老城',desc:'亚洲最古老的私家藏书楼，走出来沿月湖散步就是宁波最舒服的一段。'},
+ {id:'putuoshan',n:'普陀山',city:'舟山',rg:'cn',addr:'舟山市普陀区普陀山',lng:122.390,lat:30.010,hrs:'1-2 天',traf:'朱家尖蜈蚣峙码头乘船上岛',price:'¥160（船票另计）',rating:4.7,tag:'海岛 · 观音道场',desc:'海天佛国，南海观音面朝大海，清晨的百步沙几乎没人。'},
+ {id:'luxun',n:'鲁迅故里·仓桥直街',city:'绍兴',rg:'cn',addr:'绍兴市越城区鲁迅中路235号',lng:120.585,lat:29.999,hrs:'半天',traf:'绍兴站打车 15 分钟',price:'免费（部分展馆联票 ¥50）',rating:4.6,tag:'人文 · 水乡',desc:'三味书屋的课桌还在，坐乌篷船晃过仓桥直街，黄酒配一碟茴香豆。'},
+ {id:'baogong',n:'包公园·逍遥津',city:'合肥',rg:'cn',addr:'合肥市庐阳区芜湖路',lng:117.286,lat:31.858,hrs:'半天',traf:'地铁2号线三孝口站',price:'包公园联票 ¥50',rating:4.5,tag:'人文 · 城湖',desc:'包公祠、清风阁与银河公园连成一片，城市中心留下的一大块水面。'},
+ {id:'xidi',n:'西递·宏村',city:'黄山市',rg:'cn',addr:'黄山市黟县西递镇',lng:118.020,lat:29.910,hrs:'1 天',traf:'黄山北站+景区班车',price:'西递 ¥104 / 宏村 ¥104',rating:4.8,tag:'徽派古村 · 世界遗产',desc:'粉墙黛瓦倒映在南湖里，清晨写生的学生比游客还早。'},
+ {id:'tengwangge',n:'滕王阁',city:'南昌',rg:'cn',addr:'南昌市东湖区仿古街58号',lng:115.881,lat:28.681,hrs:'2-3 小时',traf:'地铁1号线滕王阁站',price:'¥50',rating:4.6,tag:'名楼 · 江景',desc:'落霞与孤鹜齐飞的那座楼，登顶正好看赣江两岸的日落与灯光。'},
+ {id:'yaoli',n:'景德镇·陶溪川',city:'景德镇',rg:'cn',addr:'景德镇市珠山区新厂西路150号',lng:117.226,lat:29.300,hrs:'半天',traf:'景德镇北站打车 20 分钟',price:'免费',rating:4.6,tag:'陶瓷 · 文创',desc:'老瓷厂改成的手作街区，周末夜市里的年轻匠人比杯子还多。'},
+ {id:'huanglin',n:'篁岭',city:'婺源县',rg:'cn',addr:'上饶市婺源县江湾镇篁岭村',lng:117.960,lat:29.310,hrs:'半天-1天',traf:'婺源站+景区班车',price:'¥145（含索道）',rating:4.7,tag:'晒秋 · 梯田',desc:'晒秋的圆盘摆在徽派屋顶上，三四月的梯田油菜花一路铺到山谷尽头。'},
+ {id:'liugongdao',n:'刘公岛',city:'威海',rg:'cn',addr:'威海市环翠区刘公岛',lng:122.190,lat:37.510,hrs:'半天',traf:'威海港客运码头乘船 20 分钟',price:'¥138（含船票）',rating:4.5,tag:'海岛 · 近代史',desc:'北洋水师提督署还在岛上，坐船上岛那 20 分钟海风最舒服。'},
+ {id:'qingming',n:'清明上河园',city:'开封',rg:'cn',addr:'开封市龙亭区龙亭西路5号',lng:114.341,lat:34.814,hrs:'半天-1天',traf:'开封北站打车 25 分钟',price:'¥120',rating:4.6,tag:'宋文化 · 实景演出',desc:'按《清明上河图》1:1 复原的园区，晚上《大宋·东京梦华》是重头戏。'},
+ {id:'enshida',n:'恩施大峡谷',city:'恩施',rg:'cn',addr:'恩施州恩施市屯堡乡',lng:109.480,lat:30.400,hrs:'1 天',traf:'恩施站+景区班车约 1.5h',price:'¥170（含索道）',rating:4.8,tag:'峡谷 · 喀斯特',desc:'一炷香孤峰立在云海里，七星寨栈道走完腿会抖，但绝对值得。'},
+ {id:'qingxiu',n:'青秀山',city:'南宁',rg:'cn',addr:'南宁市青秀区青山路19号',lng:108.390,lat:22.790,hrs:'半天',traf:'地铁3号线青秀山站',price:'¥20',rating:4.5,tag:'城市山林 · 热带',desc:'城市边的绿肺，苏铁园和东南亚友谊园里满是热带植物的味道。'},
+ {id:'yinbi',n:'北海银滩·涠洲岛',city:'北海',rg:'cn',addr:'北海市银海区银滩中路',lng:109.160,lat:21.430,hrs:'1-2 天',traf:'北海站打车 20 分钟至银滩',price:'银滩免费 / 涠洲岛需乘船',rating:4.7,tag:'海滩 · 火山岛',desc:'沙子细得像面粉，坐船上涠洲岛看火山岩与滴水丹屏的落日。'},
+ {id:'xiaoxiao',n:'小七孔',city:'荔波县',rg:'cn',addr:'黔南州荔波县王蒙镇',lng:107.730,lat:25.260,hrs:'1 天',traf:'荔波站+景区班车',price:'¥130',rating:4.8,tag:'碧水 · 瀑布',desc:'68 级跌水瀑布一路铺下来，水色绿得不像话，是贵州最好看的一段水。'},
+ {id:'yarlung',n:'雅鲁藏布大峡谷',city:'林芝',rg:'cn',addr:'林芝市米林县派镇',lng:94.870,lat:29.630,hrs:'1 天',traf:'林芝机场+包车 2h',price:'¥150（观光车另计）',rating:4.8,tag:'峡谷 · 南迦巴瓦',desc:'世界最深峡谷，天气好时南迦巴瓦的雪峰会在江水尽头露脸。'},
+ {id:'hukou',n:'壶口瀑布',city:'延安',rg:'cn',addr:'延安市宜川县壶口镇',lng:110.440,lat:36.150,hrs:'半天',traf:'延安市区+包车 2h',price:'¥100',rating:4.8,tag:'黄河 · 瀑布',desc:'黄河在这里被挤成一股黄汤砸下三十米，风一吹满脸都是水雾。'},
+ {id:'danxia',n:'张掖七彩丹霞',city:'张掖',rg:'cn',addr:'张掖市临泽县倪家营镇',lng:100.100,lat:38.960,hrs:'半天',traf:'张掖西站+景区专线',price:'¥75（观光车另计）',rating:4.8,tag:'丹霞 · 日出',desc:'彩色丘陵在傍晚最容易出片，四号观景台是看日落的固定机位。'},
+ {id:'taer',n:'塔尔寺',city:'西宁',rg:'cn',addr:'西宁市湟中区鲁沙尔镇',lng:101.570,lat:36.480,hrs:'半天',traf:'西宁市区公交 9 路/专线',price:'¥70',rating:4.7,tag:'藏传佛教 · 酥油花',desc:'宗喀巴诞生地，酥油花、壁画、堆绣三绝值得慢慢看一上午。'},
+ {id:'shapotou',n:'沙坡头',city:'中卫',rg:'cn',addr:'中卫市沙坡头区迎水桥镇',lng:105.000,lat:37.490,hrs:'1 天',traf:'中卫站+景区班车 30 分钟',price:'¥100（项目另计）',rating:4.7,tag:'沙漠 · 黄河',desc:'一边是腾格里沙漠，一边是黄河拐弯，滑沙下去耳边全是沙鸣。'},
+ {id:'kanas',n:'喀纳斯',city:'阿勒泰',rg:'cn',addr:'阿勒泰地区布尔津县喀纳斯景区',lng:87.030,lat:48.700,hrs:'2-3 天',traf:'阿勒泰机场+包车 4h',price:'¥160（区间车另计）',rating:4.9,tag:'湖泊 · 秋色',desc:'九月的白桦林把整个山谷染成金色，观鱼台俯瞰的湖湾像一块玉。'},
+ {id:'taipei101',n:'台北101·象山',city:'台北',rg:'cn',addr:'台北市信义区信义路五段7号',lng:121.565,lat:25.034,hrs:'半天',traf:'捷运台北101/世贸站',price:'观景台 NT$600',rating:4.6,tag:'都市 · 夜景',desc:'象山步道二十分钟就能把整个信义区踩在脚下，日落前上山刚好。'},
+ {id:'ciyou',n:'西子湾·旗津',city:'高雄',rg:'cn',addr:'高雄市鼓山区莲海路',lng:120.265,lat:22.626,hrs:'半天',traf:'捷运西子湾站+轮渡',price:'轮渡 NT$40',rating:4.5,tag:'海港 · 落日',desc:'坐轮渡去旗津吃海产，回来在西子湾的堤岸上看高雄港的落日。'},
+ {id:'victoria',n:'太平山顶·维港',city:'香港',rg:'cn',addr:'香港岛中西区太平山顶',lng:114.156,lat:22.272,hrs:'半天',traf:'中环乘山顶缆车上山',price:'缆车往返 HK$88',rating:4.7,tag:'夜景 · 都市',desc:'从中环坐缆车上山，凤凰木掩着的维港是全世界最密的一片灯光。'},
+ {id:'sang',n:'大三巴牌坊·议事亭前地',city:'澳门',rg:'cn',addr:'澳门半岛花王堂区大三巴街',lng:113.541,lat:22.197,hrs:'半天',traf:'关闸/港珠澳口岸乘巴士',price:'免费',rating:4.6,tag:'历史城区 · 葡韵',desc:'一面教堂残墙立了四百年，下来走到议事亭前地的葡式碎石路，拐角就是猪扒包。'},
+ {id:'pingyao',n:'平遥古城',city:'平遥县',rg:'cn',addr:'晋中市平遥县古城内',lng:112.176,lat:37.202,hrs:'1-2 天',traf:'平遥古城站打车 10 分钟',price:'通票 ¥125',rating:4.7,tag:'古城 · 票号',desc:'保存最完整的明清县城，日昇昌票号的柜台后面藏着中国金融的起点。'},
+ {id:'jiayuguan',n:'嘉峪关关城',city:'嘉峪关',rg:'cn',addr:'嘉峪关市西南六公里处',lng:98.229,lat:39.802,hrs:'半天',traf:'嘉峪关站打车 15 分钟',price:'¥110',rating:4.6,tag:'关隘 · 明长城',desc:'天下第一雄关，城楼外就是戈壁，风一吹能听见几百年的驼铃。'},
+ {id:'maijishan',n:'麦积山石窟',city:'天水',rg:'cn',addr:'天水市麦积区麦积镇',lng:106.000,lat:34.350,hrs:'半天',traf:'天水南站+景区班车 1h',price:'¥70',rating:4.7,tag:'石窟 · 栈道',desc:'栈道挂在赤色崖壁上，泥塑的佛像笑得比云冈更人间。'},
+ {id:'mingsha',n:'鸣沙山·月牙泉',city:'酒泉',rg:'cn',addr:'敦煌市鸣沙山月牙泉景区',lng:94.670,lat:40.090,hrs:'半天',traf:'敦煌市区打车 10 分钟',price:'¥110',rating:4.9,tag:'沙漠 · 奇观',desc:'沙山环抱里一弯泉水千年不干，骑骆驼上山顶正好赶上落日。'},
+ {id:'chaka',n:'茶卡盐湖',city:'共和县',rg:'cn',addr:'海西州乌兰县茶卡镇',lng:99.080,lat:36.700,hrs:'半天',traf:'西宁包车 3h / 火车茶卡站',price:'¥60',rating:4.6,tag:'盐湖 · 天空之镜',desc:'没风的时候整个天都倒扣在水面上，穿红裙子的人会排成一条线。'},
+ {id:'qinghaihu',n:'青海湖·鸟岛',city:'共和县',rg:'cn',addr:'海南州共和县青海湖景区',lng:100.300,lat:36.870,hrs:'1 天',traf:'西宁+环湖包车',price:'¥50',rating:4.8,tag:'湖泊 · 骑行',desc:'环湖公路一圈 360 公里，七八月的油菜花一直开到湖水里。'},
+ {id:'shahu',n:'沙湖',city:'银川',rg:'cn',addr:'石嘴山市平罗县沙湖景区',lng:106.350,lat:38.800,hrs:'半天',traf:'银川+景区班车 1h',price:'¥120（含船）',rating:4.5,tag:'沙水相依 · 湿地',desc:'沙丘与芦苇荡只隔一条水线，坐船能看见水鸟在船头起飞。'},
+ {id:'chadianzi',n:'那拉提草原',city:'伊犁',rg:'cn',addr:'伊犁州新源县那拉提镇',lng:84.000,lat:43.300,hrs:'1-2 天',traf:'伊宁+包车 3h',price:'¥95',rating:4.8,tag:'草原 · 雪山',desc:'空中草原一路开到雪山脚下，六月野花铺满整面山坡。'},
+ /* 重庆 / 广东：此前整省没有景点，全国层下钻后是空的，这里补齐两省标点 */
+ {id:'hongyadong',n:'洪崖洞',city:'重庆',rg:'cn',addr:'重庆市渝中区嘉陵江滨江路88号',lng:106.580,lat:29.562,hrs:'2-3 小时',traf:'地铁1/6号线小什字站步行',price:'免费',rating:4.7,tag:'夜景 · 吊脚楼',desc:'十一层吊脚楼贴着嘉陵江挂下来，夜里亮灯后就是《千与千寻》的汤屋。'},
+ {id:'jiefangbei',n:'解放碑',city:'重庆',rg:'cn',addr:'重庆市渝中区民族路177号',lng:106.577,lat:29.557,hrs:'1-2 小时',traf:'地铁2号线临江门站',price:'免费',rating:4.5,tag:'都市 · 商圈',desc:'山城的心脏，四周高楼像峡谷，抬头永远看不见完整的天。'},
+ {id:'changjiangsuodao',n:'长江索道',city:'重庆',rg:'cn',addr:'重庆市渝中区新华路151号',lng:106.586,lat:29.560,hrs:'1 小时',traf:'地铁1号线小什字站5B口',price:'¥20 单程',rating:4.6,tag:'过江 · 交通奇观',desc:'一只铁盒子吊在江面上横渡，脚下是两条大江汇流。'},
+ {id:'wulong',n:'武隆天生三桥',city:'重庆',rg:'cn',addr:'重庆市武隆区仙女山镇',lng:107.790,lat:29.470,hrs:'1 天',traf:'重庆北站高铁+景区巴士',price:'¥135',rating:4.8,tag:'喀斯特 · 天坑',desc:'三座天然石桥架在天坑之上，《满城尽带黄金甲》就在这里取景。'},
+ {id:'gztower',n:'广州塔',city:'广州',rg:'cn',addr:'广州市海珠区阅江西路222号',lng:113.324,lat:23.106,hrs:'2-3 小时',traf:'地铁3号线广州塔站',price:'¥150 起',rating:4.7,tag:'地标 · 夜景',desc:'小蛮腰扭着腰立珠江边，摩天轮转一圈刚好看完一岸灯火。'},
+ {id:'changlong',n:'长隆旅游度假区',city:'广州',rg:'cn',addr:'广州市番禺区大石镇迎宾路',lng:113.325,lat:22.997,hrs:'1-2 天',traf:'地铁3/7号线汉溪长隆站',price:'¥250 起/园',rating:4.8,tag:'乐园 · 亲子',desc:'野生动物世界加欢乐世界，一天根本玩不完的那种乐园。'},
+ {id:'chenjiaci',n:'陈家祠',city:'广州',rg:'cn',addr:'广州市荔湾区中山七路恩龙里34号',lng:113.246,lat:23.129,hrs:'1-2 小时',traf:'地铁1号线陈家祠站',price:'¥10',rating:4.6,tag:'岭南 · 建筑',desc:'屋脊上密密麻麻的陶塑灰塑，是岭南工艺最铺张的一次炫技。'},
+ {id:'qinghui',n:'清晖园',city:'佛山',rg:'cn',addr:'佛山市顺德区大良清晖路23号',lng:113.248,lat:22.840,hrs:'1-2 小时',traf:'广珠城轨顺德站+打车',price:'¥15',rating:4.5,tag:'园林 · 岭南',desc:'广东四大名园之一，趟栊门和满洲窗把南方的光筛得很软。'},
+ {id:'zuguan',n:'佛山祖庙',city:'佛山',rg:'cn',addr:'佛山市禅城区祖庙路21号',lng:113.115,lat:23.030,hrs:'1-2 小时',traf:'广佛线祖庙站',price:'¥20',rating:4.6,tag:'武术 · 醒狮',desc:'黄飞鸿与叶问的地盘，屋脊上的陶塑群像比戏台还热闹。'},
+ {id:'qingrenlu',n:'情侣路',city:'珠海',rg:'cn',addr:'珠海市香洲区情侣中路',lng:113.590,lat:22.250,hrs:'半天',traf:'公交9/99路海滨公园站',price:'免费',rating:4.5,tag:'海岸 · 骑行',desc:'一条沿海公路串起渔女、灯塔和整片海，骑车吹风最舒服。'},
+ {id:'guangjidaqiao',n:'广济桥',city:'潮汕',rg:'cn',addr:'潮州市湘桥区环城东路',lng:116.640,lat:23.660,hrs:'1-2 小时',traf:'潮汕站+打车 40 分钟',price:'¥20',rating:4.6,tag:'古桥 · 启闭式',desc:'十八梭船二十四洲，中国最早能开合的桥，中间一段至今靠船搭起来。'}
 ];
 SPOT_EXTRA.forEach(s=>{if(!SPOTS.some(x=>x.id===s.id)){SPOTS.push(s);
   if(typeof ICO!=='undefined'&&!ICO[s.id])ICO[s.id]=s.rg==='ab'?'🌍':'🏔️';}});
@@ -450,13 +551,18 @@ POSTS.push(
  {id:'p9',u:'北极星旅记',c:'#2f4f7f',loc:'冰岛 · 黄金圈',rg:'ab',type:'video',time:'3 天前',txt:'追到极光那晚，整片天空都在跳舞。4K 直出，记得开最高清晰度 🌌',likes:689,cmts:94,imgs:['ice','cp'],bgm:'calm',real:true,plat:'yt',topics:['t1']},
  {id:'p10',u:'高迪迷弟',c:'#8f7ac9',loc:'巴塞罗那 · 圣家堂',rg:'ab',type:'img',time:'4 天前',txt:'下午四点半的受立面，光透过彩窗洒进来的瞬间，全场安静了 ⛪',likes:344,cmts:48,imgs:['sagrada'],real:true,plat:'ins',topics:['t2']}
 );
-const POST_EXTRA={
- p1:{plat:'douyin',topics:['t1'],full:'凌晨五点半从才村码头下水，日出把整片洱海染成金色。路线：才村码头 → 龙龛生态廊道，骑行 12km 约 2 小时；花费：电动车 40/天 + 早餐 15；建议 6:30 前到，人少光好。'},
+const POST_EXTRA={ p1:{plat:'douyin',topics:['t1'],full:'凌晨五点半从才村码头下水，日出把整片洱海染成金色。路线：才村码头 → 龙龛生态廊道，骑行 12km 约 2 小时；花费：电动车 40/天 + 早餐 15；建议 6:30 前到，人少光好。'},
  p2:{plat:'douyin',topics:['t6'],full:'滚滚看完直接地铁 3 号线去春熙路，套餐 88 两人吃到扶墙。熊猫基地 7:30 开园就进，上午滚滚最活跃，门票 55。'},
  p3:{plat:'yt',topics:['t5'],full:'涩谷十字路口站了半小时，就等一个红灯变绿的瞬间。回程绕去黄金街居酒屋，人均 120。东京地铁 72h 票是穷游神器。'},
  p4:{plat:'xhs',topics:['t5'],full:'西宁租车 120/天，环湖西路 G109 沿途全是机位；加油站泡面 12 块配雪山景观位，值回票价。7-8 月油菜花开最美。'},
  p5:{plat:'ins',topics:['t3'],full:'伊亚悬崖酒店无线泳池提前 3 个月订，住 3 晚均 2200/晚；落日位要 18:30 前去蓝顶教堂占位；ATV 租车最划算。'},
- p6:{plat:'kuaishou',topics:[],full:'夜爬城墙票 45，从永宁门上，骑一圈 14km 约 1.5 小时；灯笼 19:00 亮灯，护城河倒影机位在南门东侧桥上。'}
+ p6:{plat:'kuaishou',topics:[],full:'夜爬城墙票 45，从永宁门上，骑一圈 14km 约 1.5 小时；灯笼 19:00 亮灯，护城河倒影机位在南门东侧桥上。'},
+ /* covers：后端帖子表的封面。旧爬虫数据里存的是 B站 CDN 外链，B站按 Referer 防盗链，
+    从 GitHub Pages 打开会 403，这里换成站内本地景点图做兜底 */
+ p7:{covers:'zjj'},
+ p8:{covers:'chiangmai'},
+ p9:{covers:'ice'},
+ p10:{covers:'sagrada'}
 };
 POSTS.forEach(p=>{if(POST_EXTRA[p.id])Object.assign(p,POST_EXTRA[p.id])});
 const FEATURED=[
