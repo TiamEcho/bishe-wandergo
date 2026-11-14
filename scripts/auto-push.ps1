@@ -16,6 +16,6 @@ $msg = 'chore(auto): sync ' + (Get-Date -Format 'MM-dd HH:mm')
 git commit -m $msg 2>&1 | Out-Null
 Log ("committed: " + ($staged -join ', '))
 
-$out = git push origin deploy-1029:gh-pages 2>&1
+$out = git push origin gh-pages:gh-pages 2>&1
 if($LASTEXITCODE -eq 0){ Log 'push OK' } else { Log ("push FAIL: " + ($out -join ' | ')) }
 exit 0
