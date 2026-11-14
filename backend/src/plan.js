@@ -5,11 +5,13 @@
  *   ② 分区：国内 fanCluster 扇形均分；海外 ringSplit 按距离连续分块
  *   ③ 每天至少 3 个景点：站内库余量补位 → 从最挤那天拆一半
  *   ④ 高德周边检索：每个景点 1-2 家餐厅，当天最后一家附近 1 家住宿
- * 任何一步缺少外部条件（无 AMAP_KEY / 无 DOTS_API_KEY）都会降级，接口始终返回可用结构。
+ * 任何一步缺少外部条件（无 AMAP_KEY / 无 PLAN_API_KEY）都会降级，接口始终返回可用结构。
  * ========================================================= */
 const dbx = require('./db');
 const amap = require('./amap');
-const { chatJson } = require('./dots');
+/* 规划专用模型：默认 DeepSeek（https://api.deepseek.com / deepseek-chat），
+ * 与实体抽取用的 DOTS_* 那套 GLM 配置相互独立 */
+const { planChatJson } = require('./dots');
 const { localEats } = require('./eats');
 const { searchPlaces, resolveCenter, isOverseas, geocodeOverseas } = require('./services/places');
 const { dist, bearing, fanCluster, ringSplit } = require('./planner');
@@ -174,7 +176,7 @@ async function collectSpots(city, want) {
 
     /* 2) 大模型补名单：站内库不够时才调，避免白花钱 */
     if (chosen.length < want) {
-      const j = await chatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
+      const j = await planChatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
       const names = j && Array.isArray(j.spots)
         ? j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean)
         : [];
@@ -212,7 +214,7 @@ async function collectSpots(city, want) {
      * 之前一律先调大模型，站内库的「东方明珠 / 上海迪士尼 / 和平饭店」这类
      * 高热度打卡点根本没机会进场，12 个名额全被 AI 报的地名占满。 */
     if (libPool.length < want) {
-      const j = await chatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
+      const j = await planChatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
       if (j && Array.isArray(j.spots)) {
         aiNames = j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean);
       }
@@ -495,7 +497,7 @@ async function planRoute(city, days, want) {
     engine: {
       provider,                                  /* amap=国内高德 / osm=海外 OpenStreetMap / none */
       amap: amap.isOn(),
-      ai: !!process.env.DOTS_API_KEY,
+      ai: !!process.env.PLAN_API_KEY,
       /* 高德最近一次报错：线上排查用（Key 失效 / 配额 / IP 白名单 / 超时），
        * 正常时不返回，避免把内部错误塞进正常响应 */
       amapError: amap.getLastError() || null,

@@ -85,6 +85,58 @@ const SYSTEM = `你是旅游攻略信息抽取引擎。请从用户给出的攻�
 {"places":[{"name":"洱海","mention":2}],"foods":[{"name":"饵块","mention":1}],"districts":[{"name":"大理古城","mention":1}]}
 mention 表示该实体在文本中出现的次数（估算即可，最少 1）。不要编造文本中不存在的内容。`;
 
+/* ================= 行程规划专用模型（与上面的实体抽取互不影响） =================
+ * AI 出行规划单独走一套 OpenAI 兼容配置，默认 DeepSeek：
+ *   地址 https://api.deepseek.com，模型 deepseek-chat
+ * 环境变量 PLAN_API_BASE / PLAN_MODEL / PLAN_API_KEY 任意一项留空时，
+ * 该字段回落 DOTS_* —— 只需配一个 PLAN_API_KEY 就能让规划走 DeepSeek，
+ * 而实体抽取 / AI 助手继续用 DOTS_* 那套（GLM）。 */
+const PLAN_BASE = (process.env.PLAN_API_BASE || 'https://api.deepseek.com').replace(/\/$/, '');
+const PLAN_MODEL = process.env.PLAN_MODEL || 'deepseek-chat';
+const PLAN_KEY = process.env.PLAN_API_KEY || '';
+const PLAN_CHAT_PATH = process.env.PLAN_CHAT_PATH || CHAT_PATH;
+/* JSON 输出要求 + 长提示词在 DeepSeek 上偶发超过 18 秒，规划给了单独的超时 */
+const PLAN_TIMEOUT = Number(process.env.PLAN_TIMEOUT || 30000);
+
+/**
+ * 行程规划专用 JSON 对话（plan.js 使用）
+ * @param {string} system 系统提示词
+ * @param {string} user   用户内容
+ * @param {number} timeout 超时毫秒，缺省 PLAN_TIMEOUT
+ * @returns {Promise<object|null>} 解析后的 JSON；未配置 Key / 调用失败返回 null（调用方自行降级）
+ */
+async function planChatJson(system, user, timeout) {
+  if (!PLAN_KEY) return null;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeout || PLAN_TIMEOUT);
+  try {
+    const res = await fetch(`${PLAN_BASE}${PLAN_CHAT_PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${PLAN_KEY}` },
+      body: JSON.stringify({
+        model: PLAN_MODEL,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        temperature: 0.6,
+        /* 规划要的是结构化 JSON，DeepSeek 支持 JSON 输出模式，减少解析失败 */
+        response_format: { type: 'json_object' }
+      }),
+      signal: ctl.signal
+    });
+    if (!res.ok) {
+      console.warn('[plan-ai] HTTP', res.status, (res.status === 401 ? '（PLAN_API_KEY 无效）' : ''));
+      return null;
+    }
+    const j = await res.json();
+    const txt = (((j.choices || [])[0] || {}).message || {}).content || '';
+    return parseJsonLoose(txt);
+  } catch (e) {
+    console.warn('[plan-ai] chatJson', e.name === 'AbortError' ? 'timeout' : String(e.message || e));
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * 通用 JSON 对话：给定 system + user，返回解析后的对象；未配置 Key 或失败返回 null
  * @param {string} system 系统提示词
@@ -248,4 +300,4 @@ async function chat(message, history = [], model) {
   return { engine: 'local', configured: false, reply: localReply(message) };
 }
 
-module.exports = { extractEntities, aiStatus, chat, chatJson, modelList, pickModel };
+module.exports = { extractEntities, aiStatus, chat, chatJson, planChatJson, modelList, pickModel };
