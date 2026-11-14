@@ -495,7 +495,7 @@ function openSpot(id){
   const s=spotById(id);if(!s)return;
   const lit=litSet().has(id);
   openModal(`<button class="mx" onclick="closeModal()">✕</button>
-  <div class="dhero"><img class="zoomable" src="${IMG(s.id)}" data-key="${s.id}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
+  <div class="dhero"><img class="zoomable" src="${realPhoto(s.city,s.n)||IMG(s.id)}" data-key="${s.id}" loading="lazy" onerror="if(this.dataset.f){this.onerror=null;this.src=this.dataset.f}else{this.dataset.f='${IMG(s.id)}';this.src=this.dataset.f}" onclick="openViewer(this,'${s.n.replace(/'/g,'')}')"><div class="dc">
     <h3>${s.n} <span class="tagpill ${s.rg}" style="vertical-align:3px">${s.rg==='cn'?'国内':'国外'}</span>${lit?'<span class="tagpill lit">✨ 已点亮</span>':''}</h3>
     <div class="meta"><span>📍 ${s.city}</span><span>${s.tag}</span><span>⭐ ${s.rating}</span></div></div></div>
   <div class="dbody">
@@ -508,7 +508,7 @@ function openSpot(id){
       <div class="item">💰 门票参考<b class="gold">${s.price}</b></div>
       <div class="item">📷 景点标签<b>${s.tag}</b></div>
     </div>
-    <p class="coord-note">坐标获取方式：爬虫抓取公开地理数据 + 高德/百度坐标拾取器校准（demo 演示数据）。</p>
+    <p class="coord-note">坐标与简介来自公开地理数据的整理结果，<b>仅供出行参考</b>；具体开放时间、门票与现场情况请以景区官方公告为准。</p>
     <div class="dbtns">
       <button class="btn line" onclick="favSpot('${s.id}')">♥ 收藏</button>
       <button class="btn line" onclick="WGO.go('map.html',{spot:'${s.id}'})">🗺 在地图中查看</button>
@@ -719,14 +719,20 @@ function initAIChat(){
       }));
     }
     if(!list.length){ vidList.innerHTML='<div class="ai-vid-empty">暂无视频数据</div>'; return; }
-    vidList.innerHTML=list.map(v=>`
+    vidList.innerHTML=list.map(v=>{
+      /* 封面兜底顺序：视频自带封面 → 按视频文案/城市生成配图 */
+      const coverImg=v.cover
+        ? (P[v.cover]?IMG(P[v.cover],'square'):v.cover)
+        : IMG((v.title||'')+' '+(v.city||'')+' travel vlog thumbnail','square');
+      return `
       <button class="ai-vid-item" data-id="${v.id}" type="button">
-        <span class="ai-vid-cover" style="${v.cover?`background-image:url(${typeof IMG==='function'&&P?IMG(P[v.cover],'square'):v.cover})`:'background:var(--panel-2)'}">▶</span>
+        <span class="ai-vid-cover" style="background-image:url('${coverImg}')">▶</span>
         <span class="ai-vid-info">
           <b>${(v.title||'').slice(0,28)}</b>
           <i>${v.city||'未知城市'} · ${v.source||''}</i>
         </span>
-      </button>`).join('');
+      </button>`;
+    }).join('');
     vidList.querySelectorAll('.ai-vid-item').forEach(b=>b.onclick=()=>pickVideo(b.dataset.id));
   };
   vidClose.onclick=()=>vidModal.classList.remove('on');

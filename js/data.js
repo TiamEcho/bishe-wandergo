@@ -89,6 +89,12 @@ const __PYT={
 };
 const IMGAPI='https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=';
 const IMGFALLBACK='travel destination scenery, landmark, natural light';
+/* 实拍图优先：js/spot_photos.js 里是维基共享资源的真实景点照片（海外为主）。
+ * 命中就用真照片，命中不了才回落到下面的 AI 出图链。 */
+function realPhoto(city,name){
+  const m=(typeof window!=='undefined'&&window.WGO_SPOT_PHOTOS)||{};
+  return (city&&m[city+'|'+name])||m['*|'+name]||'';
+}
 /* 中文景点名 → 英文地标名：生僻拼音名接口出不了图，常用地标英文名最稳 */
 const EN_PLACE={
   '798':'798 Art Zone',天安门:'Tiananmen Square',故宫:'Forbidden City',天坛:'Temple of Heaven',
@@ -176,7 +182,27 @@ function imgChain(key){
   /* 第二级只用英文地名（更短的提示词更容易出图），再用同类型场景兜底 */
   return [...new Set([first, head, like, IMGFALLBACK])];
 }
-const IMG=(p,s)=>IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
+const IMG=(p,s)=>{
+  /* 实拍图优先：p 可以是景点对象 / 景点 id / 「城市|景点名」 */
+  if(p&&typeof p==='object'){
+    if(p.img)return p.img;
+    const hit=realPhoto(p.city,p.n||p.name);
+    if(hit)return hit;
+    return IMGAPI+encodeURIComponent(imgPrompt(p.n||p.name||IMGFALLBACK))+'&image_size='+(s||'landscape_4_3');
+  }
+  if(typeof p==='string'&&p.indexOf('|')>0){
+    const hit=realPhoto(p.split('|')[0],p.split('|')[1]);
+    if(hit)return hit;
+  }else if(typeof p==='string'){
+    const sp=(typeof spotById==='function'&&spotById(p))||(Array.isArray(typeof SPOTS!=='undefined'?SPOTS:null)?SPOTS.find(x=>x.id===p):null);
+    if(sp){
+      if(sp.img)return sp.img;
+      const hit=realPhoto(sp.city,sp.n);
+      if(hit)return hit;
+    }
+  }
+  return IMGAPI+encodeURIComponent(imgPrompt(p))+'&image_size='+(s||'landscape_4_3');
+};
 const P={
  hero:'starry night sky over sea of clouds with glowing golden flight routes and aurora, crescent moon, dreamy fairy tale travel illustration, deep navy and gold',
  gugong:'Forbidden City Beijing red walls and golden roofs under clear blue sky, imperial palace travel photography',

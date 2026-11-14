@@ -97,7 +97,7 @@ function geoSpot(name,city,prov,lng,lat,rg){
     openHrs:'以景区公告为准',bestTime:'day',needBook:false,dur:180,
     __virtual:true,
     tag:'AI 收录 · '+(prov||city||'目的地'),
-    desc:name+' —— AI 行程库收录的代表性点位。出发前建议再核对景区开放时间、门票政策与天气。'};
+    desc:name+' —— 行程库收录的代表性点位（坐标由公开地理数据整理，仅供出行参考）。出发前建议再核对景区开放时间、门票政策与天气。'};
   SPOTS.push(s);
   if(typeof ICO!=='undefined'&&!ICO[id])ICO[id]='📍';
   return s;
@@ -134,7 +134,7 @@ function loadSpotLib(){
           hrs:it.hours||'2-3 小时',traf:it.traffic||'当地交通可达',
           price:it.price||'以景区公示为准',rating:+(it.rating||4.5),
           openHrs:'以景区公告为准',bestTime:'day',needBook:false,dur:180,
-          tag:it.tags||'景点',desc:it.desc||'',__lib:true
+          tag:it.tags||'景点',desc:it.desc||'',img:it.img||'',__lib:true
         });
       });
       res(added);
@@ -601,6 +601,9 @@ function applyRemotePlan(plan,remote){
       /* 后端标注的类别（景点/购物/文创/美食/休闲/文化）+ 高德原始 type，前端可据此显示标签 */
       if(it.tags)s.tag=it.tags;
       if(it.amapType)s.__amapType=it.amapType;
+      /* 后端从景点库里带回来的实拍图，直接挂到景点上，IMG() 优先用它 */
+      if(it.img&&!s.img)s.img=it.img;
+      if(it.desc&&!s.desc)s.desc=it.desc;
       if(!ids.includes(s.id))ids.push(s.id);
       items.push({type:'spot',id:s.id,n:s.n,start:it.start,end:it.end,dur:it.dur||150,
         openHrs:s.openHrs||'',needBook:!!s.needBook,bookNote:s.bookNote||'',traf:s.traf||'',price:it.price||s.price||'',
