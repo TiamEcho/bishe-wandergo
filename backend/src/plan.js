@@ -131,7 +131,6 @@ const MIN_SPOTS_OFFLINE = 6;
 async function collectSpots(city, want) {
   const libPool = poolOfCity(city).map(toSpot);
   const byName = new Map(libPool.map(s => [s.name, s]));
-  let aiNames = [];
 
   /* 中心点：站内库均值 → 高德地理编码 → 已知海外城市表 → 默认北京
    * 必须先于检索确定：路由层要靠它判定走国内高德还是海外 OSM */
@@ -221,24 +220,37 @@ async function collectSpots(city, want) {
      * 现在改为：只要配置了 Plan Key 就先问一次大模型，把它的推荐插在站内库之后，
      * 让行程既有本地必打卡点，也有大模型补充的个性化点位；未配置 Key 时自动跳过。 */
     const j = aiReady() ? await planChatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`) : null;
-    if (j && Array.isArray(j.spots)) {
-      aiNames = j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean);
-    }
+    /* 把大模型返回的原始景点对象整份留下来（含名额判断之外的字段），
+     * 不再只抽名字：只抽名字时 AI 点名的景点若不在站内库/检索池里，
+     * 往下只剩一次 amap.geocodeCity(city+name)，拿不到坐标就静默丢弃，
+     * 结果是「engine.ai=true 但行程里一个 AI 景点都没有」。
+     * 现在改成 aiSpots 里逐条兜底，见下方 1) */
+    const aiSpots = (j && Array.isArray(j.spots) ? j.spots : [])
+      .map(x => ({
+        name: String((x && x.name) || '').trim(),
+        city: String((x && (x.city || x.address)) || '').trim()
+      }))
+      .filter(x => x.name);
 
     /* 0) 站内库高热度景点优先（东方明珠 / 迪士尼 / 和平饭店这类必打卡点） */
     libPool.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0)).forEach(push);
 
-    /* 1) AI 点名的景点优先：站内库 → 检索池 → 地理编码 */
-    for (const name of aiNames) {
+    /* 1) AI 点名的景点优先：站内库 → 检索池 → 地理编码
+     *    地理编码这一层是硬瓶颈：高德对「城市+景点名」这种拼接串常常返回空，
+     *    一旦返回空，这个 AI 景点就被丢掉。所以这里保留 AI 给的原始 city 字段，
+     *    拼串时不再重复加目的地城市，并且允许「名字里已含城市」时直接用名字编码 */
+    for (const item of aiSpots) {
       if (chosen.length >= want) break;
+      const name = item.name;
       const hit = byName.get(name)
         || libPool.find(s => s.name.includes(name) || name.includes(s.name))
         || poiPool.find(s => s.name.includes(name) || name.includes(s.name));
       if (hit) { push(hit); continue; }
-      const g = await amap.geocodeCity(city + name);
+      const g = await amap.geocodeCity(name.includes(city) ? name : city + name);
       if (!g) continue;
       push({
-        id: 'am_' + name, name, city, address: city + name, lng: g.lng, lat: g.lat,
+        id: 'am_' + name, name, city: item.city || city, address: city + name,
+        lng: g.lng, lat: g.lat,
         rating: 0, price: '', hours: '', traffic: '', tags: '关键词检索', desc: '', img: ''
       });
     }

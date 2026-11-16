@@ -1,49 +1,52 @@
 @echo off
 rem ============================================================
-rem  é»˜è®¤ä½¿ç”¨ç»å¯¹è·¯å¾„ D:\ProgramData\wandergo-runtime
-rem  è‹¥è§£åŽ‹åˆ°å…¶ä»–ä½ç½®ï¼ŒäºŒé€‰ä¸€ï¼?
-rem   1) ä¿®æ”¹ä¸‹é¢ä¸€è¡?BASE ä¸ºè§£åŽ‹åŽçš„å®žé™…ç›®å½?
-rem   2) è®¾ç½®çŽ¯å¢ƒå˜é‡ WANDERGO_HOME æŒ‡å‘è§£åŽ‹ç›®å½•ï¼ˆä¼˜å…ˆçº§æ›´é«˜ï¼?
+rem  Ä¬ÈÏÊ¹ÓÃ¾ø¶ÔÂ·¾¶ D:\ProgramData\wandergo-runtime
+rem  Èô½âÑ¹µ½ÆäËûÎ»ÖÃ£¬¶þÑ¡Ò»£º
+rem   1) ÐÞ¸ÄÏÂÃæÒ»ÐÐ BASE Îª½âÑ¹ºóµÄÊµ¼ÊÄ¿Â¼
+rem   2) ÉèÖÃ»·¾³±äÁ¿ WANDERGO_HOME Ö¸Ïò½âÑ¹Ä¿Â¼£¨ÓÅÏÈ¼¶¸ü¸ß£©
 rem ============================================================
 set "BASE=D:\ProgramData\wandergo-runtime"
 if defined WANDERGO_HOME set "BASE=%WANDERGO_HOME%"
 set "MYSQL_HOME=%BASE%\mysql\mysql-8.0"
-set "JDK_HOME=%BASE%\jdk\jdk-17.0.2"
-set "APP_JAR=%BASE%\backend\wandergo-backend-1.0.0.jar"
+set "NODE_EXE=%BASE%\node\node.exe"
+set "APP_DIR=%BASE%\backend"
 set "WEB_ROOT=%BASE%\web"
 set "PS=powershell -NoProfile -ExecutionPolicy Bypass"
 chcp 936 >nul
-title WANDERGO ä¸€é”®å¯åŠ?
+title WANDERGO Ò»¼üÆô¶¯
 
 echo ============================================================
-echo    WANDERGO æ—…è¡Œæ‰“å¡å¹³å° Â· ç­”è¾©æ¼”ç¤ºä¸€é”®å¯åŠ?
+echo    WANDERGO ÂÃÐÐ´ò¿¨Æ½Ì¨ ¡¤ ´ð±çÑÝÊ¾Ò»¼üÆô¶¯
 echo ============================================================
 echo.
 
 if not exist "%MYSQL_HOME%\bin\mysqld.exe" (
-  echo [é”™è¯¯] æœªæ‰¾åˆ?MySQLï¼?MYSQL_HOME%\bin\mysqld.exe
+  echo [´íÎó] Î´ÕÒµ½ MySQL£º%MYSQL_HOME%\bin\mysqld.exe
   goto :fail
 )
-if not exist "%JDK_HOME%\bin\java.exe" (
-  echo [é”™è¯¯] æœªæ‰¾åˆ?JDK 17ï¼?JDK_HOME%\bin\java.exe
+if not exist "%NODE_EXE%" (
+  echo [´íÎó] Î´ÕÒµ½ Node£º%NODE_EXE%
   goto :fail
 )
-if not exist "%APP_JAR%" (
-  echo [é”™è¯¯] æœªæ‰¾åˆ°åŽç«?JARï¼?APP_JAR%
+if not exist "%APP_DIR%\src\server.js" (
+  echo [´íÎó] Î´ÕÒµ½ºó¶ËÔ´Âë£º%APP_DIR%\src\server.js
   goto :fail
+)
+if not exist "%APP_DIR%\.env" (
+  echo [ÌáÊ¾] Î´ÕÒµ½ %APP_DIR%\.env£¬AI ¹¦ÄÜ½«½µ¼¶Îª±¾µØ¹æÔò
 )
 if not exist "%WEB_ROOT%\index.html" (
-  echo [é”™è¯¯] æœªæ‰¾åˆ°å‰ç«¯é¡µé¢ï¼š%WEB_ROOT%\index.html
+  echo [´íÎó] Î´ÕÒµ½Ç°¶ËÒ³Ãæ£º%WEB_ROOT%\index.html
   goto :fail
 )
 
-echo [1/3] æ£€æŸ?MySQLï¼ˆç«¯å?3306ï¼?..
+echo [1/3] ¼ì²é MySQL£¨¶Ë¿Ú 3306£©...
 %PS% -Command "if (Test-NetConnection 127.0.0.1 -Port 3306 -InformationLevel Quiet -WarningAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
 if %errorlevel% equ 0 (
-  echo       MySQL å·²åœ¨è¿è¡Œï¼Œè·³è¿‡å¯åŠ¨ã€?
+  echo       MySQL ÒÑÔÚÔËÐÐ£¬Ìø¹ýÆô¶¯¡£
   goto :mysql_ok
 )
-echo       æ­£åœ¨å¯åŠ¨ MySQL ...
+echo       ÕýÔÚÆô¶¯ MySQL ...
 start "WANDERGO-MySQL" /min "%MYSQL_HOME%\bin\mysqld.exe" --defaults-file="%MYSQL_HOME%\my.ini" --console
 set "WAIT=0"
 :loop_mysql
@@ -52,43 +55,43 @@ set "WAIT=0"
 if %errorlevel% equ 0 goto :mysql_ok
 set /a WAIT+=1
 if %WAIT% lss 40 goto :loop_mysql
-echo [é”™è¯¯] MySQL å¯åŠ¨è¶…æ—¶ï¼Œè¯·æŸ¥çœ‹ %BASE%\mysql\data\*.err
+echo [´íÎó] MySQL Æô¶¯³¬Ê±£¬Çë²é¿´ %BASE%\mysql\data\*.err
 goto :fail
 :mysql_ok
-echo       MySQL å·²å°±ç»ªã€?
+echo       MySQL ÒÑ¾ÍÐ÷¡£
 
-echo [2/3] æ£€æŸ?Spring Bootï¼ˆç«¯å?8080ï¼?..
+echo [2/3] ¼ì²éºó¶Ë·þÎñ£¨¶Ë¿Ú 8080£©...
 %PS% -Command "if (Test-NetConnection 127.0.0.1 -Port 8080 -InformationLevel Quiet -WarningAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
 if %errorlevel% equ 0 (
-  echo       åŽç«¯å·²åœ¨è¿è¡Œï¼Œè·³è¿‡å¯åŠ¨ã€?
+  echo       ºó¶ËÒÑÔÚÔËÐÐ£¬Ìø¹ýÆô¶¯¡£
   goto :app_ok
 )
-echo       æ­£åœ¨å¯åŠ¨ Spring Boot ...
-start "WANDERGO-Backend" /min "%JDK_HOME%\bin\java.exe" -jar "%APP_JAR%" --server.port=8080
+echo       ÕýÔÚÆô¶¯ºó¶Ë ...
+start "WANDERGO-Backend" /min /d "%APP_DIR%" "%NODE_EXE%" "src\server.js"
 set "WAIT=0"
 :loop_app
 %PS% -Command "Start-Sleep -Milliseconds 1000" >nul 2>&1
 %PS% -Command "if (Test-NetConnection 127.0.0.1 -Port 8080 -InformationLevel Quiet -WarningAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
 if %errorlevel% equ 0 goto :app_ok
 set /a WAIT+=1
-if %WAIT% lss 70 goto :loop_app
-echo [é”™è¯¯] åŽç«¯å¯åŠ¨è¶…æ—¶ï¼Œè¯·æŸ¥çœ‹ WANDERGO-Backend çª—å£ä¸­çš„æŠ¥é”™ã€?
+if %WAIT% lss 60 goto :loop_app
+echo [´íÎó] ºó¶ËÆô¶¯³¬Ê±£¬Çë²é¿´ WANDERGO-Backend ´°¿ÚÖÐµÄ±¨´í¡£
 goto :fail
 :app_ok
-echo       åŽç«¯å·²å°±ç»ªï¼šhttp://localhost:8080/api/spot/list?city=åŒ—äº¬
+echo       ºó¶ËÒÑ¾ÍÐ÷£ºhttp://localhost:8080/api/health
 
-echo [3/3] æ­£åœ¨å¯åŠ¨å‰ç«¯é¡µé¢ï¼ˆç«¯å?8777ï¼?..
+echo [3/3] ÕýÔÚÆô¶¯Ç°¶ËÒ³Ãæ£¨¶Ë¿Ú 8777£©...
 start "WANDERGO-Web" /min %PS% -File "%WEB_ROOT%\server.ps1"
 %PS% -Command "Start-Sleep -Milliseconds 2500" >nul 2>&1
 
 echo.
 echo ============================================================
-echo    å…¨éƒ¨å¯åŠ¨å®Œæˆ
+echo    È«²¿Æô¶¯Íê³É
 echo.
-echo    å‰ç«¯é¡µé¢ï¼šhttp://localhost:8777/index.html
-echo    åŽç«¯æŽ¥å£ï¼šhttp://localhost:8080/api/spot/list?city=åŒ—äº¬
+echo    Ç°¶ËÒ³Ãæ£ºhttp://localhost:8777/index.html
+echo    ºó¶Ë½Ó¿Ú£ºhttp://localhost:8080/api/health
 echo.
-echo    åœæ­¢æœåŠ¡è¯·è¿è¡?stop-all.bat
+echo    Í£Ö¹·þÎñÇëÔËÐÐ stop-all.bat
 echo ============================================================
 echo.
 start "" "http://localhost:8777/index.html"
@@ -97,6 +100,6 @@ exit /b 0
 
 :fail
 echo.
-echo å¯åŠ¨å¤±è´¥ï¼Œè¯·å°†ä»¥ä¸Šæç¤ºæˆªå›¾åé¦ˆã€?
+echo Æô¶¯Ê§°Ü£¬Çë½«ÒÔÉÏÌáÊ¾½ØÍ¼·´À¡¡£
 pause
 exit /b 1
