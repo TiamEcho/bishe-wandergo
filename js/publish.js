@@ -67,6 +67,23 @@ Vue.createApp({
       }, 250);
     },
     play(code) { TW.playBgm(code); },
+    /* 链接解析：粘贴 B 站 / 小红书 / 抖音 链接后自动补标题与封面。
+     * 先在本地用正则快速识别（离线也能用），再让后端 /api/link-parse 补全标题封面 */
+    async parseLink() {
+      const u = this.videoUrl.trim();
+      if (!/^https?:\/\//i.test(u)) { toast('先粘贴一个完整的视频链接'); return; }
+      const bv = TW.bvid(u);
+      if (bv && !this.title.trim()) this.title = 'B 站视频 ' + bv;
+      const r = await WGOAPI.linkParse(u);
+      if (r && (r.ok || r.title)) {
+        if (!this.title.trim() && r.title) this.title = String(r.title).slice(0, 60);
+        if (!this.cover && r.cover) this.cover = r.cover;
+        if (!this.location.trim() && r.location) this.location = r.location;
+        toast('已解析链接：' + (r.title || bv || '已识别平台'), 'ok');
+      } else {
+        toast(bv ? '已识别为 B 站视频（未能取到标题，可手动填写）' : '未识别平台，可手动填写标题');
+      }
+    },
     goCommunity() { location.href = 'community.html'; },
     async submit() {
       if (!this.me) {

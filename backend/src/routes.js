@@ -11,6 +11,7 @@ const { localExtract } = require('./extract');
 const { planRoute } = require('./plan');
 const { searchCitySpots, ensureCitySpots } = require('./services/scenicSpotSearch');
 const { recommend } = require('./recommend');
+const { aiPalette, aiJournal, aiQueryPlan } = require('./ai-extra');
 const linkParse = require('./routes/link-parse');
 
 const router = express.Router();
@@ -333,6 +334,48 @@ router.post('/chat', async (req, res) => {
   } catch (e) {
     console.error('[chat]', e);
     res.status(500).json({ ok: false, message: '对话失败', error: String(e.message || e) });
+  }
+});
+
+/* ④-1 POST /api/ai/palette —— AI 配色搭配（手账封面 / 主题色）
+ * body: { hue:0-360, sat:0-100, mode:'mono|comp|ana|tri', city?, purpose? }
+ * 由 ai-extra.js 调大模型产出三色方案，未配置 Key 时按色彩学规则本地推算 */
+router.post('/ai/palette', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const out = await aiPalette({ hue: b.hue, sat: b.sat, mode: b.mode, city: b.city, purpose: b.purpose });
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('[ai/palette]', e);
+    res.status(500).json({ ok: false, message: '配色生成失败', error: String(e.message || e) });
+  }
+});
+
+/* ④-2 POST /api/ai/journal —— AI 手账文案
+ * body: { city, spot, tag?, hours?, traffic?, days?:1-7 }
+ * 返回逐日标题 + 正文，前端直接排进手账卡片 */
+router.post('/ai/journal', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const out = await aiJournal(b);
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('[ai/journal]', e);
+    res.status(500).json({ ok: false, message: '手账生成失败', error: String(e.message || e) });
+  }
+});
+
+/* ④-3 POST /api/ai/query-plan —— 智能搜索：自然语言 → 结构化检索条件
+ * body: { q:string }
+ * 返回 { city, keywords[], interests[], days, budget, summary }，前端据此组合 /api/search */
+router.post('/ai/query-plan', async (req, res) => {
+  try {
+    const q = (req.body && req.body.q) || req.query.q || '';
+    const out = await aiQueryPlan(q);
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('[ai/query-plan]', e);
+    res.status(500).json({ ok: false, message: '意图解析失败', error: String(e.message || e) });
   }
 });
 

@@ -13,29 +13,54 @@ function jnHue(name){let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCode
 function jnPal(spot){const h=jnHue(spot.city||spot.n);return{main:`hsl(${h},48%,46%)`,deep:`hsl(${h},50%,26%)`,bg:`hsl(${h},34%,93%)`}}
 const JSTYLES={draw:{n:'手绘线稿',bd:'2px dashed',r:'14px',f:'"Kaiti SC","楷体",serif'},water:{n:'水彩晕染',bd:'0',r:'24px',f:'"Yuanti SC","幼圆","Microsoft YaHei",serif'},film:{n:'复古胶片',bd:'3px double',r:'8px',f:'Georgia,serif'}};
 let jnMode='ai';
+/* 本地兜底文案（后端 AI 不可用时使用，保持原有风格） */
 function jnDays(spot){return[
  {t:'抵达 '+spot.city,d:'初见 '+spot.n+'，'+spot.desc+' 傍晚沿街慢行，尝一份本地人推荐的小吃，把旅行的第一页留给惊喜。'},
  {t:spot.n+' 全日深度',d:'上午直奔 '+spot.tag+' 主题游览；'+spot.traf+'；黄昏时分光线最柔，记得占好机位拍下属于你的那一帧。'},
  {t:'返程与手信',d:'睡到自然醒，带走 '+spot.city+' 的限定文创与味觉记忆，把这一页留给下一次重逢的理由。'}]}
-function jnRender(mode){
+/* AI 生成的手账文案缓存：{spotId:{title,summary,days:[{t,d}]}}，避免切风格时重复请求 */
+const JN_AI={};
+async function jnAiDays(spot){
+  if(JN_AI[spot.id])return JN_AI[spot.id];
+  if(typeof WGOAPI==='undefined')return {days:jnDays(spot),ai:false};
+  const r=await WGOAPI.aiJournal({city:spot.city,spot:spot.n,tag:spot.tag,hours:spot.hrs,traffic:spot.traf,days:3});
+  if(r&&Array.isArray(r.days)&&r.days.length){
+    const out={title:r.title||(spot.city+' 手账 · '+spot.n),summary:r.summary||'',
+      days:r.days.map(d=>({t:d.title||'',d:d.text||''})),ai:r.engine==='dots'};
+    JN_AI[spot.id]=out;return out;
+  }
+  return {days:jnDays(spot),ai:false};
+}
+function jnRender(mode,ai){
   jnMode=mode;
   const spot=spotById($('#jnSpot').value)||SPOTS[0],st=JSTYLES[$('#jnStyle').value],pal=jnPal(spot);
   const sty=`--p:${pal.main};--pd:${pal.deep};--pb:${pal.bg};border:${st.bd} var(--pd);border-radius:${st.r};font-family:${st.f}`;
+  const days=(ai&&ai.days)||jnDays(spot);
+  const title=(ai&&ai.title)||(spot.city+' 手账 · '+spot.n);
   const head=`<div class="jn-card jn-head" contenteditable="true" style="${sty}">
     <div class="jn-kick">${mode==='ai'?'🤖 AI 生成':'📷 自由创作'} · ${st.n}风 · 配色取自「${spot.city}」</div>
-    <h3>${spot.city} 手账 · ${spot.n}</h3>
-    <p>📍 ${spot.city} · ${spot.tag}<br>⏱ 建议游玩 ${spot.hrs}<br>🚏 ${spot.traf}</p>
+    <h3>${title}</h3>
+    <p>📍 ${spot.city} · ${spot.tag}<br>⏱ 建议游玩 ${spot.hrs}<br>🚏 ${spot.traf}${ai&&ai.summary?'<br>✏️ '+ai.summary:''}</p>
     <div class="jn-stamp">WANDERGO TRAVEL JOURNAL · ${new Date().toLocaleDateString('zh-CN')}</div></div>`;
-  const dayCards=jnDays(spot).map((d,i)=>`<div class="jn-card" contenteditable="true" style="${sty}">
+  const dayCards=days.map((d,i)=>`<div class="jn-card" contenteditable="true" style="${sty}">
     <span class="jn-day">DAY ${i+1}</span><h4>${d.t}</h4>
     <img src="${IMG(spot.id,'landscape_16_9')}" alt="${spot.n}"><p>${d.d}</p>
     <div class="jn-foot">✍️ 点击文字即可修改 · ${st.n}风</div></div>`).join('');
   $('#jnCards').innerHTML=head+dayCards+`<div class="jn-actions"><button class="btn gold" onclick="jnExport()">🖼 导出手账图片</button><button class="btn line" onclick="toggleBgm('calm');toast('♪ 手账 BGM · 宁静夜航')">♪ 手账 BGM</button></div>`;
 }
 $('#jnSpot').innerHTML=SPOTS.map(s=>`<option value="${s.id}">${s.n} · ${s.city}</option>`).join('');
-$('#jnGen').onclick=()=>{jnRender('ai');toast('🤖 手账已生成 · 配色按「'+($('#jnSpot').selectedOptions[0].text.split(' · ')[1]||'目的地')+'」自动推荐')};
+/* AI 生成：先调后端大模型写逐日文案，拿到结果再渲染；失败自动退回本地模板 */
+$('#jnGen').onclick=async()=>{
+  const spot=spotById($('#jnSpot').value)||SPOTS[0];
+  const btn=$('#jnGen');const old=btn.textContent;
+  btn.disabled=true;btn.textContent='🤖 生成中…';
+  const ai=await jnAiDays(spot);
+  btn.disabled=false;btn.textContent=old;
+  jnRender('ai',ai);
+  toast(ai.ai?'🤖 AI 手账已生成 · 文案由大模型撰写':'🤖 手账已生成 · 文案为本地模板（未配置 AI Key）');
+};
 $('#jnFree').onclick=()=>{jnRender('free');toast('📷 自由创作模式 · 散落的照片与心得填进来')};
-$('#jnStyle').onchange=$('#jnSpot').onchange=()=>{if($('#jnCards .jn-card'))jnRender(jnMode)};
+$('#jnStyle').onchange=$('#jnSpot').onchange=()=>{if($('#jnCards .jn-card'))jnRender(jnMode,JN_AI[(spotById($('#jnSpot').value)||SPOTS[0]).id])};
 function jnExport(){
   const spot=spotById($('#jnSpot').value)||SPOTS[0],pal=jnPal(spot);
   const cv=document.createElement('canvas');cv.width=1080;cv.height=1440;const g=cv.getContext('2d');

@@ -58,15 +58,17 @@
   document.getElementById('ovProv').textContent=litProvSet.size+' / '+provSet.size;
   document.getElementById('ovProvSub').textContent='我已点亮 '+[...lit].length+' 个景点';
 
-  fetch('api/stats').then(r=>r.ok?r.json():null).catch(()=>null).then(st=>{
-    st=st||{};
+  /* 攻略数 / 用户数：后端 /api/health 的 stats 里带真实统计（guides / checkins / entities / cities）；
+   * 后端离线时退回本地估算，页面不留白 */
+  (typeof WGOAPI!=='undefined'?WGOAPI.backendHealth():Promise.resolve(null)).then(h=>{
+    const st=(h&&h.stats)||{};
     const guide=st.guides||(typeof AI_PLANS!=='undefined'?Object.keys(AI_PLANS).length:0)+SPOTS.length;
     const user=st.users||Math.max(1,new Set(SPOTS.map(s=>s.city)).size*7);
     document.getElementById('ovGuide').textContent=guide;
     document.getElementById('ovGuideSub').textContent='社区攻略 + AI 方案 + 景点条目';
     document.getElementById('ovUser').textContent=user;
     document.getElementById('ovUserSub').textContent=st.users?'来自后端统计':'按在库数据估算';
-  });
+  }).catch(()=>{});
 
   loadCharts(ok=>{
     if(!ok){document.getElementById('ovNote').style.display='block';return}

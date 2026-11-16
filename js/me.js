@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   refreshMe();
   $('#meCkBtn').onclick=()=>WGO.go('checkin.html');
   /* 后端状态探测 */
-  WGOAPI.req('/api/user/list').then(r=>{
+  (typeof WGOAPI!=='undefined'?WGOAPI.userList():Promise.resolve(null)).then(r=>{
     const up=r!==null;
     const el=$('#apiState');if(!el)return;
     el.className='api-chip '+(up?'on':'off');

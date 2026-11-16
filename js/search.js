@@ -40,10 +40,14 @@ async function srSearchApi(kw){
     const ctl=new AbortController();
     /* 与 api.js 的 T_REQ 对齐：30 秒 */
     const timer=setTimeout(()=>ctl.abort(),30000);
-    const r=await fetch(`${SR_API}/api/search?q=${encodeURIComponent(kw||'')}&limit=80`,{signal:ctl.signal});
+    /* 统一走 api.js：自动带 token、本地失败自动改投线上后端 */
+    const d=typeof WGOAPI!=='undefined'&&WGOAPI.search
+      ? await WGOAPI.search(kw,80)
+      : await (async()=>{
+          const r=await fetch(`${SR_API}/api/search?q=${encodeURIComponent(kw||'')}&limit=80`,{signal:ctl.signal});
+          return r.ok?r.json():null;
+        })();
     clearTimeout(timer);
-    if(!r.ok)return null;
-    const d=await r.json();
     if(!d||!Array.isArray(d.items)||!d.items.length)return null;
     srAi={city:d.city,entities:d.entities||[],stats:d.stats||{},engine:d.engine||'',ai:d.ai||null};
     /* 这里是「合并」而不是「替换」：后端只抓到 B 站/站内帖，
@@ -417,7 +421,40 @@ function srSearch(kw){
   srRenderTopics();srPaint();
   /* 必须等离线池加载完再合并后端结果：早一点返回时 srPool 还是空的，
      合并等于没合，小红书 / Instagram / YouTube 的内容会整批丢掉 */
-  Promise.resolve(srReady).then(()=>srSearchApi(srState.kw));
+  Promise.resolve(srReady).then(async()=>{
+    /* 智能搜索：长句（像「找云南适合带娃的3天自然风光攻略」这种）先让 AI 解析意图，
+     * 用解析出的城市 / 关键词补充检索，再合并结果。解析失败不影响原有搜索 */
+    let extra='';
+    if(srState.kw.length>=6&&typeof WGOAPI!=='undefined'&&WGOAPI.aiQueryPlan){
+      try{
+        const q=await WGOAPI.aiQueryPlan(srState.kw);
+        if(q&&(q.engine==='dots'||q.city)){
+          extra=[q.city,...(q.keywords||[])].filter(Boolean).join(' ');
+          srRenderIntent(q);
+        }
+      }catch(e){}
+    }
+    await srSearchApi(srState.kw);
+    if(extra&&extra!==srState.kw)await srSearchApi(extra);
+  });
+}
+/* 意图解析结果条：告诉用户 AI 理解成了什么，可点掉 */
+function srRenderIntent(q){
+  let box=document.getElementById('srIntent');
+  if(!box){
+    box=document.createElement('div');
+    box.id='srIntent';box.className='sr-intent';
+    const host=document.getElementById('srKw');
+    if(host&&host.parentNode)host.parentNode.insertBefore(box,host.nextSibling);
+  }
+  const bits=[];
+  if(q.city)bits.push('城市：'+q.city);
+  if(q.interests&&q.interests.length)bits.push('兴趣：'+q.interests.join('/'));
+  if(q.days)bits.push('天数：'+q.days+' 天');
+  if(q.budget&&q.budget!=='mid')bits.push('预算：'+(q.budget==='low'?'经济':'偏高'));
+  box.innerHTML=`<span>🤖 AI 理解为${q.engine==='dots'?'':'（本地规则）'}${q.summary?'「'+srEsc(q.summary)+'」':''}</span>`
+    +bits.map(b=>`<i class="tw-chip">${srEsc(b)}</i>`).join('');
+  box.style.display=bits.length?'flex':'none';
 }
 function srBind(){
   const inp=document.getElementById('srKw');

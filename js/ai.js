@@ -102,7 +102,7 @@ function geoSpot(name,city,prov,lng,lat,rg){
   if(typeof ICO!=='undefined'&&!ICO[id])ICO[id]='📍';
   return s;
 }
-/* 渲染前过滤：虚拟占位点没有真实图片与介绍，不进景点卡片列表，避免出现「只有名字」的空卡 */
+  /* 渲染前过滤：虚拟占位点没有真实图片与介绍，不进景点卡片列表，避免出现「只有名字」的空卡 */
 function realSpots(ids){
   return ids.map(id=>spotById(id)).filter(s=>s&&!s.__virtual);
 }
@@ -114,6 +114,27 @@ function realSpots(ids){
  *   ② 同城已有同名精编景点时不重复插入，精编数据（描述/开放时间）优先
  *   ③ id 加 lib_ 前缀，避免与 data.js 的 id 冲突 */
 let __libReady=null;
+/* 站点根地址：后端返回的图片若为「js/img/xxx.jpg」这类站内相对路径，
+ * 需要拼成绝对地址，否则在 plan 页渲染时按当前目录解析会 404 */
+function __siteRoot(){
+  const segs=location.pathname.split('/');
+  segs.pop();
+  return location.origin+segs.join('/')+'/';
+}
+function __absImg(u){
+  if(!u)return '';
+  const s=String(u).trim();
+  if(!s||/^(https?:|data:)/i.test(s))return s;
+  return __siteRoot()+s.replace(/^\.?\//,'');
+}
+/* 把后端行程里的景点图落到前端景点对象上：
+ * 后端 plan/route 现在会带 img，命中已有景点时也要覆盖（精编条目原本没有 img 就补上），
+ * 虚拟点（库里没有、按坐标临时生成的）同样受益，避免整块「图片暂缺」 */
+function __attachImg(s,it){
+  if(!s||!it||!it.img)return;
+  const u=__absImg(it.img);
+  if(u)s.img=u;
+}
 function loadSpotLib(){
   if(__libReady)return __libReady;
   __libReady=new Promise(res=>{
@@ -649,8 +670,7 @@ function applyRemotePlan(plan,remote){
       /* 后端标注的类别（景点/购物/文创/美食/休闲/文化）+ 高德原始 type，前端可据此显示标签 */
       if(it.tags)s.tag=it.tags;
       if(it.amapType)s.__amapType=it.amapType;
-      /* 后端从景点库里带回来的实拍图，直接挂到景点上，IMG() 优先用它 */
-      if(it.img&&!s.img)s.img=it.img;
+      __attachImg(s,it);
       if(it.desc&&!s.desc)s.desc=it.desc;
       if(!ids.includes(s.id))ids.push(s.id);
       items.push({type:'spot',id:s.id,n:s.n,start:it.start,end:it.end,dur:it.dur||150,
@@ -1612,8 +1632,7 @@ function showPlan(plan,f){
   renderCmts(plan.dest);
 }
 /* ---- AI 实体：调用后端 POST /api/collect-guide（采集 + AI 抽取） ---- */
-/* 采集走离线爬虫包 / 景点库，通常 1 秒内返回；20 秒超时足够兜底 */
-const AI_ENT_TIMEOUT = 20000;
+/* 采集走离线爬虫包 / 景点库，通常 1 秒内返回；超时由 api.js 的 collectGuide 统一给 25 秒 */
 let __aiEntDown=false;
 async function aiEntSync(plan){
   const dest=typeof plan==='string'?plan:plan.dest;
@@ -1623,25 +1642,16 @@ async function aiEntSync(plan){
   /* 已知后端不可达：直接收起模块，不再发请求，避免控制台反复报 ERR_CONNECTION_REFUSED */
   if(__aiEntDown){const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return}
   body.innerHTML='<div>正在调用 AI 从真实攻略原文里抽取地名 / 美食 / 商圈…</div>';
-  const base=(typeof WGOAPI!=='undefined'&&WGOAPI.base)||'';
-  if(!base){const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return}
+  if(typeof WGOAPI==='undefined'||!WGOAPI.base){const mod=document.getElementById('aiEntMod');if(mod)mod.remove();return}
   let d=null,errMsg='';
   try{
-    const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),AI_ENT_TIMEOUT);
-    const r=await fetch(base+'/api/collect-guide',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({keyword:dest}),signal:ctl.signal
-    });
-    clearTimeout(timer);
-    let j=null;
-    try{ j=await r.json(); }catch(_){}
-    if(!r.ok){ errMsg=(j&&j.message)||('HTTP '+r.status); throw new Error(errMsg); }
-    d=j;
+    /* 统一走 api.js：本地 Spring Boot 没有该接口时自动改投线上 Node 适配层 */
+    d=await WGOAPI.collectGuide(dest);
     if(!d||!d.ok){ errMsg=(d&&d.message)||'no data'; throw new Error(errMsg); }
   }catch(e){
     if(e&&e.name==='AbortError'){
       /* 采集太慢而不是后端挂了：保留模块，给出重试提示 */
-      body.innerHTML='<div>采集超时（已等 20 秒）。可点右上角「重新采集」重试。</div>';
+      body.innerHTML='<div>采集超时（已等 25 秒）。可点右上角「重新采集」重试。</div>';
       return;
     }
     if(errMsg){

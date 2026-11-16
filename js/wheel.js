@@ -131,22 +131,63 @@ function buildWheel(){
 }
 function sliceEls(){return $$('#wheelDisc [data-i]')}
 
-/* ---------------- 转动 ---------------- */
+/* ---------------- 转动 ----------------
+ * 落点不再用 Math.random：先让 AI 依据「目的地气质 + 兴趣偏好」在候选里挑一个，
+ * 再让转盘转到这个结果上（动画与结果一致，用户看到的是「AI 选定 + 转盘揭晓」）。
+ * AI 不可用时退回本地加权（按评分与热度），仍不是纯随机。 */
+let lastPickReason='';
+/* AI 一次拿不到就整体降级，避免每次转动都多等一轮超时 */
+let __aiDown=false;
+function localPick(cands){
+  /* 本地兜底：按评分与热度加权，权重高更容易被选中，不是等概率随机 */
+  const w=cands.map(c=>{
+    const s=c.spotId?spotById(c.spotId):null;
+    const base=s?((Number(s.rating)||4.2)*2+(Number(s.heat)||0)/50):1;
+    return Math.max(.6,base);
+  });
+  const sum=w.reduce((a,b)=>a+b,0);
+  let r=Math.random()*sum;
+  for(let i=0;i<w.length;i++){r-=w[i];if(r<=0)return i}
+  return 0;
+}
+function candDesc(c){
+  const s=c.spotId?spotById(c.spotId):null;
+  return s?`${c.label}（${s.tag||'景点'}，评分 ${s.rating}）`:c.label;
+}
+async function aiPick(cands,taste){
+  if(typeof WGOAPI==='undefined'||!cands.length||__aiDown)return null;
+  const list=cands.slice(0,40).map((c,i)=>`${i}. ${candDesc(c)}`).join('\n');
+  try{
+    /* 复用通用对话接口：要求模型返回 JSON，前端自己解析，避免新增一个后端路由 */
+    const r=await WGOAPI.chat(`抽签候选：\n${list}\n口味：${taste||'不限'}\n请只输出 JSON。`,[],null);
+    if(!r||r.engine!=='dots'||!r.reply){__aiDown=true;return null}
+    const m=String(r.reply).match(/\{[\s\S]*\}/);
+    if(!m)return null;
+    const o=JSON.parse(m[0]);
+    const i=Number(o.index);
+    if(!Number.isInteger(i)||i<0||i>=Math.min(cands.length,40))return null;
+    return {index:i,reason:String(o.reason||'').slice(0,40)};
+  }catch(e){return null}
+}
 function spin(){
   if(spinning||!cands.length)return;
   spinning=true;
   $('#wkPin').classList.remove('on');
   sliceEls().forEach(el=>el.classList.remove('hit'));
-  const n=cands.length,step=360/n;
-  const idx=Math.floor(Math.random()*n);
-  const mid=(idx+.5)*step;
-  const jitter=(Math.random()-.5)*step*.5;
-  const need=((360-mid-jitter)-(rot%360)+360)%360;
-  rot+=360*6+need;                 /* 多转 6 圈再落点 */
-  const disc=$('#wheelDisc');
-  disc.style.transition='transform 4.6s cubic-bezier(.12,.68,.06,1)';
-  disc.style.transform=`rotate(${rot}deg)`;
-  setTimeout(()=>{land(idx)},4700);
+  toast('🤖 AI 正在从 '+cands.length+' 个候选里挑一个…');
+  const taste=($('#wkTaste')&&$('#wkTaste').value.trim())||'';
+  aiPick(cands,taste).then(pick=>{
+    const n=cands.length,step=360/n;
+    const idx=pick?pick.index:localPick(cands);
+    if(pick&&pick.reason)lastPickReason=pick.reason;
+    const mid=(idx+.5)*step;
+    const need=((360-mid)-(rot%360)+360)%360;
+    rot+=360*6+need;                 /* 多转 6 圈再落点 */
+    const disc=$('#wheelDisc');
+    disc.style.transition='transform 4.6s cubic-bezier(.12,.68,.06,1)';
+    disc.style.transform=`rotate(${rot}deg)`;
+    setTimeout(()=>{land(idx)},4700);
+  });
 }
 function land(idx){
   spinning=false;hitIdx=idx;
@@ -160,7 +201,7 @@ function land(idx){
   pushHist(c);
   vibrate();
   popup(c);
-  toast('🎉 命运选定：'+c.label+'！','ok');
+  toast('🎉 命运选定：'+c.label+'！'+(lastPickReason?' · '+lastPickReason:''),'ok');
 }
 /* 手机震动（支持的设备才有效，桌面静默） */
 function vibrate(){try{navigator.vibrate&&navigator.vibrate([70,50,120])}catch(e){}}

@@ -226,6 +226,11 @@ function aiStatus() {
   return { base: BASE, model: MODEL, configured: !!KEY, endpoint: `${BASE}${CHAT_PATH}` };
 }
 
+/* 规划用大模型（DeepSeek）是否已配置 Key：plan.js 据此决定要不要发起一次 AI 推荐 */
+function planReady() {
+  return !!PLAN_KEY;
+}
+
 /* =========================================================
  * 通用对话：WanderGo AI 助手悬浮球
  * 未配置 Key 或调用失败 → 降级为本地关键词回复
@@ -300,4 +305,4 @@ async function chat(message, history = [], model) {
   return { engine: 'local', configured: false, reply: localReply(message) };
 }
 
-module.exports = { extractEntities, aiStatus, chat, chatJson, planChatJson, modelList, pickModel };
+module.exports = { extractEntities, aiStatus, planReady, chat, chatJson, planChatJson, modelList, pickModel };

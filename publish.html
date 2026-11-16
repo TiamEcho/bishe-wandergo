@@ -62,7 +62,10 @@
 
         <div class="tw-field" v-if="type==='video'">
           <div class="tw-label">视频地址 <span class="hint">支持 B 站 / YouTube 链接或 .mp4 直链</span></div>
-          <input class="tw-input" v-model="videoUrl" placeholder="https://www.bilibili.com/video/BV…">
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input class="tw-input" style="flex:1;min-width:220px" v-model="videoUrl" placeholder="https://www.bilibili.com/video/BV…">
+            <button class="tw-btn line" type="button" @click="parseLink" style="height:42px;padding:0 18px">🔗 解析链接</button>
+          </div>
           <div class="tw-video-prev" v-if="bvid">
             <iframe :src="'//player.bilibili.com/player.html?bvid='+bvid+'&page=1&autoplay=0'" scrolling="no" frameborder="0" allowfullscreen></iframe>
           </div>

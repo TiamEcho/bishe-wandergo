@@ -11,7 +11,12 @@ const dbx = require('./db');
 const amap = require('./amap');
 /* 规划专用模型：默认 DeepSeek（https://api.deepseek.com / deepseek-chat），
  * 与实体抽取用的 DOTS_* 那套 GLM 配置相互独立 */
-const { planChatJson } = require('./dots');
+const { planChatJson, planReady } = require('./dots');
+
+/* 是否已配置规划用大模型 Key（未配置时跳过调用，省掉一次无意义等待） */
+function aiReady() {
+  return planReady();
+}
 const { localEats } = require('./eats');
 const { searchPlaces, resolveCenter, isOverseas, geocodeOverseas } = require('./services/places');
 const { dist, bearing, fanCluster, ringSplit } = require('./planner');
@@ -210,14 +215,14 @@ async function collectSpots(city, want) {
         .forEach(push);
     }
   } else {
-    /* --- 国内：站点覆盖度优先，不足再让大模型补名单 ---
-     * 之前一律先调大模型，站内库的「东方明珠 / 上海迪士尼 / 和平饭店」这类
-     * 高热度打卡点根本没机会进场，12 个名额全被 AI 报的地名占满。 */
-    if (libPool.length < want) {
-      const j = await planChatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`);
-      if (j && Array.isArray(j.spots)) {
-        aiNames = j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean);
-      }
+    /* --- 国内：大模型推荐名单 + 站内库高热度点，两者都进场 ---
+     * 之前只有站内库不足 want 时才调大模型，站内库往往已经够数，
+     * 结果是「AI 行程规划」这条主链路根本没用到 AI，只是库内排序。
+     * 现在改为：只要配置了 Plan Key 就先问一次大模型，把它的推荐插在站内库之后，
+     * 让行程既有本地必打卡点，也有大模型补充的个性化点位；未配置 Key 时自动跳过。 */
+    const j = aiReady() ? await planChatJson(PLAN_SYSTEM, `目的地：${city}\n请推荐 ${want} 个景点。`) : null;
+    if (j && Array.isArray(j.spots)) {
+      aiNames = j.spots.map(x => String((x && x.name) || '').trim()).filter(Boolean);
     }
 
     /* 0) 站内库高热度景点优先（东方明珠 / 迪士尼 / 和平饭店这类必打卡点） */
@@ -465,6 +470,9 @@ async function planRoute(city, days, want) {
         type: 'spot', id: s.id, name: s.name, city: s.city, address: s.address,
         lng: s.lng, lat: s.lat, rating: s.rating, price: s.price, hours: s.hours,
         traffic: s.traffic, desc: s.desc, tags: s.tags, amapType: s.type,
+        /* 头像 / 卡片图：站内库条目自带 img（爬虫入库时落的实拍图地址），
+         * 之前没透传给前端，前端只能按名字出 AI 图，线上出图接口不稳定时整屏空图 */
+        img: s.img || '',
         poiType: typeLabel(s),
         start, end: start + dur, dur,
         distanceFromCenter: Math.round(dist(center, s) * 10) / 10,
