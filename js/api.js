@@ -61,6 +61,23 @@ const WGOAPI=(()=>{
       backendUp=true;return data;
     }catch(e){backendUp=false;return null}
   }
+  /* 后端 404/405 说明「本环境没有这个接口」，不是网络问题。
+   * 本地 Spring Boot 版只实现了核心接口，社区/聊天/行程等仍由线上 Node 适配层提供，
+   * 遇到这种情况改投 RENDER_BACKEND 再试一次，避免本地演示时这些页面整块空着 */
+  async function reqAny(path,opts={},timeout){
+    const r=await req(path,opts,timeout);
+    if(r!==null||BASE===RENDER_BACKEND)return r;
+    const headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
+    const tk=curToken();if(tk)headers['Authorization']='Bearer '+tk;
+    try{
+      const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),timeout||T_REQ);
+      const res=await fetch(RENDER_BACKEND+path,{method:opts.method||'GET',headers,
+        body:opts.body?JSON.stringify(opts.body):undefined,signal:ctl.signal});
+      clearTimeout(t);
+      if(!res.ok)return null;
+      return await res.json();
+    }catch(e){return null}
+  }
   const status=()=>backendUp;
   return {
     req,status,base:BASE,timeout:T_REQ,planTimeout:T_PLAN,
@@ -93,20 +110,20 @@ const WGOAPI=(()=>{
     addComment(spotId,content){return req('/api/comment/add',{method:'POST',body:{spotId,content}})},
     toggleLike(spotId){return req('/api/like/toggle',{method:'POST',body:{spotId}})},
     /* ---------- 社区 2.0：词条 / 帖子 / 评论 / 点赞 / BGM / 推荐 ---------- */
-    topics(kw){return req('/api/topic/list?kw='+encodeURIComponent(kw||''))},
-    topicDetail(code,offset){return req('/api/topic/detail?code='+encodeURIComponent(code)+'&offset='+(offset||0))},
-    postList(topic,sort,offset,limit){return req('/api/posts?topic='+encodeURIComponent(topic||'')
+    topics(kw){return reqAny('/api/topic/list?kw='+encodeURIComponent(kw||''))},
+    topicDetail(code,offset){return reqAny('/api/topic/detail?code='+encodeURIComponent(code)+'&offset='+(offset||0))},
+    postList(topic,sort,offset,limit){return reqAny('/api/posts?topic='+encodeURIComponent(topic||'')
       +'&sort='+encodeURIComponent(sort||'top')+'&offset='+(offset||0)+'&limit='+(limit||30))},
-    postDetail(id,nick){return req('/api/post/detail?id='+encodeURIComponent(id)+'&nick='+encodeURIComponent(nick||''))},
+    postDetail(id,nick){return reqAny('/api/post/detail?id='+encodeURIComponent(id)+'&nick='+encodeURIComponent(nick||''))},
     /* 发布作品：登录态由 Authorization 头带上，后端优先取 token 里的用户名 */
-    postAdd(payload){return req('/api/post/add',{method:'POST',body:payload},8000)},
-    postComment(postId,content){return req('/api/post/comment/add',{method:'POST',body:{postId,content}},8000)},
-    postLike(postId){return req('/api/post/like/toggle',{method:'POST',body:{postId}},8000)},
+    postAdd(payload){return reqAny('/api/post/add',{method:'POST',body:payload},8000)},
+    postComment(postId,content){return reqAny('/api/post/comment/add',{method:'POST',body:{postId,content}},8000)},
+    postLike(postId){return reqAny('/api/post/like/toggle',{method:'POST',body:{postId}},8000)},
     /* 「想去」地点收藏：后端在线时写 t_post_want，离线时前端 localStorage 兜底（data.js toggleWant） */
-    wantToggle(name,from){return req('/api/post/want/toggle',{method:'POST',body:{place:name,from:from||''}},4000)},
-    wantList(){return req('/api/post/want/list')},
-    bgmList(kw){return req('/api/bgm/list?kw='+encodeURIComponent(kw||''))},
-    postRecommend(nick,n){return req('/api/post/recommend?nick='+encodeURIComponent(nick||'')+'&n='+(n||6))},
+    wantToggle(name,from){return reqAny('/api/post/want/toggle',{method:'POST',body:{place:name,from:from||''}},4000)},
+    wantList(){return reqAny('/api/post/want/list')},
+    bgmList(kw){return reqAny('/api/bgm/list?kw='+encodeURIComponent(kw||''))},
+    postRecommend(nick,n){return reqAny('/api/post/recommend?nick='+encodeURIComponent(nick||'')+'&n='+(n||6))},
     /* 管理端（需 admin JWT） */
     adminOverview(){return req('/api/admin/overview')},
     adminSpots(kw){return req('/api/admin/spot/list?kw='+encodeURIComponent(kw||''))},
@@ -127,17 +144,17 @@ const WGOAPI=(()=>{
     /* 本地 Node 后端健康检查：管理端用它展示数据库真实统计（攻略 / 打卡 / 实体 / 城市） */
     backendHealth(){return req('/api/health',{},3000)},
     /* ---------- AI 智能体悬浮球 ---------- */
-    chat(message,history,model){return req('/api/chat',{method:'POST',body:{message,history:history||[],model:model||undefined}},15000)},
+    chat(message,history,model){return reqAny('/api/chat',{method:'POST',body:{message,history:history||[],model:model||undefined}},15000)},
     /* 自选 AI 模型：GET /api/models 返回 {default,list:[{id,label,desc}]}，失败返回 null 走内置默认 */
-    models(){return req('/api/models',{},8000)},
-    videoList(limit){return req('/api/videos?limit='+(limit||40),{},6000)},
-    analyzeVideo(videoId){return req('/api/analyze-video',{method:'POST',body:{videoId}},30000)},
+    models(){return reqAny('/api/models',{},8000)},
+    videoList(limit){return reqAny('/api/videos?limit='+(limit||40),{},6000)},
+    analyzeVideo(videoId){return reqAny('/api/analyze-video',{method:'POST',body:{videoId}},30000)},
     /* 行程规划：AI 出景点 → 去重 → 扇形分区 → 周边餐饮住宿（失败返回 null，前端走本地算法） */
     /* 要等 PG 冷启动 + 模型出点位，放宽到 55 秒；超时前端仍会走本地算法兜底 */
-    planRoute(city,days,want){return req('/api/plan/route',{method:'POST',body:{city,days,want}},T_PLAN)},
+    planRoute(city,days,want){return reqAny('/api/plan/route',{method:'POST',body:{city,days,want}},T_PLAN)},
     /* 探活：GET /api/health 只判断「后端进程是否已醒」，不做业务（失败返回 null）。
      * 休眠中的实例会挂起不响应，所以 ping 给满 30 秒；warm() 负责外层轮询 */
-    ping(){return req('/api/health?ping=1',{},T_REQ)},
+    ping(){return reqAny('/api/health?ping=1',{},T_REQ)},
     /* 冷启动探活 + 轮询：先用 ping 唤醒，未就绪就每 3 秒重试，直到连通或超时。
      * onWait(已等秒数) 让调用方刷新「正在唤醒服务中…」提示文案 */
     async warm(opt){
@@ -146,7 +163,7 @@ const WGOAPI=(()=>{
       let waited=0;
       while(Date.now()-t0<=max){
         /* 直接用 req 打探活，不依赖 this——warm 常被解构调用（const {warm}=WGOAPI） */
-        const r=await req('/api/health?ping=1',{},T_REQ);
+        const r=await reqAny('/api/health?ping=1',{},T_REQ);
         if(r&&r.ok!==false){backendUp=true;return r}
         waited=Math.round((Date.now()-t0)/1000);
         if(typeof opt.onWait==='function')opt.onWait(waited);
@@ -155,6 +172,23 @@ const WGOAPI=(()=>{
       backendUp=false;return null;
     },
     /* 单城景点（含 poi_type 四分类）：前端静态库没收录的冷门城市靠它兜底 */
-    spotCity(city){return req('/api/spot/city?city='+encodeURIComponent(city),{},20000)}
+    spotCity(city){return reqAny('/api/spot/city?city='+encodeURIComponent(city),{},20000)},
+    /* ---------- AI 能力扩展（后端 ai-extra.js，未配置 Key 时返回 engine:'local'） ---------- */
+    /* AI 配色搭配：给手账/主题选一组三色方案 */
+    aiPalette(hue,sat,mode,city){return reqAny('/api/ai/palette',{method:'POST',body:{hue,sat,mode,city}},18000)},
+    /* AI 手账文案：逐日标题 + 正文，失败返回 null 由 workbench.js 走模板兜底 */
+    aiJournal(p){return reqAny('/api/ai/journal',{method:'POST',body:p},30000)},
+    /* 智能搜索意图解析：自然语言 → {city,keywords,interests,days,budget,summary} */
+    aiQueryPlan(q){return reqAny('/api/ai/query-plan',{method:'POST',body:{q}},15000)},
+    /* 用户公开列表（me.html 用）：只取昵称/城市/角色，不带密码字段 */
+    userList(){return req('/api/user/list')},
+    /* 平台统计（overview.html 用）：后端无此接口时返回 null，页面走本地 SPOTS 计算 */
+    stats(){return reqAny('/api/stats',{},6000)},
+    /* 链接解析（publish.html 用）：B 站 / 小红书 / 抖音 → 标题与封面 */
+    linkParse(url){return reqAny('/api/link-parse',{method:'POST',body:{url}},15000)},
+    /* 攻略采集（ai.js / guide 页用）：走统一 api 层，避免各页面自己 fetch */
+    collectGuide(url){return reqAny('/api/collect-guide',{method:'POST',body:{url}},25000)},
+    /* 统一搜索入口：各页面不再各自 fetch /api/search */
+    search(q,limit){return reqAny('/api/search?q='+encodeURIComponent(q||'')+'&limit='+(limit||20),{},15000)}
   };
 })();

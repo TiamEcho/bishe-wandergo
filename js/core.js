@@ -128,12 +128,26 @@ function initTheme(){
     $('#cusL').oninput=e=>{cusL=+e.target.value;syncWheel();applyCustom(true)};
     $$('#cpModes .mini').forEach(b=>b.onclick=()=>{cusMode=b.dataset.m;$$('#cpModes .mini').forEach(x=>x.classList.toggle('on',x===b));applyCustom()});
     $('#cusApply').onclick=()=>applyCustom();
-    $('#aiPairBtn').onclick=()=>{
-      const r=Math.random();
-      if(r<.4){cusMode='comp';toast('🤖 AI 搭配：互补撞色')}
-      else if(r<.75){cusH=(cusH+150)%360;cusMode='ana';toast('🤖 AI 搭配：分裂互补')}
-      else{cusH=(cusH+120)%360;cusMode='mono';cusS=Math.min(88,cusS+16);toast('🤖 AI 搭配：三角和谐')}
-      syncWheel();applyCustom();
+    /* AI 配色搭配：交给后端大模型按色彩学 + 目的地气质出方案，
+     * 未配置 Key 时后端返回 engine:'local' 的规则方案，前端不再用 Math.random 乱切 */
+    $('#aiPairBtn').onclick=async()=>{
+      const btn=$('#aiPairBtn');const old=btn.textContent;
+      btn.disabled=true;btn.textContent='🤖 搭配中…';
+      const r=typeof WGOAPI!=='undefined'
+        ? await WGOAPI.aiPalette(cusH,cusS,cusMode,localStorage.getItem('fmw_city')||'')
+        : null;
+      btn.disabled=false;btn.textContent=old;
+      if(r&&Array.isArray(r.colors)&&r.colors.length>=3){
+        const main=r.colors[0];
+        cusH=main.h;cusS=main.s;cusL=main.l;
+        cusMode=['mono','comp','ana','tri'].includes(r.mode)?r.mode:'mono';
+        $$('#cpModes .mini').forEach(x=>x.classList.toggle('on',x.dataset.m===cusMode));
+        syncWheel();applyCustom();
+        const sw=r.colors.map(c=>`<i style="display:inline-block;width:16px;height:16px;border-radius:4px;margin-right:4px;background:hsl(${c.h},${c.s}%,${c.l}%)"></i>`).join('');
+        toast(`🤖 ${r.name}${r.engine==='local'?'（本地规则）':''}：${r.note||''} ${sw}`,'ok');
+      }else{
+        toast('AI 搭配暂不可用，已保留当前配色','warn');
+      }
     };
     const PALS={ins:[['奶油摩卡',28,44],['复古胶片',14,58],['海盐灰蓝',208,38],['鼠尾草',120,26]],gf:[['黛蓝',215,46],['朱砂红',2,66],['竹青',140,38],['藕荷',320,34]]};
     function palCard(p,kind){const[h,n,s]=p;return `<div class="pal-card" data-h="${h}" data-s="${s}"><div class="sw"><i style="background:${hsl(h,s,54)}"></i><i style="background:${hsl(h,Math.max(15,s-12),72)}"></i><i style="background:${hsl(h,s,30)}"></i><i style="background:${hsl(h+32,s-6,48)}"></i></div><b>${n}</b><p>${kind} · H${h} · S${s}%</p></div>`}
@@ -280,9 +294,10 @@ function openUserCenter(){
       <div class="uc-admin-row">⚠ 待处理举报<b>1 件</b></div>
       <div class="uc-foot" style="margin-top:14px">
         <button class="btn line" id="ucBack">← 返回用户端</button>
-        <button class="btn gold" onclick="toast('管理后台演示页开发中 🚧')">进入管理后台 →</button>
+        <button class="btn gold" id="ucToAdmin">进入管理后台 →</button>
       </div>`;
       $('#ucBack').onclick=()=>{view='user';render()};
+      $('#ucToAdmin').onclick=()=>{location.href='admin.html'};
     }
   }
   $$('#ucTabs button').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
