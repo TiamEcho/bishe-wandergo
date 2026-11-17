@@ -294,9 +294,10 @@ function openUserCenter(){
       <div class="uc-admin-row">⚠ 待处理举报<b>1 件</b></div>
       <div class="uc-foot" style="margin-top:14px">
         <button class="btn line" id="ucBack">← 返回用户端</button>
-        <button class="btn gold" onclick="toast('管理后台演示页开发中 🚧')">进入管理后台 →</button>
+        <button class="btn gold" id="ucToAdmin">进入管理后台 →</button>
       </div>`;
       $('#ucBack').onclick=()=>{view='user';render()};
+      $('#ucToAdmin').onclick=()=>{location.href='admin.html'};
     }
   }
   $$('#ucTabs button').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
